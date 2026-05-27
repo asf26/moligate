@@ -360,7 +360,11 @@ func EpayReturn(c *gin.Context) {
 			c.Redirect(http.StatusFound, paymentResultPath("topup", "fail"))
 			return
 		}
-		logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 return 支付确认 trade_no=%s client_ip=%s completed=%t verify_info=%q", verifyInfo.ServiceTradeNo, c.ClientIP(), completed, common.GetJsonString(verifyInfo)))
+		if completed {
+			logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 return 补单成功 trade_no=%s client_ip=%s completed=%t status=%s verify_info=%q", verifyInfo.ServiceTradeNo, c.ClientIP(), completed, common.TopUpStatusSuccess, common.GetJsonString(verifyInfo)))
+		} else {
+			logger.LogDebug(c.Request.Context(), "易支付 return 订单已完成，跳转成功结果页 trade_no=%s client_ip=%s completed=%t status=%s verify_info=%q", verifyInfo.ServiceTradeNo, c.ClientIP(), completed, common.TopUpStatusSuccess, common.GetJsonString(verifyInfo))
+		}
 		c.Redirect(http.StatusFound, paymentResultPath("topup", "success"))
 		return
 	}
@@ -440,8 +444,12 @@ func EpayNotify(c *gin.Context) {
 				return
 			}
 			if completed {
-				logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 充值成功 trade_no=%s user_id=%d client_ip=%s money=%.2f topup=%q", topUp.TradeNo, topUp.UserId, c.ClientIP(), topUp.Money, common.GetJsonString(topUp)))
+				logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 充值成功 trade_no=%s user_id=%d client_ip=%s amount=%d money=%.2f payment_method=%s status=%s completed=%t", topUp.TradeNo, topUp.UserId, c.ClientIP(), topUp.Amount, topUp.Money, verifyInfo.Type, common.TopUpStatusSuccess, completed))
 			}
+		} else if topUp.Status == common.TopUpStatusSuccess {
+			logger.LogDebug(c.Request.Context(), "易支付 webhook 订单已完成，忽略重复通知 trade_no=%s user_id=%d callback_type=%s trade_status=%s client_ip=%s status=%s", topUp.TradeNo, topUp.UserId, verifyInfo.Type, verifyInfo.TradeStatus, c.ClientIP(), topUp.Status)
+		} else {
+			logger.LogWarn(c.Request.Context(), fmt.Sprintf("易支付 webhook 订单状态异常，忽略事件 trade_no=%s user_id=%d order_status=%s callback_type=%s trade_status=%s client_ip=%s", topUp.TradeNo, topUp.UserId, topUp.Status, verifyInfo.Type, verifyInfo.TradeStatus, c.ClientIP()))
 		}
 	} else {
 		logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 webhook 忽略事件 trade_no=%s callback_type=%s trade_status=%s client_ip=%s verify_info=%q", verifyInfo.ServiceTradeNo, verifyInfo.Type, verifyInfo.TradeStatus, c.ClientIP(), common.GetJsonString(verifyInfo)))

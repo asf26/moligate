@@ -27,6 +27,7 @@ func setupEpayReturnTestConfig(t *testing.T) {
 	originalEpayKey := operation_setting.EpayKey
 	originalPayMethods := operation_setting.PayMethods
 	originalDistributionEnabled := operation_setting.GetDistributionSetting().Enabled
+	originalPaymentSetting := *operation_setting.GetPaymentSetting()
 
 	t.Cleanup(func() {
 		system_setting.ServerAddress = originalServerAddress
@@ -35,6 +36,7 @@ func setupEpayReturnTestConfig(t *testing.T) {
 		operation_setting.EpayKey = originalEpayKey
 		operation_setting.PayMethods = originalPayMethods
 		operation_setting.GetDistributionSetting().Enabled = originalDistributionEnabled
+		*operation_setting.GetPaymentSetting() = originalPaymentSetting
 	})
 
 	system_setting.ServerAddress = "https://example.com"
@@ -43,6 +45,8 @@ func setupEpayReturnTestConfig(t *testing.T) {
 	operation_setting.EpayKey = "epay_key"
 	operation_setting.PayMethods = []map[string]string{{"type": "alipay"}}
 	operation_setting.GetDistributionSetting().Enabled = false
+	operation_setting.GetPaymentSetting().ComplianceConfirmed = true
+	operation_setting.GetPaymentSetting().ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
 }
 
 func setupEpayReturnTestDB(t *testing.T) *gorm.DB {
@@ -192,6 +196,62 @@ func TestEpayReturnCompletesTopUpIdempotently(t *testing.T) {
 
 	require.NoError(t, db.First(&user, 123).Error)
 	require.Equal(t, int(2*common.QuotaPerUnit), user.Quota)
+}
+
+func TestEpayNotifyCompletesTopUpOnceAndReturnStaysIdempotent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setupEpayReturnTestConfig(t)
+	db := setupEpayReturnTestDB(t)
+
+	require.NoError(t, db.Create(&model.User{
+		Id:       124,
+		Username: "epay-notify-user",
+		Password: "password",
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}).Error)
+
+	tradeNo := "epay-notify-success"
+	require.NoError(t, db.Create(&model.TopUp{
+		UserId:          124,
+		Amount:          3,
+		Money:           0.4,
+		TradeNo:         tradeNo,
+		PaymentMethod:   "alipay",
+		PaymentProvider: model.PaymentProviderEpay,
+		CreateTime:      time.Now().Unix(),
+		Status:          common.TopUpStatusPending,
+	}).Error)
+
+	values := signedEpayReturnParams(tradeNo, epay.StatusTradeSuccess)
+	target := "/api/user/epay/notify?" + values.Encode()
+
+	c, w := epayReturnTestContext(http.MethodGet, target)
+	EpayNotify(c)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "success", w.Body.String())
+
+	var topUp model.TopUp
+	require.NoError(t, db.Where("trade_no = ?", tradeNo).First(&topUp).Error)
+	require.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	require.NotZero(t, topUp.CompleteTime)
+
+	var user model.User
+	require.NoError(t, db.First(&user, 124).Error)
+	require.Equal(t, int(3*common.QuotaPerUnit), user.Quota)
+
+	c, w = epayReturnTestContext(http.MethodGet, target)
+	EpayNotify(c)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "success", w.Body.String())
+
+	c, w = epayReturnTestContext(http.MethodGet, "/api/user/epay/return?"+values.Encode())
+	EpayReturn(c)
+	require.Equal(t, http.StatusFound, w.Code)
+	require.Equal(t, "https://example.com/payment/result?kind=topup&status=success", w.Header().Get("Location"))
+
+	require.NoError(t, db.First(&user, 124).Error)
+	require.Equal(t, int(3*common.QuotaPerUnit), user.Quota)
 }
 
 func TestSubscriptionEpayReturnRedirectsPendingForNonSuccessTradeStatus(t *testing.T) {

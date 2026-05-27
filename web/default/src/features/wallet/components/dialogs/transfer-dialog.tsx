@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { formatQuota } from '@/lib/format'
+import { formatNumber, formatQuota } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -50,6 +50,7 @@ export function TransferDialog({
 }: TransferDialogProps) {
   const { t } = useTranslation()
   const [amount, setAmount] = useState(QUOTA_PER_DOLLAR)
+  const quotaPerDollarText = formatNumber(QUOTA_PER_DOLLAR)
 
   useEffect(() => {
     if (open) {
@@ -88,12 +89,19 @@ export function TransferDialog({
           </div>
 
           <div className='space-y-3'>
-            <Label
-              htmlFor='transfer-amount'
-              className='text-muted-foreground text-xs font-medium tracking-wider uppercase'
-            >
-              {t('Transfer Amount')}
-            </Label>
+            <div className='flex flex-wrap items-center justify-between gap-2'>
+              <Label
+                htmlFor='transfer-amount'
+                className='text-muted-foreground text-xs font-medium tracking-wider uppercase'
+              >
+                {t('Transfer Amount')}
+              </Label>
+              <span className='text-muted-foreground text-xs'>
+                {t('1 USD = {{quota}} tokens', {
+                  quota: quotaPerDollarText,
+                })}
+              </span>
+            </div>
             <Input
               id='transfer-amount'
               type='number'
