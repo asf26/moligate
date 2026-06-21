@@ -20,10 +20,7 @@ import { useNotifications } from '@/hooks/use-notifications'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { LanguageSwitcher } from '@/components/language-switcher'
-import {
-  NotificationDialog,
-  NotificationPopover,
-} from '@/components/notification-popover'
+import { NotificationPopover } from '@/components/notification-popover'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { defaultTopNavLinks } from '../config/top-nav.config'
@@ -114,18 +111,6 @@ export function AppHeader({
 
   return (
     <>
-      {showNotifications && (
-        <NotificationDialog
-          open={notifications.forceDialogOpen}
-          onOpenChange={notifications.setForceDialogOpen}
-          activeTab={notifications.activeTab}
-          onTabChange={notifications.setActiveTab}
-          notice={notifications.notice}
-          announcements={notifications.announcements}
-          loading={notifications.loading}
-          onCloseToday={notifications.closeToday}
-        />
-      )}
       <Header>
         <SystemBrand variant='inline' />
 

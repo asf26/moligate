@@ -40,13 +40,6 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Markdown } from '@/components/ui/markdown'
-import {
-  Popover,
-  PopoverContent,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -372,7 +365,7 @@ export function NotificationDialog(props: NotificationDialogProps) {
 }
 
 /**
- * Notification popover with Notice and Announcements tabs
+ * Notification trigger with centered Notice and Announcements dialog
  */
 export function NotificationPopover({
   open,
@@ -387,16 +380,13 @@ export function NotificationPopover({
 }: NotificationPopoverProps) {
   const { t } = useTranslation()
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger
-        render={
-          <Button
-            variant='ghost'
-            size='icon'
-            className={cn('relative size-9', className)}
-            aria-label={t('Notifications')}
-          />
-        }
+    <>
+      <Button
+        variant='ghost'
+        size='icon'
+        className={cn('relative size-9', className)}
+        aria-label={t('Notifications')}
+        onClick={() => onOpenChange(true)}
       >
         <Bell className='size-[1.2rem]' />
         {unreadCount > 0 ? (
@@ -407,35 +397,17 @@ export function NotificationPopover({
             {unreadCount > 99 ? '99+' : unreadCount}
           </Badge>
         ) : null}
-      </PopoverTrigger>
+      </Button>
 
-      <PopoverContent
-        align='end'
-        sideOffset={8}
-        className='w-[min(26rem,calc(100vw-1rem))] gap-3 p-3'
-      >
-        <PopoverHeader className='gap-1 px-1'>
-          <PopoverTitle>{t('System Announcements')}</PopoverTitle>
-          <p className='text-muted-foreground text-xs'>
-            {t('Latest platform updates and notices')}
-          </p>
-        </PopoverHeader>
-
-        <NotificationTabs
-          activeTab={activeTab}
-          onTabChange={onTabChange}
-          notice={notice}
-          announcements={announcements}
-          loading={loading}
-          t={t}
-        />
-
-        <div className='flex justify-end'>
-          <Button size='sm' onClick={() => onOpenChange(false)}>
-            {t('Close')}
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
+      <NotificationDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        activeTab={activeTab}
+        onTabChange={onTabChange}
+        notice={notice}
+        announcements={announcements}
+        loading={loading}
+      />
+    </>
   )
 }
