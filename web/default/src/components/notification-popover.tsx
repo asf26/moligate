@@ -195,7 +195,7 @@ function NoticeContent({
   }
 
   return (
-    <ScrollArea className='h-[min(52vh,28rem)] pr-3'>
+    <ScrollArea className='h-full pr-3'>
       <Markdown>{notice}</Markdown>
     </ScrollArea>
   )
@@ -230,7 +230,7 @@ function AnnouncementsContent({
   }
 
   return (
-    <ScrollArea className='h-[min(52vh,28rem)] pr-3'>
+    <ScrollArea className='h-full pr-3'>
       <div className='flex flex-col'>
         {announcements.map((item, idx) => {
           const publishDate = item.publishDate
@@ -294,6 +294,7 @@ function NotificationTabs({
 }) {
   return (
     <Tabs
+      className='flex h-full min-h-0 flex-col'
       value={activeTab}
       onValueChange={onTabChange as (value: string) => void}
     >
@@ -308,11 +309,11 @@ function NotificationTabs({
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent value='notice' className='mt-2'>
+      <TabsContent value='notice' className='mt-2 min-h-0 flex-1'>
         <NoticeContent notice={notice} loading={loading} t={t} />
       </TabsContent>
 
-      <TabsContent value='announcements' className='mt-2'>
+      <TabsContent value='announcements' className='mt-2 min-h-0 flex-1'>
         <AnnouncementsContent
           announcements={announcements}
           loading={loading}
@@ -328,7 +329,7 @@ export function NotificationDialog(props: NotificationDialogProps) {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className='max-h-[calc(100dvh-2rem)] w-[min(28rem,calc(100vw-2rem))] max-w-none gap-3 overflow-hidden p-4 sm:max-w-none'>
+      <DialogContent className='flex h-[min(80vh,52rem)] max-h-[calc(100dvh-1rem)] w-[min(72rem,calc(100vw-1.5rem))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] flex-col gap-4 overflow-hidden p-5 sm:max-w-none sm:p-6'>
         <DialogHeader className='gap-1'>
           <DialogTitle>{t('System Announcements')}</DialogTitle>
           <DialogDescription>
@@ -336,14 +337,16 @@ export function NotificationDialog(props: NotificationDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <NotificationTabs
-          activeTab={props.activeTab}
-          onTabChange={props.onTabChange}
-          notice={props.notice}
-          announcements={props.announcements}
-          loading={props.loading}
-          t={t}
-        />
+        <div className='min-h-0 flex-1'>
+          <NotificationTabs
+            activeTab={props.activeTab}
+            onTabChange={props.onTabChange}
+            notice={props.notice}
+            announcements={props.announcements}
+            loading={props.loading}
+            t={t}
+          />
+        </div>
 
         <DialogFooter className='bg-transparent -mx-4 -mb-4 border-t px-4 py-3'>
           {props.onCloseToday ? (
