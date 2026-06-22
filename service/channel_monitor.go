@@ -294,6 +294,7 @@ func ListUserChannelMonitorViews(ctx context.Context, includeAdminOnly bool) ([]
 			ID:                   item.Id,
 			Name:                 item.Name,
 			Provider:             item.Provider,
+			APIMode:              item.APIMode,
 			GroupName:            item.GroupName,
 			AdminOnly:            !item.IsUserVisible(),
 			PrimaryModel:         item.PrimaryModel,
@@ -304,6 +305,7 @@ func ListUserChannelMonitorViews(ctx context.Context, includeAdminOnly bool) ([]
 			Availability7d:       summary.Availability7d,
 			Availability15d:      summary.Availability15d,
 			Availability30d:      summary.Availability30d,
+			IntervalSeconds:      item.IntervalSeconds,
 			ExtraModels:          summary.ExtraModels,
 			Timeline:             make([]UserMonitorTimelinePoint, 0, len(recent[item.Id])),
 		}

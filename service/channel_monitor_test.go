@@ -430,6 +430,8 @@ func TestChannelMonitorUserVisibilityFilteringWithSQLite(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, views, 1)
 	require.Equal(t, visible.Id, views[0].ID)
+	require.Equal(t, MonitorAPIModeChatCompletions, views[0].APIMode)
+	require.Equal(t, 60, views[0].IntervalSeconds)
 	require.False(t, views[0].AdminOnly)
 
 	adminViews, err := ListUserChannelMonitorViews(context.Background(), true)

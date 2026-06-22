@@ -349,9 +349,13 @@ function MonitorStatusCard({
   const { t } = useTranslation()
   const availabilityValue = getMonitorAvailability(monitor, availabilityWindow)
   const availability = formatAvailabilityParts(availabilityValue)
+  const displaySecondsUntilRefresh = getMonitorDisplayRefreshSeconds(
+    monitor,
+    secondsUntilRefresh
+  )
   const refreshLabel = autoRefresh
     ? t('Refreshes in {{seconds}}s', {
-        seconds: secondsUntilRefresh,
+        seconds: displaySecondsUntilRefresh,
       })
     : t('Auto refresh paused')
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -586,6 +590,31 @@ function getMonitorAvailability(
     default:
       return monitor.availability_7d
   }
+}
+
+function getMonitorDisplayRefreshSeconds(
+  monitor: UserChannelMonitor,
+  fallbackSeconds: number
+) {
+  if (monitor.provider !== 'openai' || monitor.api_mode !== 'image_generation') {
+    return fallbackSeconds
+  }
+  const intervalSeconds = Number(monitor.interval_seconds)
+  if (!Number.isFinite(intervalSeconds) || intervalSeconds <= 0) {
+    return fallbackSeconds
+  }
+  const checkedAt = monitor.last_checked_at
+    ? Date.parse(monitor.last_checked_at)
+    : Number.NaN
+  if (!Number.isFinite(checkedAt)) {
+    return fallbackSeconds
+  }
+  const elapsedSeconds = Math.max(
+    Math.floor((Date.now() - checkedAt) / 1000),
+    0
+  )
+  const remainingSeconds = intervalSeconds - (elapsedSeconds % intervalSeconds)
+  return remainingSeconds === intervalSeconds ? intervalSeconds : remainingSeconds
 }
 
 function getTimelineBarHeight(point: UserChannelMonitor['timeline'][number]) {

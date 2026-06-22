@@ -112,6 +112,7 @@ type UserMonitorView struct {
 	ID                   int64
 	Name                 string
 	Provider             string
+	APIMode              string
 	GroupName            string
 	AdminOnly            bool
 	PrimaryModel         string
@@ -122,6 +123,7 @@ type UserMonitorView struct {
 	Availability7d       float64
 	Availability15d      float64
 	Availability30d      float64
+	IntervalSeconds      int
 	ExtraModels          []ExtraModelStatus
 	Timeline             []UserMonitorTimelinePoint
 }

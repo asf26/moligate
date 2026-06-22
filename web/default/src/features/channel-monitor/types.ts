@@ -148,6 +148,7 @@ export type UserChannelMonitor = {
   id: number
   name: string
   provider: ChannelMonitorProvider
+  api_mode?: ChannelMonitorApiMode
   group_name: string
   admin_only: boolean
   primary_model: string
@@ -158,6 +159,7 @@ export type UserChannelMonitor = {
   availability_7d: number
   availability_15d: number
   availability_30d: number
+  interval_seconds?: number
   extra_models: ExtraModelStatus[]
   timeline: ChannelMonitorTimelinePoint[]
 }

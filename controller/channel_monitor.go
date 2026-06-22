@@ -159,6 +159,7 @@ type channelMonitorUserMonitorStatus struct {
 	ID                   int64                             `json:"id"`
 	Name                 string                            `json:"name"`
 	Provider             string                            `json:"provider"`
+	APIMode              string                            `json:"api_mode"`
 	GroupName            string                            `json:"group_name"`
 	AdminOnly            bool                              `json:"admin_only"`
 	PrimaryModel         string                            `json:"primary_model"`
@@ -169,6 +170,7 @@ type channelMonitorUserMonitorStatus struct {
 	Availability7d       float64                           `json:"availability_7d"`
 	Availability15d      float64                           `json:"availability_15d"`
 	Availability30d      float64                           `json:"availability_30d"`
+	IntervalSeconds      int                               `json:"interval_seconds"`
 	ExtraModels          []service.ExtraModelStatus        `json:"extra_models"`
 	Timeline             []channelMonitorUserTimelinePoint `json:"timeline"`
 }
@@ -641,6 +643,7 @@ func buildChannelMonitorUserMonitorStatus(item *service.UserMonitorView) channel
 		ID:                   item.ID,
 		Name:                 item.Name,
 		Provider:             item.Provider,
+		APIMode:              item.APIMode,
 		GroupName:            item.GroupName,
 		AdminOnly:            item.AdminOnly,
 		PrimaryModel:         item.PrimaryModel,
@@ -651,6 +654,7 @@ func buildChannelMonitorUserMonitorStatus(item *service.UserMonitorView) channel
 		Availability7d:       item.Availability7d,
 		Availability15d:      item.Availability15d,
 		Availability30d:      item.Availability30d,
+		IntervalSeconds:      item.IntervalSeconds,
 		ExtraModels:          item.ExtraModels,
 		Timeline:             timeline,
 	}
