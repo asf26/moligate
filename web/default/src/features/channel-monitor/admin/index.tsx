@@ -147,6 +147,7 @@ type MonitorFormState = {
   name: string
   provider: ChannelMonitorProvider
   apiMode: ChannelMonitorApiMode
+  image2Size: Image2ImageSize
   endpoint: string
   apiKey: string
   primaryModel: string
@@ -160,6 +161,9 @@ type MonitorFormState = {
   bodyOverrideMode: ChannelMonitorBodyOverrideMode
   bodyOverrideText: string
 }
+
+type Image2ImageSize = '1K' | '2K' | '4K'
+type Image2PixelSize = '1024x1024' | '2048x2048' | '3840x2160'
 
 type TemplateFormState = {
   id: number | null
@@ -176,6 +180,21 @@ const enabledFilterOptions = [
   { label: 'Enabled', value: 'true' },
   { label: 'Disabled', value: 'false' },
 ]
+const image2SizeOptions: Array<{ label: string; value: Image2ImageSize }> = [
+  { label: '1K', value: '1K' },
+  { label: '2K', value: '2K' },
+  { label: '4K', value: '4K' },
+]
+const image2PixelSizeByLabel = {
+  '1K': '1024x1024',
+  '2K': '2048x2048',
+  '4K': '3840x2160',
+} satisfies Record<Image2ImageSize, Image2PixelSize>
+const image2LabelByPixelSize = {
+  '1024x1024': '1K',
+  '2048x2048': '2K',
+  '3840x2160': '4K',
+} satisfies Record<Image2PixelSize, Image2ImageSize>
 const NO_TEMPLATE_VALUE = '__none__'
 const headerNamePattern = /^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$/
 
@@ -238,6 +257,121 @@ function bodyToText(body?: Record<string, unknown> | null) {
   return JSON.stringify(body, null, 2)
 }
 
+function isImage2ImageSize(value: unknown): value is Image2ImageSize {
+  return value === '1K' || value === '2K' || value === '4K'
+}
+
+function isImage2PixelSize(value: unknown): value is Image2PixelSize {
+  return (
+    value === '1024x1024' ||
+    value === '2048x2048' ||
+    value === '3840x2160'
+  )
+}
+
+function getImage2SizeFromBody(
+  body?: Record<string, unknown> | null,
+  fallback: Image2ImageSize = '1K'
+) {
+  const size = typeof body?.size === 'string' ? body.size.trim() : ''
+  return isImage2PixelSize(size) ? image2LabelByPixelSize[size] : fallback
+}
+
+function getImage2SizeFromText(text: string, fallback: Image2ImageSize) {
+  const trimmed = text.trim()
+  if (!trimmed) return fallback
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return fallback
+    }
+    return getImage2SizeFromBody(parsed as Record<string, unknown>, fallback)
+  } catch {
+    return fallback
+  }
+}
+
+function getImage2RawSizeFromText(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return ''
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return ''
+    }
+    const size = (parsed as Record<string, unknown>).size
+    return typeof size === 'string' ? size.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+function setImage2SizeInBodyText(text: string, size: Image2ImageSize) {
+  let body: Record<string, unknown> = {}
+  const trimmed = text.trim()
+  if (trimmed) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        body = parsed as Record<string, unknown>
+      }
+    } catch {
+      body = {}
+    }
+  }
+  body.size = image2PixelSizeByLabel[size]
+  return bodyToText(body)
+}
+
+function normalizeImage2AdvancedState(
+  state: MonitorFormState,
+  options: { forceSize?: boolean } = {}
+) {
+  if (!isImageGenerationMode(state.provider, state.apiMode)) return state
+  if (state.bodyOverrideMode === 'replace') return state
+  if (state.bodyOverrideMode === 'off') {
+    if (state.image2Size === '1K') return state
+    return {
+      ...state,
+      bodyOverrideMode: 'merge' as const,
+      bodyOverrideText: bodyToText({
+        size: image2PixelSizeByLabel[state.image2Size],
+      }),
+    }
+  }
+  const rawSize = getImage2RawSizeFromText(state.bodyOverrideText)
+  if (isImage2ImageSize(rawSize)) {
+    return {
+      ...state,
+      image2Size: rawSize,
+      bodyOverrideText: setImage2SizeInBodyText(
+        state.bodyOverrideText,
+        rawSize
+      ),
+    }
+  }
+  if (!options.forceSize && rawSize && !isImage2PixelSize(rawSize)) {
+    return state
+  }
+  return {
+    ...state,
+    bodyOverrideText: setImage2SizeInBodyText(
+      state.bodyOverrideText,
+      state.image2Size
+    ),
+  }
+}
+
+function nextImage2SizeState(
+  state: MonitorFormState,
+  size: Image2ImageSize
+): MonitorFormState {
+  const next = { ...state, image2Size: size }
+  if (state.bodyOverrideMode === 'replace') return next
+  if (size === '1K' && state.bodyOverrideMode === 'off') return next
+  return normalizeImage2AdvancedState(next, { forceSize: true })
+}
+
 function parseBodyOverride(
   mode: ChannelMonitorBodyOverrideMode,
   text: string,
@@ -270,7 +404,28 @@ function normalizeApiMode(
   apiMode?: ChannelMonitorApiMode
 ): ChannelMonitorApiMode {
   if (provider !== 'openai') return 'chat_completions'
-  return apiMode === 'responses' ? 'responses' : 'chat_completions'
+  return apiMode === 'responses' || apiMode === 'image_generation'
+    ? apiMode
+    : 'chat_completions'
+}
+
+function isImageGenerationMode(
+  provider: ChannelMonitorProvider,
+  apiMode: ChannelMonitorApiMode
+) {
+  return provider === 'openai' && apiMode === 'image_generation'
+}
+
+function apiModeLabel(apiMode: ChannelMonitorApiMode) {
+  switch (apiMode) {
+    case 'responses':
+      return 'Responses'
+    case 'image_generation':
+      return 'Image Generation'
+    case 'chat_completions':
+    default:
+      return 'Chat Completions'
+  }
 }
 
 function getBodyPlaceholder(
@@ -278,6 +433,11 @@ function getBodyPlaceholder(
   apiMode: ChannelMonitorApiMode,
   mode: ChannelMonitorBodyOverrideMode
 ) {
+  if (isImageGenerationMode(provider, apiMode)) {
+    if (mode === 'merge')
+      return '{\n  "size": "1024x1024"\n}'
+    return '{\n  "model": "gpt-image-2",\n  "prompt": "Draw a small health check image.",\n  "n": 1,\n  "size": "1024x1024"\n}'
+  }
   if (provider === 'openai' && apiMode === 'responses') {
     if (mode === 'merge') return '{\n  "max_output_tokens": 20\n}'
     return '{\n  "model": "gpt-4o-mini",\n  "input": "Reply with exactly: ok",\n  "max_output_tokens": 20,\n  "stream": true\n}'
@@ -293,6 +453,31 @@ function getBodyPlaceholder(
   }
   if (mode === 'merge') return '{\n  "max_tokens": 20\n}'
   return '{\n  "model": "claude-3-5-haiku-latest",\n  "messages": [{"role": "user", "content": "Reply with exactly: ok"}],\n  "max_tokens": 20\n}'
+}
+
+function getPrimaryModelPlaceholder(
+  provider: ChannelMonitorProvider,
+  apiMode: ChannelMonitorApiMode
+) {
+  if (isImageGenerationMode(provider, apiMode)) return 'gpt-image-2'
+  switch (provider) {
+    case 'anthropic':
+      return 'claude-3-5-haiku-latest'
+    case 'gemini':
+      return 'gemini-1.5-flash'
+    case 'openai':
+    default:
+      return 'gpt-4o-mini'
+  }
+}
+
+function isPlaceholderPrimaryModel(
+  provider: ChannelMonitorProvider,
+  apiMode: ChannelMonitorApiMode,
+  model: string
+) {
+  const value = model.trim()
+  return !value || value === getPrimaryModelPlaceholder(provider, apiMode)
 }
 
 function buildAdvancedPayload(
@@ -355,10 +540,12 @@ function buildFormState(
   monitor?: ChannelMonitor | null,
   defaultIntervalSeconds = 60
 ): MonitorFormState {
+  const bodyOverride = monitor?.body_override
   return {
     name: monitor?.name ?? '',
     provider: monitor?.provider ?? 'openai',
     apiMode: monitor?.api_mode ?? 'chat_completions',
+    image2Size: getImage2SizeFromBody(bodyOverride),
     endpoint: monitor?.endpoint ?? '',
     apiKey: '',
     primaryModel: monitor?.primary_model ?? '',
@@ -372,7 +559,7 @@ function buildFormState(
     templateId: monitor?.template_id ? String(monitor.template_id) : '',
     extraHeaderRows: headerMapToRows(monitor?.extra_headers),
     bodyOverrideMode: monitor?.body_override_mode ?? 'off',
-    bodyOverrideText: bodyToText(monitor?.body_override),
+    bodyOverrideText: bodyToText(bodyOverride),
   }
 }
 
@@ -1026,11 +1213,7 @@ function ChannelMonitorTemplateManagerDialog({
                   </Badge>
                   {template.provider === 'openai' && (
                     <Badge variant='outline' className='rounded-md'>
-                      {t(
-                        template.api_mode === 'responses'
-                          ? 'Responses'
-                          : 'Chat Completions'
-                      )}
+                      {t(apiModeLabel(template.api_mode))}
                     </Badge>
                   )}
                   {template.associated_monitors > 0 && (
@@ -1695,6 +1878,7 @@ function ChannelMonitorFormDialog({
       ...previous,
       provider,
       apiMode: provider === 'openai' ? previous.apiMode : 'chat_completions',
+      image2Size: '1K',
       templateId: '',
       extraHeaderRows: headerMapToRows(),
       bodyOverrideMode: 'off',
@@ -1704,9 +1888,22 @@ function ChannelMonitorFormDialog({
 
   const handleApiModeChange = (value: string | null) => {
     if (!value) return
+    const apiMode = value as ChannelMonitorApiMode
     setFormState((previous) => ({
       ...previous,
-      apiMode: value as ChannelMonitorApiMode,
+      apiMode,
+      primaryModel:
+        isImageGenerationMode(previous.provider, apiMode) &&
+        isPlaceholderPrimaryModel(
+          previous.provider,
+          previous.apiMode,
+          previous.primaryModel
+        )
+          ? 'gpt-image-2'
+          : previous.primaryModel,
+      image2Size: isImageGenerationMode(previous.provider, apiMode)
+        ? '1K'
+        : previous.image2Size,
       templateId: '',
       extraHeaderRows: headerMapToRows(),
       bodyOverrideMode: 'off',
@@ -1714,13 +1911,23 @@ function ChannelMonitorFormDialog({
     }))
   }
 
+  const handleImage2SizeChange = (value: string | null) => {
+    if (!isImage2ImageSize(value)) return
+    setFormState((previous) => nextImage2SizeState(previous, value))
+  }
+
   const applyTemplateToForm = (template: ChannelMonitorTemplate | null) => {
+    const bodyOverride = template?.body_override
     setFormState((previous) => ({
       ...previous,
       templateId: template ? String(template.id) : '',
+      image2Size:
+        isImageGenerationMode(previous.provider, previous.apiMode)
+          ? getImage2SizeFromBody(bodyOverride)
+          : previous.image2Size,
       extraHeaderRows: headerMapToRows(template?.extra_headers),
       bodyOverrideMode: template?.body_override_mode ?? 'off',
-      bodyOverrideText: bodyToText(template?.body_override),
+      bodyOverrideText: bodyToText(bodyOverride),
     }))
   }
 
@@ -1731,24 +1938,28 @@ function ChannelMonitorFormDialog({
       )
       return
     }
-    const advanced = buildAdvancedPayload(formState, t)
+    const submitState = normalizeImage2AdvancedState(formState)
+    if (submitState !== formState) {
+      setFormState(submitState)
+    }
+    const advanced = buildAdvancedPayload(submitState, t)
     if (advanced.error) {
       toast.error(advanced.error)
       return
     }
     const payload: ChannelMonitorPayload & { clear_template?: boolean } = {
-      name: formState.name.trim(),
-      provider: formState.provider,
-      api_mode: formState.apiMode,
-      endpoint: formState.endpoint.trim(),
-      api_key: formState.apiKey.trim(),
-      primary_model: formState.primaryModel.trim(),
-      extra_models: splitModelList(formState.extraModelsText),
-      group_name: formState.name.trim(),
-      enabled: formState.enabled,
-      user_visible: formState.userVisible,
-      interval_seconds: Number(formState.intervalSeconds) || 0,
-      jitter_seconds: Number(formState.jitterSeconds) || 0,
+      name: submitState.name.trim(),
+      provider: submitState.provider,
+      api_mode: submitState.apiMode,
+      endpoint: submitState.endpoint.trim(),
+      api_key: submitState.apiKey.trim(),
+      primary_model: submitState.primaryModel.trim(),
+      extra_models: splitModelList(submitState.extraModelsText),
+      group_name: submitState.name.trim(),
+      enabled: submitState.enabled,
+      user_visible: submitState.userVisible,
+      interval_seconds: Number(submitState.intervalSeconds) || 0,
+      jitter_seconds: Number(submitState.jitterSeconds) || 0,
       extra_headers: advanced.extra_headers,
       body_override_mode: advanced.body_override_mode,
       body_override: advanced.body_override,
@@ -1835,7 +2046,9 @@ function ChannelMonitorFormDialog({
                   </SelectContent>
                 </Select>
                 <FieldDescription>
-                  {t('Responses mode is available for OpenAI monitors only.')}
+                  {t(
+                    'Responses and image generation modes are available for OpenAI monitors only.'
+                  )}
                 </FieldDescription>
               </Field>
             </div>
@@ -1893,9 +2106,35 @@ function ChannelMonitorFormDialog({
                   onChange={(event) =>
                     update('primaryModel', event.target.value)
                   }
-                  placeholder='gpt-4o-mini'
+                  placeholder={getPrimaryModelPlaceholder(
+                    formState.provider,
+                    formState.apiMode
+                  )}
                 />
               </Field>
+              {isImageGenerationMode(formState.provider, formState.apiMode) &&
+                formState.bodyOverrideMode !== 'replace' && (
+                  <Field>
+                    <FieldLabel>{t('Output image size')}</FieldLabel>
+                    <Select
+                      value={formState.image2Size}
+                      onValueChange={handleImage2SizeChange}
+                    >
+                      <SelectTrigger className='w-full'>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          {image2SizeOptions.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                )}
             </div>
 
             <Field>
@@ -2012,12 +2251,26 @@ function ChannelMonitorFormDialog({
               onTemplateChange={applyTemplateToForm}
               onHeaderRowsChange={(rows) => update('extraHeaderRows', rows)}
               onBodyOverrideModeChange={(mode) => {
-                update('bodyOverrideMode', mode)
-                if (mode === 'off') update('bodyOverrideText', '')
+                setFormState((previous) => {
+                  const next = {
+                    ...previous,
+                    bodyOverrideMode: mode,
+                    bodyOverrideText:
+                      mode === 'off' ? '' : previous.bodyOverrideText,
+                  }
+                  return normalizeImage2AdvancedState(next)
+                })
               }}
-              onBodyOverrideTextChange={(value) =>
-                update('bodyOverrideText', value)
-              }
+              onBodyOverrideTextChange={(value) => {
+                setFormState((previous) => ({
+                  ...previous,
+                  bodyOverrideText: value,
+                  image2Size:
+                    isImageGenerationMode(previous.provider, previous.apiMode)
+                      ? getImage2SizeFromText(value, previous.image2Size)
+                      : previous.image2Size,
+                }))
+              }}
             />
           </FieldGroup>
         </form>

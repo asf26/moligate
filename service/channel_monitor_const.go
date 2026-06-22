@@ -12,6 +12,7 @@ const (
 
 	MonitorAPIModeChatCompletions = "chat_completions"
 	MonitorAPIModeResponses       = "responses"
+	MonitorAPIModeImageGeneration = "image_generation"
 
 	MonitorBodyOverrideModeOff     = "off"
 	MonitorBodyOverrideModeMerge   = "merge"
@@ -24,34 +25,42 @@ const (
 )
 
 const (
-	monitorRequestTimeout           = 45 * time.Second
-	monitorPingTimeout              = 8 * time.Second
-	monitorDegradedThreshold        = 6 * time.Second
-	monitorHistoryRetentionDays     = 30
-	monitorWorkerConcurrency        = 5
-	monitorStartupLoadTimeout       = 10 * time.Second
-	monitorMinIntervalSeconds       = 15
-	monitorMaxIntervalSeconds       = 3600
-	monitorMessageMaxBytes          = 500
-	monitorResponseMaxBytes         = 64 * 1024
-	monitorErrorBodySnippetMaxBytes = 300
-	monitorChallengeMin             = 1
-	monitorChallengeMax             = 50
-	monitorChallengeMaxTokens       = 50
-	monitorTimelineMaxPoints        = 60
-	monitorEndpointResolveTimeout   = 5 * time.Second
-	monitorAnthropicAPIVersion      = "2023-06-01"
-	monitorRunOneBuffer             = 10 * time.Second
-	monitorIdleConnTimeout          = 30 * time.Second
-	monitorTLSHandshakeTimeout      = 10 * time.Second
-	monitorResponseHeaderTimeout    = 30 * time.Second
-	monitorPingDiscardMaxBytes      = 1024
-	monitorDialTimeout              = 10 * time.Second
-	monitorDialKeepAlive            = 30 * time.Second
-	monitorOperationalAvailability  = 80.0
+	monitorRequestTimeout             = 45 * time.Second
+	monitorImageRequestTimeout        = 3 * time.Minute
+	monitorPingTimeout                = 8 * time.Second
+	monitorDegradedThreshold          = 6 * time.Second
+	monitorImageDegradedThreshold     = 2 * time.Minute
+	monitorHistoryRetentionDays       = 30
+	monitorWorkerConcurrency          = 5
+	monitorStartupLoadTimeout         = 10 * time.Second
+	monitorMinIntervalSeconds         = 15
+	monitorMaxIntervalSeconds         = 3600
+	monitorMessageMaxBytes            = 500
+	monitorResponseMaxBytes           = 64 * 1024
+	monitorErrorBodySnippetMaxBytes   = 300
+	monitorChallengeMin               = 1
+	monitorChallengeMax               = 50
+	monitorChallengeMaxTokens         = 50
+	monitorTimelineMaxPoints          = 60
+	monitorEndpointResolveTimeout     = 5 * time.Second
+	monitorAnthropicAPIVersion        = "2023-06-01"
+	monitorImage2Prompt               = "A simple green check mark icon on a plain white background."
+	monitorImage2Size1K               = "1024x1024"
+	monitorImage2Size2K               = "2048x2048"
+	monitorImage2Size4K               = "3840x2160"
+	monitorRunOneBuffer               = 10 * time.Second
+	monitorIdleConnTimeout            = 30 * time.Second
+	monitorTLSHandshakeTimeout        = 10 * time.Second
+	monitorResponseHeaderTimeout      = 30 * time.Second
+	monitorImageResponseHeaderTimeout = 3 * time.Minute
+	monitorPingDiscardMaxBytes        = 1024
+	monitorDialTimeout                = 10 * time.Second
+	monitorDialKeepAlive              = 30 * time.Second
+	monitorOperationalAvailability    = 80.0
 
 	providerOpenAIPath            = "/v1/chat/completions"
 	providerOpenAIResponsesPath   = "/v1/responses"
+	providerOpenAIImagePath       = "/v1/images/generations"
 	providerAnthropicPath         = "/v1/messages"
 	providerGeminiPathTemplate    = "/v1beta/models/%s:generateContent"
 	channelMonitorDefaultPageSize = 20
@@ -62,7 +71,7 @@ const (
 var (
 	ErrChannelMonitorNotFound            = errors.New("channel monitor not found")
 	ErrChannelMonitorInvalidProvider     = errors.New("provider must be one of openai/anthropic/gemini")
-	ErrChannelMonitorInvalidAPIMode      = errors.New("api_mode must be chat_completions or responses; responses is only supported for openai")
+	ErrChannelMonitorInvalidAPIMode      = errors.New("api_mode must be chat_completions, responses, or image_generation; responses and image_generation are only supported for openai")
 	ErrChannelMonitorInvalidInterval     = errors.New("interval_seconds must be in [15, 3600]")
 	ErrChannelMonitorInvalidJitter       = errors.New("jitter_seconds must be >= 0 and interval_seconds - jitter_seconds must be >= 15")
 	ErrChannelMonitorInvalidEndpoint     = errors.New("endpoint must be a valid https URL")
@@ -78,7 +87,7 @@ var (
 	ErrChannelMonitorTemplateNotFound          = errors.New("channel monitor request template not found")
 	ErrChannelMonitorTemplateMissingName       = errors.New("template name is required")
 	ErrChannelMonitorTemplateInvalidProvider   = errors.New("template provider must be one of openai/anthropic/gemini")
-	ErrChannelMonitorTemplateInvalidAPIMode    = errors.New("template api_mode must be chat_completions or responses; responses is only supported for openai")
+	ErrChannelMonitorTemplateInvalidAPIMode    = errors.New("template api_mode must be chat_completions, responses, or image_generation; responses and image_generation are only supported for openai")
 	ErrChannelMonitorTemplateInvalidBodyMode   = errors.New("body_override_mode must be one of off/merge/replace")
 	ErrChannelMonitorTemplateBodyRequired      = errors.New("body_override is required when body_override_mode is merge or replace")
 	ErrChannelMonitorTemplateHeaderForbidden   = errors.New("header name is forbidden")

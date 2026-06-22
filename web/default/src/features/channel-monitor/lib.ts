@@ -52,6 +52,7 @@ export const providerOptions: Array<{
 export const apiModeOptions = [
   { label: 'Chat Completions', value: 'chat_completions' },
   { label: 'Responses', value: 'responses' },
+  { label: 'Image Generation', value: 'image_generation' },
 ] as const
 
 export const bodyOverrideModeOptions: Array<{

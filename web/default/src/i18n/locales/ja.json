@@ -3862,6 +3862,7 @@
     "Response": "レスポンス",
     "Response Time": "応答時間",
     "Responses": "レスポンス",
+    "Responses and image generation modes are available for OpenAI monitors only.": "Responses モードと画像生成モードは OpenAI 監視でのみ利用できます。",
     "Responses API Version": "応答APIバージョン",
     "Responses mode is available for OpenAI monitors only.": "Responses モードは OpenAI 監視でのみ利用できます。",
     "Restore defaults": "既定に戻す",

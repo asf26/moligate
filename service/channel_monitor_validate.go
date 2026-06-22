@@ -20,7 +20,7 @@ func validateMonitorAPIMode(provider, apiMode string) error {
 	switch defaultMonitorAPIMode(apiMode) {
 	case MonitorAPIModeChatCompletions:
 		return nil
-	case MonitorAPIModeResponses:
+	case MonitorAPIModeResponses, MonitorAPIModeImageGeneration:
 		if provider == "" || provider == MonitorProviderOpenAI {
 			return nil
 		}
@@ -114,7 +114,11 @@ func validateBodyModeForProtocol(provider, apiMode, mode string, body map[string
 	if err := validateBodyModeParams(mode, body); err != nil {
 		return err
 	}
-	if defaultBodyMode(mode) != MonitorBodyOverrideModeReplace {
+	normalizedMode := defaultBodyMode(mode)
+	if err := validateImageGenerationRequestBody(provider, defaultMonitorAPIMode(apiMode), normalizedMode, body); err != nil {
+		return ErrChannelMonitorInvalidRequestBody
+	}
+	if normalizedMode != MonitorBodyOverrideModeReplace {
 		return nil
 	}
 	if err := validateReplaceRequestBody(provider, defaultMonitorAPIMode(apiMode), body); err != nil {
@@ -135,6 +139,33 @@ func validateBodyModeParams(mode string, body map[string]any) error {
 	default:
 		return ErrChannelMonitorTemplateInvalidBodyMode
 	}
+}
+
+func validateImageGenerationRequestBody(provider, apiMode, mode string, body map[string]any) error {
+	if !isMonitorOpenAIImageGeneration(provider, apiMode) {
+		return nil
+	}
+	if mode == MonitorBodyOverrideModeOff {
+		return nil
+	}
+	if size, ok := body["size"]; ok {
+		switch strings.TrimSpace(monitorStringFromAny(size)) {
+		case monitorImage2Size1K, monitorImage2Size2K, monitorImage2Size4K:
+		default:
+			return ErrChannelMonitorInvalidRequestBody
+		}
+	}
+	if mode != MonitorBodyOverrideModeReplace {
+		return nil
+	}
+	if strings.TrimSpace(monitorStringFromAny(body["model"])) == "" || strings.TrimSpace(monitorStringFromAny(body["prompt"])) == "" {
+		return ErrChannelMonitorInvalidRequestBody
+	}
+	return nil
+}
+
+func isMonitorOpenAIImageGeneration(provider, apiMode string) bool {
+	return provider == MonitorProviderOpenAI && defaultMonitorAPIMode(apiMode) == MonitorAPIModeImageGeneration
 }
 
 var monitorHeaderNameRegex = regexp.MustCompile(`^[A-Za-z0-9!#$%&'*+\-.^_` + "`" + `|~]+$`)

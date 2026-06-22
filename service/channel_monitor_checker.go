@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,10 +18,11 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var monitorHTTPClient = newChannelMonitorHTTPClient(monitorRequestTimeout)
-var monitorPingHTTPClient = newChannelMonitorHTTPClient(monitorPingTimeout)
+var monitorHTTPClient = newChannelMonitorHTTPClient(monitorRequestTimeout, monitorResponseHeaderTimeout)
+var monitorImageHTTPClient = newChannelMonitorHTTPClient(monitorImageRequestTimeout, monitorImageResponseHeaderTimeout)
+var monitorPingHTTPClient = newChannelMonitorHTTPClient(monitorPingTimeout, monitorResponseHeaderTimeout)
 
-func newChannelMonitorHTTPClient(timeout time.Duration) *http.Client {
+func newChannelMonitorHTTPClient(timeout, responseHeaderTimeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
@@ -29,7 +31,7 @@ func newChannelMonitorHTTPClient(timeout time.Duration) *http.Client {
 			MaxIdleConns:          16,
 			IdleConnTimeout:       monitorIdleConnTimeout,
 			TLSHandshakeTimeout:   monitorTLSHandshakeTimeout,
-			ResponseHeaderTimeout: monitorResponseHeaderTimeout,
+			ResponseHeaderTimeout: responseHeaderTimeout,
 		},
 	}
 }
@@ -39,6 +41,7 @@ type monitorProviderAdapter struct {
 	buildBody    func(model, prompt string) ([]byte, error)
 	buildHeaders func(apiKey string) map[string]string
 	textPath     string
+	validator    func(respBytes []byte) string
 }
 
 type CheckOptions struct {
@@ -79,6 +82,22 @@ var monitorOpenAIResponsesAdapter = monitorProviderAdapter{
 		return map[string]string{"Authorization": "Bearer " + apiKey}
 	},
 	textPath: "output.0.content.0.text",
+}
+
+var monitorOpenAIImageGenerationAdapter = monitorProviderAdapter{
+	buildPath: func(string) string { return providerOpenAIImagePath },
+	buildBody: func(model, _ string) ([]byte, error) {
+		return common.Marshal(map[string]any{
+			"model":  model,
+			"prompt": monitorImage2Prompt,
+			"n":      1,
+			"size":   monitorImage2Size1K,
+		})
+	},
+	buildHeaders: func(apiKey string) map[string]string {
+		return map[string]string{"Authorization": "Bearer " + apiKey}
+	},
+	validator: extractMonitorImageGenerationResult,
 }
 
 var monitorProviderAdapters = map[string]monitorProviderAdapter{
@@ -142,13 +161,27 @@ func runChannelMonitorCheckForModel(ctx context.Context, provider, apiMode, endp
 		res.Message = truncateMonitorMessage(sanitizeMonitorErrorMessage(fmt.Sprintf("upstream HTTP %d: %s", statusCode, truncateMonitorErrorBody(rawBody))))
 		return res
 	}
+	if isMonitorOpenAIImageGeneration(provider, opts.APIMode) {
+		if strings.TrimSpace(respText) == "" {
+			res.Status = MonitorStatusFailed
+			res.Message = truncateMonitorMessage(formatMonitorImageGenerationNoDataMessage(rawBody))
+			return res
+		}
+		if latency > monitorDegradedThresholdFor(provider, opts.APIMode) {
+			res.Status = MonitorStatusDegraded
+			res.Message = truncateMonitorMessage(fmt.Sprintf("slow response: %dms", latencyMs))
+			return res
+		}
+		res.Status = MonitorStatusOperational
+		return res
+	}
 	if defaultBodyMode(opts.BodyOverrideMode) == MonitorBodyOverrideModeReplace {
 		if strings.TrimSpace(respText) == "" {
 			res.Status = MonitorStatusFailed
 			res.Message = truncateMonitorMessage("replace-mode: upstream returned 2xx with empty text")
 			return res
 		}
-		if latency >= monitorDegradedThreshold {
+		if latency >= monitorDegradedThresholdFor(provider, opts.APIMode) {
 			res.Status = MonitorStatusDegraded
 			res.Message = truncateMonitorMessage(fmt.Sprintf("slow response: %dms", latencyMs))
 			return res
@@ -161,7 +194,7 @@ func runChannelMonitorCheckForModel(ctx context.Context, provider, apiMode, endp
 		res.Message = truncateMonitorMessage(sanitizeMonitorErrorMessage(fmt.Sprintf("challenge mismatch (expected %s, got %q)", challenge.Expected, respText)))
 		return res
 	}
-	if latency >= monitorDegradedThreshold {
+	if latency >= monitorDegradedThresholdFor(provider, opts.APIMode) {
 		res.Status = MonitorStatusDegraded
 		res.Message = truncateMonitorMessage(fmt.Sprintf("slow response: %dms", latencyMs))
 		return res
@@ -184,9 +217,16 @@ func callChannelMonitorProvider(ctx context.Context, provider, endpoint, apiKey,
 		return "", "", 0, err
 	}
 	fullURL := joinMonitorURL(endpoint, adapter.buildPath(model))
-	respBytes, status, err := postMonitorRawJSON(ctx, fullURL, body, mergeMonitorHeaders(adapter.buildHeaders(apiKey), opts))
+	client := monitorHTTPClient
+	if provider == MonitorProviderOpenAI && resolvedMode == MonitorAPIModeImageGeneration {
+		client = monitorImageHTTPClient
+	}
+	respBytes, status, err := postMonitorRawJSON(ctx, client, fullURL, body, mergeMonitorHeaders(adapter.buildHeaders(apiKey), opts))
 	if err != nil {
 		return "", "", status, err
+	}
+	if provider == MonitorProviderOpenAI && resolvedMode == MonitorAPIModeImageGeneration {
+		return extractMonitorImageGenerationResult(respBytes), string(respBytes), status, nil
 	}
 	if provider == MonitorProviderOpenAI && resolvedMode == MonitorAPIModeResponses {
 		return extractMonitorOpenAIResponsesText(respBytes), string(respBytes), status, nil
@@ -194,10 +234,23 @@ func callChannelMonitorProvider(ctx context.Context, provider, endpoint, apiKey,
 	if provider == MonitorProviderOpenAI {
 		return extractMonitorOpenAIChatText(respBytes), string(respBytes), status, nil
 	}
+	if adapter.validator != nil {
+		return adapter.validator(respBytes), string(respBytes), status, nil
+	}
 	return gjson.GetBytes(respBytes, adapter.textPath).String(), string(respBytes), status, nil
 }
 
+func monitorDegradedThresholdFor(provider, apiMode string) time.Duration {
+	if isMonitorOpenAIImageGeneration(provider, apiMode) {
+		return monitorImageDegradedThreshold
+	}
+	return monitorDegradedThreshold
+}
+
 func monitorProviderAdapterFor(provider, apiMode string) (monitorProviderAdapter, string, bool) {
+	if isMonitorOpenAIImageGeneration(provider, apiMode) {
+		return monitorOpenAIImageGenerationAdapter, MonitorAPIModeImageGeneration, true
+	}
 	if provider == MonitorProviderOpenAI && defaultMonitorAPIMode(apiMode) == MonitorAPIModeResponses {
 		return monitorOpenAIResponsesAdapter, MonitorAPIModeResponses, true
 	}
@@ -250,6 +303,236 @@ func extractMonitorOpenAIChatText(respBytes []byte) string {
 	return gjson.GetBytes(respBytes, monitorOpenAIChatAdapter.textPath).String()
 }
 
+func extractMonitorImageGenerationResult(respBytes []byte) string {
+	for _, payload := range monitorSSEDataPayloads(respBytes) {
+		if payload == "[DONE]" {
+			continue
+		}
+		if result := extractMonitorImageGenerationResultFromJSON([]byte(payload), true); strings.TrimSpace(result) != "" {
+			return result
+		}
+		if result := extractMonitorImageGenerationResultFromPartialJSON([]byte(payload)); strings.TrimSpace(result) != "" {
+			return result
+		}
+	}
+
+	if result := extractMonitorImageGenerationResultFromJSON(respBytes, false); strings.TrimSpace(result) != "" {
+		return result
+	}
+	return extractMonitorImageGenerationResultFromPartialJSON(respBytes)
+}
+
+func extractMonitorImageGenerationResultFromJSON(respBytes []byte, ssePayload bool) string {
+	if !gjson.ValidBytes(respBytes) {
+		return ""
+	}
+
+	root := gjson.ParseBytes(respBytes)
+	if ssePayload {
+		eventType := strings.TrimSpace(root.Get("type").String())
+		if eventType != "" && eventType != "image_generation.completed" {
+			return ""
+		}
+	}
+
+	data := root.Get("data")
+	if data.IsArray() {
+		if result := extractMonitorImageGenerationResultFromGJSON(data); strings.TrimSpace(result) != "" {
+			return result
+		}
+	}
+
+	return extractMonitorImageGenerationResultFromGJSON(root)
+}
+
+func extractMonitorImageGenerationResultFromGJSON(value gjson.Result) string {
+	var result string
+
+	value.ForEach(func(key, item gjson.Result) bool {
+		keyName := strings.ToLower(strings.TrimSpace(key.String()))
+		if keyName == "error" {
+			return true
+		}
+		if isMonitorImageGenerationResultKey(keyName) {
+			if (item.IsArray() || item.IsObject()) && strings.TrimSpace(item.Raw) != "" {
+				if nested := extractMonitorImageGenerationResultFromGJSON(item); strings.TrimSpace(nested) != "" {
+					result = nested
+					return false
+				}
+				return true
+			}
+			if imageValue := strings.TrimSpace(item.String()); imageValue != "" {
+				result = imageValue
+				return false
+			}
+		}
+		if item.IsArray() || item.IsObject() {
+			if nested := extractMonitorImageGenerationResultFromGJSON(item); strings.TrimSpace(nested) != "" {
+				result = nested
+				return false
+			}
+		}
+		return true
+	})
+	return result
+}
+
+func isMonitorImageGenerationResultKey(key string) bool {
+	switch key {
+	case "url", "b64_json", "image_url", "image", "base64":
+		return true
+	default:
+		return false
+	}
+}
+
+func extractMonitorImageGenerationResultFromPartialJSON(respBytes []byte) string {
+	body := string(respBytes)
+	for _, key := range []string{"b64_json", "base64", "url", "image_url", "image"} {
+		if value := extractMonitorStringValueFromPartialJSON(body, key); strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func extractMonitorStringValueFromPartialJSON(body, key string) string {
+	search := `"` + key + `"`
+	offset := 0
+	for {
+		idx := strings.Index(body[offset:], search)
+		if idx < 0 {
+			return ""
+		}
+		idx += offset + len(search)
+		i := skipMonitorJSONWhitespace(body, idx)
+		if i >= len(body) || body[i] != ':' {
+			offset = idx
+			continue
+		}
+		i = skipMonitorJSONWhitespace(body, i+1)
+		if i >= len(body) || body[i] != '"' {
+			offset = idx
+			continue
+		}
+		i++
+		if i >= len(body) || body[i] == '"' {
+			offset = i
+			continue
+		}
+		end := i
+		escaped := false
+		for end < len(body) {
+			ch := body[end]
+			if escaped {
+				escaped = false
+				end++
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				end++
+				continue
+			}
+			if ch == '"' {
+				break
+			}
+			end++
+		}
+		return body[i:end]
+	}
+}
+
+func skipMonitorJSONWhitespace(body string, index int) int {
+	for index < len(body) {
+		switch body[index] {
+		case ' ', '\n', '\r', '\t':
+			index++
+		default:
+			return index
+		}
+	}
+	return index
+}
+
+func formatMonitorImageGenerationNoDataMessage(rawBody string) string {
+	const prefix = "image generation: upstream returned 2xx without image data"
+	summary := summarizeMonitorImageGenerationResponse(rawBody)
+	if summary == "" {
+		return prefix
+	}
+	return prefix + "; " + summary
+}
+
+func summarizeMonitorImageGenerationResponse(rawBody string) string {
+	body := strings.TrimSpace(rawBody)
+	if body == "" {
+		return "response is empty"
+	}
+
+	var parts []string
+	if gjson.Valid(body) {
+		root := gjson.Parse(body)
+		if root.IsObject() {
+			if keys := monitorJSONTopLevelKeys(root, 8); len(keys) > 0 {
+				parts = append(parts, "keys="+strings.Join(keys, ","))
+			}
+			if data := root.Get("data"); data.Exists() && data.IsArray() {
+				parts = append(parts, fmt.Sprintf("data_len=%d", len(data.Array())))
+			}
+		}
+	} else if payloads := monitorSSEDataPayloads([]byte(body)); len(payloads) > 0 {
+		parts = append(parts, fmt.Sprintf("sse_events=%d", len(payloads)))
+		if eventTypes := monitorSSEPayloadTypes(payloads, 5); len(eventTypes) > 0 {
+			parts = append(parts, "event_types="+strings.Join(eventTypes, ","))
+		}
+	}
+
+	if snippet := truncateMonitorErrorBody(body); snippet != "" {
+		parts = append(parts, "body="+snippet)
+	}
+	return sanitizeMonitorErrorMessage(strings.Join(parts, "; "))
+}
+
+func monitorJSONTopLevelKeys(root gjson.Result, limit int) []string {
+	if !root.IsObject() || limit <= 0 {
+		return nil
+	}
+	keys := make([]string, 0)
+	root.ForEach(func(key, _ gjson.Result) bool {
+		keys = append(keys, key.String())
+		return true
+	})
+	sort.Strings(keys)
+	if len(keys) <= limit {
+		return keys
+	}
+	return append(keys[:limit], "...")
+}
+
+func monitorSSEPayloadTypes(payloads []string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	types := make([]string, 0, limit)
+	for _, payload := range payloads {
+		if payload == "[DONE]" || !gjson.Valid(payload) {
+			continue
+		}
+		eventType := strings.TrimSpace(gjson.Get(payload, "type").String())
+		if eventType == "" || seen[eventType] {
+			continue
+		}
+		seen[eventType] = true
+		types = append(types, eventType)
+		if len(types) >= limit {
+			break
+		}
+	}
+	return types
+}
+
 func normalizeCheckOptions(apiMode string, options ...*CheckOptions) *CheckOptions {
 	opts := &CheckOptions{APIMode: apiMode, BodyOverrideMode: MonitorBodyOverrideModeOff}
 	if len(options) == 0 || options[0] == nil {
@@ -285,6 +568,9 @@ func buildMonitorRequestBody(adapter monitorProviderAdapter, provider, apiMode, 
 		if opts == nil || len(opts.BodyOverride) == 0 {
 			return nil, ErrChannelMonitorTemplateBodyRequired
 		}
+		if err := validateImageGenerationRequestBody(provider, apiMode, mode, opts.BodyOverride); err != nil {
+			return nil, err
+		}
 		if err := validateReplaceRequestBody(provider, apiMode, opts.BodyOverride); err != nil {
 			return nil, err
 		}
@@ -301,6 +587,9 @@ func buildMonitorRequestBody(adapter monitorProviderAdapter, provider, apiMode, 
 	}
 	if mode != MonitorBodyOverrideModeMerge || opts == nil || len(opts.BodyOverride) == 0 {
 		return defaultBody, nil
+	}
+	if err := validateImageGenerationRequestBody(provider, apiMode, mode, opts.BodyOverride); err != nil {
+		return nil, err
 	}
 
 	var defaultMap map[string]any
@@ -324,6 +613,7 @@ func buildMonitorRequestBody(adapter monitorProviderAdapter, provider, apiMode, 
 var monitorBodyMergeKeyDenyList = map[string]map[string]bool{
 	MonitorProviderOpenAI + ":" + MonitorAPIModeChatCompletions: {"model": true, "messages": true, "stream": true},
 	MonitorProviderOpenAI + ":" + MonitorAPIModeResponses:       {"model": true, "instructions": true, "input": true, "stream": true},
+	MonitorProviderOpenAI + ":" + MonitorAPIModeImageGeneration: {"model": true, "prompt": true},
 	MonitorProviderAnthropic:                                    {"model": true, "messages": true},
 	MonitorProviderGemini:                                       {"contents": true},
 }
@@ -340,6 +630,10 @@ func validateReplaceRequestBody(provider, apiMode string, body map[string]any) e
 		return nil
 	}
 	switch defaultMonitorAPIMode(apiMode) {
+	case MonitorAPIModeImageGeneration:
+		if strings.TrimSpace(monitorStringFromAny(body["model"])) == "" || strings.TrimSpace(monitorStringFromAny(body["prompt"])) == "" {
+			return ErrChannelMonitorInvalidRequestBody
+		}
 	case MonitorAPIModeResponses:
 		if strings.TrimSpace(monitorStringFromAny(body["instructions"])) == "" || !hasNonEmptyMonitorBodyValue(body["input"]) {
 			return ErrChannelMonitorInvalidRequestBody
@@ -471,7 +765,7 @@ func pingChannelMonitorEndpointOrigin(ctx context.Context, endpoint string) *int
 	return &ms
 }
 
-func postMonitorRawJSON(ctx context.Context, fullURL string, payload []byte, headers map[string]string) ([]byte, int, error) {
+func postMonitorRawJSON(ctx context.Context, client *http.Client, fullURL string, payload []byte, headers map[string]string) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, 0, fmt.Errorf("build request: %w", err)
@@ -481,7 +775,7 @@ func postMonitorRawJSON(ctx context.Context, fullURL string, payload []byte, hea
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := monitorHTTPClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("do request: %w", err)
 	}

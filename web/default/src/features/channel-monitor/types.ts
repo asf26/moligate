@@ -23,8 +23,14 @@ export type ApiResponse<T> = {
   data?: T
 }
 
-export type ChannelMonitorProvider = 'openai' | 'anthropic' | 'gemini'
-export type ChannelMonitorApiMode = 'chat_completions' | 'responses'
+export type ChannelMonitorProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'gemini'
+export type ChannelMonitorApiMode =
+  | 'chat_completions'
+  | 'responses'
+  | 'image_generation'
 export type ChannelMonitorBodyOverrideMode = 'off' | 'merge' | 'replace'
 export type ChannelMonitorStatus =
   | 'operational'

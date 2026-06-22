@@ -29,6 +29,8 @@ type channelMonitorReloadFunc func(id int64) (*model.ChannelMonitor, error)
 type channelMonitorTask struct {
 	id       int64
 	name     string
+	provider string
+	apiMode  string
 	interval time.Duration
 	jitter   time.Duration
 	cancel   context.CancelFunc
@@ -128,6 +130,8 @@ func (r *channelMonitorRunner) schedule(m *model.ChannelMonitor, initialDelay ti
 	task := &channelMonitorTask{
 		id:       m.Id,
 		name:     m.Name,
+		provider: m.Provider,
+		apiMode:  m.APIMode,
 		interval: channelMonitorInterval(m),
 		jitter:   channelMonitorJitter(m),
 		cancel:   cancel,
@@ -273,7 +277,12 @@ func (r *channelMonitorRunner) runOne(parent context.Context, task *channelMonit
 	if parent.Err() != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(parent, monitorRequestTimeout+monitorPingTimeout+monitorRunOneBuffer)
+
+	timeout := monitorRequestTimeout + monitorPingTimeout + monitorRunOneBuffer
+	if isMonitorOpenAIImageGeneration(task.provider, task.apiMode) {
+		timeout = monitorImageRequestTimeout + monitorPingTimeout + monitorRunOneBuffer
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	checkFunc := r.checkFunc

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +78,54 @@ func TestValidateMonitorIntervalAndJitter(t *testing.T) {
 	require.ErrorIs(t, validateMonitorJitter(46, 60), ErrChannelMonitorInvalidJitter)
 }
 
+func TestValidateOpenAIImageGenerationRequestBodySize(t *testing.T) {
+	require.NoError(t, validateMonitorAPIMode(MonitorProviderOpenAI, MonitorAPIModeImageGeneration))
+	require.ErrorIs(t, validateMonitorAPIMode(MonitorProviderAnthropic, MonitorAPIModeImageGeneration), ErrChannelMonitorInvalidAPIMode)
+	require.ErrorIs(t, validateMonitorAPIMode(MonitorProviderGemini, MonitorAPIModeImageGeneration), ErrChannelMonitorInvalidAPIMode)
+
+	for _, size := range []string{monitorImage2Size1K, monitorImage2Size2K, monitorImage2Size4K} {
+		t.Run(fmt.Sprintf("merge accepts %s", size), func(t *testing.T) {
+			err := validateBodyModeForProtocol(MonitorProviderOpenAI, MonitorAPIModeImageGeneration, MonitorBodyOverrideModeMerge, map[string]any{"size": size})
+			require.NoError(t, err)
+		})
+	}
+
+	for _, size := range []string{"1K", "2K", "4K", "4096x4096"} {
+		t.Run(fmt.Sprintf("merge rejects %s", size), func(t *testing.T) {
+			err := validateBodyModeForProtocol(MonitorProviderOpenAI, MonitorAPIModeImageGeneration, MonitorBodyOverrideModeMerge, map[string]any{"size": size})
+			require.ErrorIs(t, err, ErrChannelMonitorInvalidRequestBody)
+		})
+	}
+
+	err := validateBodyModeForProtocol(MonitorProviderOpenAI, MonitorAPIModeImageGeneration, MonitorBodyOverrideModeReplace, map[string]any{
+		"model":  "gpt-image-2",
+		"prompt": "Draw a small health check image.",
+		"n":      1,
+		"size":   monitorImage2Size1K,
+	})
+	require.NoError(t, err)
+
+	err = validateBodyModeForProtocol(MonitorProviderOpenAI, MonitorAPIModeImageGeneration, MonitorBodyOverrideModeReplace, map[string]any{
+		"model": "gpt-image-2",
+		"size":  monitorImage2Size1K,
+	})
+	require.ErrorIs(t, err, ErrChannelMonitorInvalidRequestBody)
+}
+
+func TestChannelMonitorImageGenerationHTTPClientTimeout(t *testing.T) {
+	require.Equal(t, 3*time.Minute, monitorImageRequestTimeout)
+	require.Equal(t, 3*time.Minute, monitorImageResponseHeaderTimeout)
+	require.Equal(t, 3*time.Minute, monitorImageHTTPClient.Timeout)
+	require.Equal(t, 2*time.Minute, monitorImageDegradedThreshold)
+	require.Equal(t, 2*time.Minute, monitorDegradedThresholdFor(MonitorProviderOpenAI, MonitorAPIModeImageGeneration))
+	require.Equal(t, monitorDegradedThreshold, monitorDegradedThresholdFor(MonitorProviderOpenAI, MonitorAPIModeChatCompletions))
+	require.Equal(t, monitorDegradedThreshold, monitorDegradedThresholdFor(MonitorProviderAnthropic, MonitorAPIModeChatCompletions))
+
+	transport, ok := monitorImageHTTPClient.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.Equal(t, 3*time.Minute, transport.ResponseHeaderTimeout)
+}
+
 func TestChannelMonitorCheckerProviders(t *testing.T) {
 	server := newChannelMonitorCheckerServer(t, func(r *http.Request, answer string) (int, string) {
 		switch r.URL.Path {
@@ -87,6 +137,13 @@ func TestChannelMonitorCheckerProviders(t *testing.T) {
 			return http.StatusOK, fmt.Sprintf(`{"content":[{"type":"text","text":"%s"}]}`, answer)
 		case "/v1beta/models/gemini-1.5-flash:generateContent":
 			return http.StatusOK, fmt.Sprintf(`{"candidates":[{"content":{"parts":[{"text":"%s"}]}}]}`, answer)
+		case providerOpenAIImagePath:
+			var body map[string]any
+			require.NoError(t, common.Unmarshal(readRequestBody(t, r), &body))
+			require.Equal(t, "gpt-image-2", body["model"])
+			require.Equal(t, monitorImage2Size1K, body["size"])
+			require.Equal(t, float64(1), body["n"])
+			return http.StatusOK, `{"data":[{"url":"https://example.com/monitor.png"}]}`
 		default:
 			return http.StatusNotFound, `{"error":"not found"}`
 		}
@@ -100,6 +157,7 @@ func TestChannelMonitorCheckerProviders(t *testing.T) {
 	}{
 		{name: "openai chat completions", provider: MonitorProviderOpenAI, apiMode: MonitorAPIModeChatCompletions, model: "gpt-4o-mini"},
 		{name: "openai responses", provider: MonitorProviderOpenAI, apiMode: MonitorAPIModeResponses, model: "gpt-4.1"},
+		{name: "openai image generation", provider: MonitorProviderOpenAI, apiMode: MonitorAPIModeImageGeneration, model: "gpt-image-2"},
 		{name: "anthropic", provider: MonitorProviderAnthropic, apiMode: MonitorAPIModeChatCompletions, model: "claude-3-5-sonnet"},
 		{name: "gemini", provider: MonitorProviderGemini, apiMode: MonitorAPIModeChatCompletions, model: "gemini-1.5-flash"},
 	}
@@ -107,7 +165,7 @@ func TestChannelMonitorCheckerProviders(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := runChannelMonitorCheckForModel(context.Background(), tt.provider, tt.apiMode, server.URL, "test-key", tt.model)
-			require.Equal(t, MonitorStatusOperational, result.Status)
+			require.Equal(t, MonitorStatusOperational, result.Status, result.Message)
 			require.Empty(t, result.Message)
 			require.NotNil(t, result.LatencyMs)
 		})
@@ -141,6 +199,93 @@ func TestChannelMonitorCheckerFailureModes(t *testing.T) {
 		require.Equal(t, MonitorStatusFailed, result.Status)
 		require.Contains(t, result.Message, "challenge mismatch")
 	})
+
+	t.Run("openai image generation missing image data is failed", func(t *testing.T) {
+		server := newChannelMonitorCheckerServer(t, func(r *http.Request, answer string) (int, string) {
+			return http.StatusOK, `{"data":[]}`
+		})
+		result := runChannelMonitorCheckForModel(context.Background(), MonitorProviderOpenAI, MonitorAPIModeImageGeneration, server.URL, "test-key", "gpt-image-2")
+		require.Equal(t, MonitorStatusFailed, result.Status)
+		require.Contains(t, result.Message, "without image data")
+		require.Contains(t, result.Message, "keys=data")
+		require.Contains(t, result.Message, "data_len=0")
+	})
+
+	imageGenerationSuccessBodies := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "url in data",
+			body: `{"data":[{"url":"https://example.com/a.png"}]}`,
+		},
+		{
+			name: "b64 json in data",
+			body: `{"data":[{"b64_json":"abc"}]}`,
+		},
+		{
+			name: "completed sse event",
+			body: strings.Join([]string{
+				`event: image_generation.completed`,
+				`data: {"type":"image_generation.completed","b64_json":"abc"}`,
+				``,
+				`data: [DONE]`,
+				``,
+			}, "\n"),
+		},
+		{
+			name: "nested image url",
+			body: `{"output":[{"content":[{"image_url":{"url":"https://example.com/nested.png"}}]}]}`,
+		},
+		{
+			name: "nested base64",
+			body: `{"result":{"image":{"base64":"abc"}}}`,
+		},
+		{
+			name: "truncated b64 json",
+			body: `{"data":[{"url":"","b64_json":"` + strings.Repeat("a", monitorResponseMaxBytes),
+		},
+	}
+	for _, tt := range imageGenerationSuccessBodies {
+		t.Run("openai image generation accepts "+tt.name, func(t *testing.T) {
+			server := newChannelMonitorCheckerServer(t, func(r *http.Request, answer string) (int, string) {
+				return http.StatusOK, tt.body
+			})
+			result := runChannelMonitorCheckForModel(context.Background(), MonitorProviderOpenAI, MonitorAPIModeImageGeneration, server.URL, "test-key", "gpt-image-2")
+			require.Equal(t, MonitorStatusOperational, result.Status, result.Message)
+			require.Empty(t, result.Message)
+		})
+	}
+
+	t.Run("openai image generation metadata without image data is failed", func(t *testing.T) {
+		server := newChannelMonitorCheckerServer(t, func(r *http.Request, answer string) (int, string) {
+			return http.StatusOK, `{"id":"img_123","created":1710000000,"data":[{"revised_prompt":"draw a cat"}],"usage":{"input_tokens":12,"output_tokens":734}}`
+		})
+		result := runChannelMonitorCheckForModel(context.Background(), MonitorProviderOpenAI, MonitorAPIModeImageGeneration, server.URL, "test-key", "gpt-image-2")
+		require.Equal(t, MonitorStatusFailed, result.Status)
+		require.Contains(t, result.Message, "without image data")
+		require.Contains(t, result.Message, "keys=created,data,id,usage")
+		require.Contains(t, result.Message, "data_len=1")
+	})
+
+	for _, size := range []string{monitorImage2Size2K, monitorImage2Size4K} {
+		t.Run(fmt.Sprintf("openai image generation accepts %s size override", size), func(t *testing.T) {
+			server := newChannelMonitorCheckerServer(t, func(r *http.Request, answer string) (int, string) {
+				var body map[string]any
+				require.NoError(t, common.Unmarshal(readRequestBody(t, r), &body))
+				require.Equal(t, "gpt-image-2", body["model"])
+				require.Equal(t, size, body["size"])
+				require.NotEmpty(t, body["prompt"])
+				return http.StatusOK, `{"data":[{"b64_json":"abc"}]}`
+			})
+			result := runChannelMonitorCheckForModel(context.Background(), MonitorProviderOpenAI, MonitorAPIModeImageGeneration, server.URL, "test-key", "gpt-image-2", &CheckOptions{
+				BodyOverrideMode: MonitorBodyOverrideModeMerge,
+				BodyOverride:     map[string]any{"size": size},
+			})
+			require.Equal(t, MonitorStatusOperational, result.Status, result.Message)
+			require.Empty(t, result.Message)
+		})
+	}
 
 	t.Run("slow response is degraded", func(t *testing.T) {
 		server := newChannelMonitorCheckerServer(t, func(r *http.Request, answer string) (int, string) {
@@ -422,6 +567,7 @@ func newChannelMonitorCheckerServer(t *testing.T, responder channelMonitorTestRe
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
+		r.Body = io.NopCloser(bytes.NewReader(body))
 		answer := answerMonitorChallengeFromBody(t, body)
 		status, responseBody := responder(r, answer)
 		w.Header().Set("Content-Type", "application/json")
@@ -430,9 +576,12 @@ func newChannelMonitorCheckerServer(t *testing.T, responder channelMonitorTestRe
 	}))
 
 	oldHTTPClient := monitorHTTPClient
+	oldImageHTTPClient := monitorImageHTTPClient
 	monitorHTTPClient = server.Client()
+	monitorImageHTTPClient = server.Client()
 	t.Cleanup(func() {
 		monitorHTTPClient = oldHTTPClient
+		monitorImageHTTPClient = oldImageHTTPClient
 		server.Close()
 	})
 
@@ -444,7 +593,9 @@ var monitorChallengeBodyRegex = regexp.MustCompile(`Q: (\d+) ([+-]) (\d+) = \?`)
 func answerMonitorChallengeFromBody(t *testing.T, body []byte) string {
 	t.Helper()
 	matches := monitorChallengeBodyRegex.FindAllSubmatch(body, -1)
-	require.NotEmpty(t, matches)
+	if len(matches) == 0 {
+		return ""
+	}
 	last := matches[len(matches)-1]
 	left, err := strconv.Atoi(string(last[1]))
 	require.NoError(t, err)
@@ -459,6 +610,14 @@ func answerMonitorChallengeFromBody(t *testing.T, body []byte) string {
 		t.Fatalf("unexpected operator %q", string(last[2]))
 		return ""
 	}
+}
+
+func readRequestBody(t *testing.T, r *http.Request) []byte {
+	t.Helper()
+	body, err := io.ReadAll(r.Body)
+	require.NoError(t, err)
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return body
 }
 
 func setupChannelMonitorServiceTestDB(t *testing.T) {

@@ -3862,6 +3862,7 @@
     "Response": "响应",
     "Response Time": "响应时间",
     "Responses": "响应",
+    "Responses and image generation modes are available for OpenAI monitors only.": "Responses 和图片生成模式仅适用于 OpenAI 监控。",
     "Responses API Version": "响应 API 版本",
     "Responses mode is available for OpenAI monitors only.": "Responses 模式仅适用于 OpenAI 监控。",
     "Restore defaults": "恢复默认",
