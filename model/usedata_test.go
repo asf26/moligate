@@ -35,8 +35,26 @@ func TestQuotaDataTokenAwareAggregation(t *testing.T) {
 		TokenUsed: 5,
 	}).Error)
 
-	LogQuotaData(userID, "alice", tokenAID, "alpha", "gpt-test", 100, timestamp, 10)
-	LogQuotaData(userID, "alice", tokenBID, "beta", "gpt-test", 200, timestamp+10, 20)
+	LogQuotaData(QuotaDataLogParams{
+		UserID:    userID,
+		Username:  "alice",
+		TokenID:   tokenAID,
+		TokenName: "alpha",
+		ModelName: "gpt-test",
+		Quota:     100,
+		CreatedAt: timestamp,
+		TokenUsed: 10,
+	})
+	LogQuotaData(QuotaDataLogParams{
+		UserID:    userID,
+		Username:  "alice",
+		TokenID:   tokenBID,
+		TokenName: "beta",
+		ModelName: "gpt-test",
+		Quota:     200,
+		CreatedAt: timestamp + 10,
+		TokenUsed: 20,
+	})
 	SaveQuotaDataCache()
 
 	var rows []QuotaData
@@ -81,9 +99,27 @@ func TestQuotaDataTokenNameUpdateDoesNotChangeIdentity(t *testing.T) {
 	)
 	bucket := timestamp - (timestamp % 3600)
 
-	LogQuotaData(userID, "alice", tokenID, "old-name", "gpt-test", 100, timestamp, 10)
+	LogQuotaData(QuotaDataLogParams{
+		UserID:    userID,
+		Username:  "alice",
+		TokenID:   tokenID,
+		TokenName: "old-name",
+		ModelName: "gpt-test",
+		Quota:     100,
+		CreatedAt: timestamp,
+		TokenUsed: 10,
+	})
 	SaveQuotaDataCache()
-	LogQuotaData(userID, "alice", tokenID, "new-name", "gpt-test", 25, timestamp+120, 3)
+	LogQuotaData(QuotaDataLogParams{
+		UserID:    userID,
+		Username:  "alice",
+		TokenID:   tokenID,
+		TokenName: "new-name",
+		ModelName: "gpt-test",
+		Quota:     25,
+		CreatedAt: timestamp + 120,
+		TokenUsed: 3,
+	})
 	SaveQuotaDataCache()
 
 	var rows []QuotaData
