@@ -802,6 +802,7 @@ function ChannelMonitorsTable({
       {
         accessorKey: 'name',
         header: () => t('Name'),
+        meta: { label: t('Name'), mobileTitle: true },
         cell: ({ row }) => (
           <div className='flex min-w-0 flex-col gap-1'>
             <div className='flex min-w-0 items-center gap-2'>
@@ -827,6 +828,7 @@ function ChannelMonitorsTable({
       {
         accessorKey: 'provider',
         header: () => t('Provider'),
+        meta: { label: t('Provider'), mobileBadge: true },
         cell: ({ row }) => (
           <StatusBadge
             label={getProviderLabel(row.original.provider)}
@@ -839,6 +841,7 @@ function ChannelMonitorsTable({
       {
         accessorKey: 'primary_model',
         header: () => t('Primary Model'),
+        meta: { label: t('Primary Model') },
         cell: ({ row }) => (
           <div className='flex min-w-0 flex-col gap-1'>
             <span className='truncate text-sm'>
@@ -858,6 +861,7 @@ function ChannelMonitorsTable({
       {
         id: 'availability',
         header: () => t('7d Availability'),
+        meta: { label: t('7d Availability') },
         cell: ({ row }) => (
           <span className='tabular-nums'>
             {formatAvailability(row.original.availability_7d)}
@@ -868,8 +872,9 @@ function ChannelMonitorsTable({
       {
         id: 'latency',
         header: () => t('Latency'),
+        meta: { label: t('Latency') },
         cell: ({ row }) => (
-          <div className='flex items-center gap-2'>
+          <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
             {statusBadge(
               row.original.primary_status,
               t(getMonitorStatusLabel(row.original.primary_status))
@@ -884,6 +889,7 @@ function ChannelMonitorsTable({
       {
         id: 'interval',
         header: () => t('Interval / Jitter'),
+        meta: { label: t('Interval / Jitter') },
         cell: ({ row }) => (
           <span className='tabular-nums'>
             {row.original.interval_seconds}s / {row.original.jitter_seconds}s
@@ -894,6 +900,7 @@ function ChannelMonitorsTable({
       {
         accessorKey: 'enabled',
         header: () => t('Monitor status'),
+        meta: { label: t('Monitor status') },
         cell: ({ row }) => {
           const monitor = row.original
           const pendingEnabled =
@@ -924,6 +931,7 @@ function ChannelMonitorsTable({
       {
         accessorKey: 'user_visible',
         header: () => t('Visibility'),
+        meta: { label: t('Visibility') },
         cell: ({ row }) =>
           row.original.user_visible
             ? statusBadge('operational', t('Users'))
@@ -933,8 +941,9 @@ function ChannelMonitorsTable({
       {
         accessorKey: 'last_checked_at',
         header: () => t('Latest check time'),
+        meta: { label: t('Latest check time') },
         cell: ({ row }) => (
-          <span className='text-muted-foreground whitespace-nowrap'>
+          <span className='text-muted-foreground tabular-nums'>
             {formatMonitorTime(row.original.last_checked_at)}
           </span>
         ),

@@ -71,14 +71,14 @@ function CompactContent<TData>({ row }: { row: Row<TData> }) {
   return (
     <>
       {/* Row 1: Title + Badge */}
-      <div className='flex items-center justify-between gap-2'>
+      <div className='flex items-start justify-between gap-2'>
         {titleCell && (
           <div className='min-w-0 flex-1 text-sm font-medium [&_[data-slot=status-badge]]:max-w-full [&_[data-slot=status-badge]]:whitespace-normal'>
             {renderCellContent(titleCell)}
           </div>
         )}
         {badgeCell && (
-          <div className='flex-none [&_[data-slot=status-badge]]:max-w-none'>
+          <div className='flex shrink-0 justify-end pt-0.5 [&_[data-slot=status-badge]]:max-w-none'>
             {renderCellContent(badgeCell)}
           </div>
         )}
@@ -96,7 +96,7 @@ function CompactContent<TData>({ row }: { row: Row<TData> }) {
                     {label}
                   </div>
                 )}
-                <div className='min-w-0 overflow-hidden text-xs [&_[data-slot=provider-badge]]:ml-0 [&_[data-slot=status-badge]]:ml-0'>
+                <div className='min-w-0 overflow-hidden text-xs [&_[data-slot=provider-badge]]:ml-0 [&_[data-slot=status-badge]]:ml-0 [&_[data-slot=status-badge]]:whitespace-normal'>
                   <StatusBadgeTypeContext.Provider value='text'>
                     {renderCellContent(cell) ?? '-'}
                   </StatusBadgeTypeContext.Provider>
