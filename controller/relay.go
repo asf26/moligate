@@ -350,7 +350,56 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
 		return false
 	}
+	if code == http.StatusBadRequest && isRetryableBadRequestError(openaiErr) {
+		return true
+	}
 	return operation_setting.ShouldRetryByStatusCode(code)
+}
+
+func isRetryableBadRequestError(openaiErr *types.NewAPIError) bool {
+	if openaiErr == nil {
+		return false
+	}
+	errorCode := strings.ToLower(string(openaiErr.GetErrorCode()))
+	errorMessage := strings.ToLower(openaiErr.Error())
+	retryableHints := []string{
+		"capacity",
+		"overloaded",
+		"overload",
+		"temporarily unavailable",
+		"temporary unavailable",
+		"temporarily unable",
+		"temporary failure",
+		"try again",
+		"please retry",
+		"rate limit",
+		"rate_limit",
+		"server error",
+		"server_error",
+		"service unavailable",
+		"service_unavailable",
+		"upstream error",
+		"upstream_error",
+		"too many requests",
+		"resource exhausted",
+		"resource_exhausted",
+		"insufficient capacity",
+		"no available",
+		"暂无可用",
+		"暂时不可用",
+		"稍后再试",
+		"算力不足",
+		"负载已饱和",
+		"服务繁忙",
+		"服务器繁忙",
+		"资源不足",
+	}
+	for _, hint := range retryableHints {
+		if strings.Contains(errorCode, hint) || strings.Contains(errorMessage, hint) {
+			return true
+		}
+	}
+	return false
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
