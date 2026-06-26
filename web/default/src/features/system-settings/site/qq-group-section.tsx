@@ -1,3 +1,6 @@
+import { zodResolver } from '@hookform/resolvers/zod'
+import type { Resolver } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,10 +20,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import * as z from 'zod'
-import type { Resolver } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useTranslation } from 'react-i18next'
-import { useSystemConfigStore } from '@/stores/system-config-store'
+
 import {
   Form,
   FormControl,
@@ -32,6 +32,8 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { useSystemConfigStore } from '@/stores/system-config-store'
+
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
 import { SettingsPageFormActions } from '../components/settings-page-context'
@@ -44,6 +46,9 @@ type QQGroupFormValues = {
   QQGroupNumber: string
   QQGroupQRCodeURLLight: string
   QQGroupQRCodeURLDark: string
+  WeChatGroupEnabled: boolean
+  WeChatGroupQRCodeURLLight: string
+  WeChatGroupQRCodeURLDark: string
 }
 
 type QQGroupSectionProps = {
@@ -56,7 +61,11 @@ function normalizeValue(value: unknown): string {
 }
 
 const optionalImageUrl = (message: string) =>
-  z.string().url({ error: () => message }).optional().or(z.literal(''))
+  z
+    .string()
+    .url({ error: () => message })
+    .optional()
+    .or(z.literal(''))
 
 export function QQGroupSection({ defaultValues }: QQGroupSectionProps) {
   const { t } = useTranslation()
@@ -68,6 +77,13 @@ export function QQGroupSection({ defaultValues }: QQGroupSectionProps) {
     QQGroupNumber: normalizeValue(defaultValues.QQGroupNumber),
     QQGroupQRCodeURLLight: normalizeValue(defaultValues.QQGroupQRCodeURLLight),
     QQGroupQRCodeURLDark: normalizeValue(defaultValues.QQGroupQRCodeURLDark),
+    WeChatGroupEnabled: defaultValues.WeChatGroupEnabled === true,
+    WeChatGroupQRCodeURLLight: normalizeValue(
+      defaultValues.WeChatGroupQRCodeURLLight
+    ),
+    WeChatGroupQRCodeURLDark: normalizeValue(
+      defaultValues.WeChatGroupQRCodeURLDark
+    ),
   }
 
   const qqGroupSchemaWithI18n = z.object({
@@ -77,6 +93,13 @@ export function QQGroupSection({ defaultValues }: QQGroupSectionProps) {
       t('Please enter a valid image URL')
     ),
     QQGroupQRCodeURLDark: optionalImageUrl(t('Please enter a valid image URL')),
+    WeChatGroupEnabled: z.boolean(),
+    WeChatGroupQRCodeURLLight: optionalImageUrl(
+      t('Please enter a valid image URL')
+    ),
+    WeChatGroupQRCodeURLDark: optionalImageUrl(
+      t('Please enter a valid image URL')
+    ),
   })
 
   const { form, handleSubmit, handleReset, isDirty, isSubmitting } =
@@ -99,10 +122,15 @@ export function QQGroupSection({ defaultValues }: QQGroupSectionProps) {
           qqGroup: {
             enabled: data.QQGroupEnabled,
             number: normalizeValue(data.QQGroupNumber).trim(),
-            qrcodeUrlLight: normalizeValue(
-              data.QQGroupQRCodeURLLight
-            ).trim(),
+            qrcodeUrlLight: normalizeValue(data.QQGroupQRCodeURLLight).trim(),
             qrcodeUrlDark: normalizeValue(data.QQGroupQRCodeURLDark).trim(),
+          },
+          wechatGroup: {
+            enabled: data.WeChatGroupEnabled,
+            qrcodeUrlLight: normalizeValue(
+              data.WeChatGroupQRCodeURLLight
+            ).trim(),
+            qrcodeUrlDark: normalizeValue(data.WeChatGroupQRCodeURLDark).trim(),
           },
         })
       },
@@ -159,7 +187,10 @@ export function QQGroupSection({ defaultValues }: QQGroupSectionProps) {
                 <FormItem>
                   <FormLabel>{t('QQ group number')}</FormLabel>
                   <FormControl>
-                    <Input placeholder={t('Enter QQ group number')} {...field} />
+                    <Input
+                      placeholder={t('Enter QQ group number')}
+                      {...field}
+                    />
                   </FormControl>
                   <FormDescription>
                     {t('Displayed in the QR code dialog and used for copying.')}
@@ -198,6 +229,80 @@ export function QQGroupSection({ defaultValues }: QQGroupSectionProps) {
                   <FormControl>
                     <Input
                       placeholder={t('https://example.com/qq-group-dark.png')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Shown when the console is using the dark theme.')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='WeChatGroupEnabled'
+              render={({ field }) => (
+                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
+                  <div className='space-y-0.5'>
+                    <FormLabel className='text-base'>
+                      {t('Enable WeChat group entry')}
+                    </FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Show a floating WeChat group QR code under the QQ group entry.'
+                      )}
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={updateOption.isPending}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='WeChatGroupQRCodeURLLight'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('Light theme WeChat group QR code URL')}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={t(
+                        'https://example.com/wechat-group-light.png'
+                      )}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Shown when the console is using the light theme.')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='WeChatGroupQRCodeURLDark'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('Dark theme WeChat group QR code URL')}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={t(
+                        'https://example.com/wechat-group-dark.png'
+                      )}
                       {...field}
                     />
                   </FormControl>

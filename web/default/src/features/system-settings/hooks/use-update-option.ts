@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
+
 import { updateSystemOption } from '../api'
 import type { UpdateOptionRequest } from '../types'
 
@@ -41,6 +42,9 @@ const STATUS_RELATED_KEYS = [
   'QQGroupNumber',
   'QQGroupQRCodeURLLight',
   'QQGroupQRCodeURLDark',
+  'WeChatGroupEnabled',
+  'WeChatGroupQRCodeURLLight',
+  'WeChatGroupQRCodeURLDark',
 ]
 
 const NOTICE_RELATED_KEYS = ['Notice', 'NoticeForcePopup']

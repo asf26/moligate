@@ -17,6 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useCallback } from 'react'
+
+import { DEFAULT_SYSTEM_NAME, DEFAULT_LOGO } from '@/lib/constants'
+import { applyFaviconToDom } from '@/lib/dom-utils'
 import {
   useSystemConfigStore,
   type CurrencyConfig,
@@ -24,9 +27,8 @@ import {
   type SystemConfig,
   DEFAULT_CURRENCY_CONFIG,
   DEFAULT_QQ_GROUP_CONFIG,
+  DEFAULT_WECHAT_GROUP_CONFIG,
 } from '@/stores/system-config-store'
-import { DEFAULT_SYSTEM_NAME, DEFAULT_LOGO } from '@/lib/constants'
-import { applyFaviconToDom } from '@/lib/dom-utils'
 
 interface UseSystemConfigOptions {
   /** Automatically fetch config from backend (use only in root component) */
@@ -51,6 +53,9 @@ interface StatusApiResponse {
     qq_group_number?: string
     qq_group_qrcode_url_light?: string
     qq_group_qrcode_url_dark?: string
+    wechat_group_enabled?: boolean
+    wechat_group_qrcode_url_light?: string
+    wechat_group_qrcode_url_dark?: string
   }
 }
 
@@ -112,6 +117,15 @@ export function mapStatusDataToConfig(
       qrcodeUrlDark:
         data.qq_group_qrcode_url_dark?.trim() ??
         DEFAULT_QQ_GROUP_CONFIG.qrcodeUrlDark,
+    },
+    wechatGroup: {
+      enabled: data.wechat_group_enabled ?? DEFAULT_WECHAT_GROUP_CONFIG.enabled,
+      qrcodeUrlLight:
+        data.wechat_group_qrcode_url_light?.trim() ??
+        DEFAULT_WECHAT_GROUP_CONFIG.qrcodeUrlLight,
+      qrcodeUrlDark:
+        data.wechat_group_qrcode_url_dark?.trim() ??
+        DEFAULT_WECHAT_GROUP_CONFIG.qrcodeUrlDark,
     },
   }
 }

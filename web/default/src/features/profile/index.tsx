@@ -1,3 +1,10 @@
+import { Main } from '@/components/layout'
+import {
+  CardStaggerContainer,
+  CardStaggerItem,
+} from '@/components/page-transition'
+import { useStatus } from '@/hooks/use-status'
+import { ROLE } from '@/lib/roles'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,14 +24,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useAuthStore } from '@/stores/auth-store'
-import { useStatus } from '@/hooks/use-status'
-import { Main } from '@/components/layout'
-import { ROLE } from '@/lib/roles'
-import {
-  CardStaggerContainer,
-  CardStaggerItem,
-} from '@/components/page-transition'
+
 import { CheckinCalendarCard } from './components/checkin-calendar-card'
+import { ContactSupportCard } from './components/contact-support-card'
 import { LanguagePreferencesCard } from './components/language-preferences-card'
 import { ProfileHeader } from './components/profile-header'
 import { ProfileSecurityCard } from './components/profile-security-card'
@@ -64,6 +66,14 @@ export function Profile() {
               }
             >
               <div className='space-y-4 sm:space-y-6'>
+                <div className='grid gap-4 sm:gap-5 lg:grid-cols-[minmax(320px,0.56fr)_minmax(0,1fr)] lg:items-stretch'>
+                  <ContactSupportCard />
+                  <ProfileSecurityCard
+                    profile={profile}
+                    loading={loading}
+                    compact
+                  />
+                </div>
                 <ProfileSettingsCard
                   profile={profile}
                   loading={loading}
@@ -73,7 +83,6 @@ export function Profile() {
                   profile={profile}
                   onProfileUpdate={refreshProfile}
                 />
-                <ProfileSecurityCard profile={profile} loading={loading} />
               </div>
 
               {showSideRail && (

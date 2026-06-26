@@ -131,6 +131,9 @@ func InitOptionMap() {
 	common.OptionMap["QQGroupNumber"] = common.QQGroupNumber
 	common.OptionMap["QQGroupQRCodeURLLight"] = common.QQGroupQRCodeURLLight
 	common.OptionMap["QQGroupQRCodeURLDark"] = common.QQGroupQRCodeURLDark
+	common.OptionMap["WeChatGroupEnabled"] = strconv.FormatBool(common.WeChatGroupEnabled)
+	common.OptionMap["WeChatGroupQRCodeURLLight"] = common.WeChatGroupQRCodeURLLight
+	common.OptionMap["WeChatGroupQRCodeURLDark"] = common.WeChatGroupQRCodeURLDark
 	common.OptionMap["TurnstileSiteKey"] = ""
 	common.OptionMap["TurnstileSecretKey"] = ""
 	common.OptionMap["QuotaForNewUser"] = strconv.Itoa(common.QuotaForNewUser)
@@ -499,6 +502,12 @@ func updateOptionMap(key string, value string) (err error) {
 		common.QQGroupQRCodeURLLight = value
 	case "QQGroupQRCodeURLDark":
 		common.QQGroupQRCodeURLDark = value
+	case "WeChatGroupEnabled":
+		common.WeChatGroupEnabled = value == "true"
+	case "WeChatGroupQRCodeURLLight":
+		common.WeChatGroupQRCodeURLLight = value
+	case "WeChatGroupQRCodeURLDark":
+		common.WeChatGroupQRCodeURLDark = value
 	case "TelegramBotToken":
 		common.TelegramBotToken = value
 	case "TelegramBotName":

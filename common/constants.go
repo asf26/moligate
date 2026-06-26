@@ -139,6 +139,9 @@ var QQGroupEnabled = false
 var QQGroupNumber = ""
 var QQGroupQRCodeURLLight = ""
 var QQGroupQRCodeURLDark = ""
+var WeChatGroupEnabled = false
+var WeChatGroupQRCodeURLLight = ""
+var WeChatGroupQRCodeURLDark = ""
 
 var TurnstileSiteKey = ""
 var TurnstileSecretKey = ""
