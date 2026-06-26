@@ -18,10 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Shield, Key, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useDialogs } from '@/hooks/use-dialog'
+
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
+import { useDialogs } from '@/hooks/use-dialog'
+import { cn } from '@/lib/utils'
+
 import type { UserProfile } from '../types'
 import { AccessTokenDialog } from './dialogs/access-token-dialog'
 import { ChangePasswordDialog } from './dialogs/change-password-dialog'
@@ -34,6 +37,7 @@ import { DeleteAccountDialog } from './dialogs/delete-account-dialog'
 interface ProfileSecurityCardProps {
   profile: UserProfile | null
   loading: boolean
+  compact?: boolean
 }
 
 type DialogKey = 'password' | 'token' | 'delete'
@@ -41,6 +45,7 @@ type DialogKey = 'password' | 'token' | 'delete'
 export function ProfileSecurityCard({
   profile,
   loading,
+  compact = false,
 }: ProfileSecurityCardProps) {
   const { t } = useTranslation()
   const dialogs = useDialogs<DialogKey>()
@@ -93,30 +98,45 @@ export function ProfileSecurityCard({
         title={t('Security')}
         description={t('Manage your security settings and account access')}
         icon={<Shield className='h-4 w-4' />}
+        className='h-full'
         disableHoverEffect
       >
-        <div className='grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-3'>
+        <div
+          className={cn(
+            compact
+              ? 'flex flex-col gap-2.5'
+              : 'grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-3'
+          )}
+        >
           {securityActions.map((item) => (
             <button
               key={item.title}
               type='button'
               onClick={item.action}
-              className={`flex items-center gap-3 rounded-lg border p-3 text-left md:flex-col md:gap-2 md:p-4 md:text-center ${
-                item.variant === 'destructive' ? 'border-destructive/30' : ''
-              }`}
+              className={cn(
+                'hover:bg-muted/50 flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                !compact && 'md:flex-col md:gap-2 md:p-4 md:text-center',
+                item.variant === 'destructive' && 'border-destructive/30'
+              )}
             >
               <div
-                className={`rounded-md p-2 ${
+                className={cn(
+                  'shrink-0 rounded-md p-2',
                   item.variant === 'destructive'
                     ? 'bg-destructive/10 text-destructive'
                     : 'bg-muted'
-                }`}
+                )}
               >
                 <item.icon className='h-5 w-5' />
               </div>
-              <div className='min-w-0 md:contents'>
+              <div className={cn('min-w-0', !compact && 'md:contents')}>
                 <p className='text-sm font-medium'>{item.title}</p>
-                <p className='text-muted-foreground line-clamp-1 text-xs md:line-clamp-none'>
+                <p
+                  className={cn(
+                    'text-muted-foreground text-xs',
+                    compact ? 'line-clamp-2' : 'line-clamp-1 md:line-clamp-none'
+                  )}
+                >
                   {item.description}
                 </p>
               </div>

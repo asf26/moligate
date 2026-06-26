@@ -66,6 +66,9 @@ export type SiteSettings = {
   QQGroupNumber: string
   QQGroupQRCodeURLLight: string
   QQGroupQRCodeURLDark: string
+  WeChatGroupEnabled: boolean
+  WeChatGroupQRCodeURLLight: string
+  WeChatGroupQRCodeURLDark: string
   Footer: string
   About: string
   HomePageContent: string

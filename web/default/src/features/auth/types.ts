@@ -114,6 +114,9 @@ export interface SystemStatus {
     qq_group_number?: string
     qq_group_qrcode_url_light?: string
     qq_group_qrcode_url_dark?: string
+    wechat_group_enabled?: boolean
+    wechat_group_qrcode_url_light?: string
+    wechat_group_qrcode_url_dark?: string
     turnstile_check?: boolean
     turnstile_site_key?: string
     email_verification?: boolean
@@ -163,6 +166,9 @@ export interface SystemStatus {
   qq_group_number?: string
   qq_group_qrcode_url_light?: string
   qq_group_qrcode_url_dark?: string
+  wechat_group_enabled?: boolean
+  wechat_group_qrcode_url_light?: string
+  wechat_group_qrcode_url_dark?: string
   turnstile_check?: boolean
   turnstile_site_key?: string
   email_verification?: boolean

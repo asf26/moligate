@@ -75,6 +75,9 @@ const SITE_SECTIONS = [
           QQGroupNumber: settings.QQGroupNumber,
           QQGroupQRCodeURLLight: settings.QQGroupQRCodeURLLight,
           QQGroupQRCodeURLDark: settings.QQGroupQRCodeURLDark,
+          WeChatGroupEnabled: settings.WeChatGroupEnabled,
+          WeChatGroupQRCodeURLLight: settings.WeChatGroupQRCodeURLLight,
+          WeChatGroupQRCodeURLDark: settings.WeChatGroupQRCodeURLDark,
         }}
       />
     ),

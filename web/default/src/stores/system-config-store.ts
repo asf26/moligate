@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+
 import { DEFAULT_SYSTEM_NAME, DEFAULT_LOGO } from '@/lib/constants'
 
 export type CurrencyDisplayType = 'USD' | 'CNY' | 'TOKENS' | 'CUSTOM'
@@ -44,6 +45,12 @@ export interface QQGroupConfig {
   qrcodeUrlDark: string
 }
 
+export interface WeChatGroupConfig {
+  enabled: boolean
+  qrcodeUrlLight: string
+  qrcodeUrlDark: string
+}
+
 export interface SystemConfig {
   systemName: string
   logo: string
@@ -52,6 +59,7 @@ export interface SystemConfig {
   displayTokenStatEnabled?: boolean
   currency: CurrencyConfig
   qqGroup: QQGroupConfig
+  wechatGroup: WeChatGroupConfig
 }
 
 export const DEFAULT_CURRENCY_CONFIG: CurrencyConfig = {
@@ -66,6 +74,12 @@ export const DEFAULT_CURRENCY_CONFIG: CurrencyConfig = {
 export const DEFAULT_QQ_GROUP_CONFIG: QQGroupConfig = {
   enabled: false,
   number: '',
+  qrcodeUrlLight: '',
+  qrcodeUrlDark: '',
+}
+
+export const DEFAULT_WECHAT_GROUP_CONFIG: WeChatGroupConfig = {
+  enabled: false,
   qrcodeUrlLight: '',
   qrcodeUrlDark: '',
 }
@@ -91,6 +105,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         logo: DEFAULT_LOGO,
         currency: { ...DEFAULT_CURRENCY_CONFIG },
         qqGroup: { ...DEFAULT_QQ_GROUP_CONFIG },
+        wechatGroup: { ...DEFAULT_WECHAT_GROUP_CONFIG },
       },
       loading: true,
       loadedLogoUrl: DEFAULT_LOGO,
@@ -106,6 +121,10 @@ export const useSystemConfigStore = create<SystemConfigState>()(
             qqGroup: {
               ...state.config.qqGroup,
               ...(newConfig.qqGroup ?? {}),
+            },
+            wechatGroup: {
+              ...state.config.wechatGroup,
+              ...(newConfig.wechatGroup ?? {}),
             },
           },
         })),

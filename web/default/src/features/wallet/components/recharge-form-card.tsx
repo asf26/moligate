@@ -1,3 +1,4 @@
+import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,9 +18,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect } from 'react'
-import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -33,6 +33,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
+
 import {
   getDiscountLabel,
   getPaymentIcon,
@@ -50,6 +52,7 @@ import type {
   WaffoPayMethod,
 } from '../types'
 import { CreemProductsSection } from './creem-products-section'
+import { WalletContactSupportButton } from './wallet-contact-support-button'
 
 interface RechargeFormCardProps {
   topupInfo: TopupInfo | null
@@ -192,17 +195,20 @@ export function RechargeFormCard({
       icon={<WalletCards className='h-4 w-4' />}
       disableHoverEffect
       action={
-        onOpenBilling ? (
-          <Button
-            variant='outline'
-            size='sm'
-            onClick={onOpenBilling}
-            className='w-full gap-2 sm:w-auto'
-          >
-            <Receipt className='h-4 w-4' />
-            {t('Order History')}
-          </Button>
-        ) : null
+        <div className='flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center'>
+          <WalletContactSupportButton />
+          {onOpenBilling ? (
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={onOpenBilling}
+              className='w-full gap-2 sm:w-auto'
+            >
+              <Receipt className='h-4 w-4' />
+              {t('Order History')}
+            </Button>
+          ) : null}
+        </div>
       }
       contentClassName='space-y-4 sm:space-y-6'
     >
@@ -354,11 +360,11 @@ export function RechargeFormCard({
 
                       return disabled ? (
                         <TooltipProvider key={method.type}>
-                            <Tooltip>
-                              <TooltipTrigger render={button}></TooltipTrigger>
-                              <TooltipContent>{disabledReason}</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger render={button}></TooltipTrigger>
+                            <TooltipContent>{disabledReason}</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       ) : (
                         button
                       )
@@ -438,9 +444,7 @@ export function RechargeFormCard({
                           <TooltipProvider key={`${method.name}-${index}`}>
                             <Tooltip>
                               <TooltipTrigger render={button}></TooltipTrigger>
-                              <TooltipContent>
-                                {disabledReason}
-                              </TooltipContent>
+                              <TooltipContent>{disabledReason}</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                         ) : (
