@@ -96,7 +96,14 @@ func GlobalWebRateLimit() func(c *gin.Context) {
 
 func GlobalAPIRateLimit() func(c *gin.Context) {
 	if common.GlobalApiRateLimitEnable {
-		return rateLimitFactory(common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration, "GA")
+		limiter := rateLimitFactory(common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration, "GA")
+		return func(c *gin.Context) {
+			if c.Request.URL.Path == "/api/assistant/version" {
+				c.Next()
+				return
+			}
+			limiter(c)
+		}
 	}
 	return defNext
 }

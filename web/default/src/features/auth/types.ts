@@ -117,6 +117,14 @@ export interface SystemStatus {
     wechat_group_enabled?: boolean
     wechat_group_qrcode_url_light?: string
     wechat_group_qrcode_url_dark?: string
+    assistant_version?: string
+    assistant_force_update?: boolean
+    assistant_release_notes?: string
+    assistant_mac_download_url?: string
+    assistant_mac_signature?: string
+    assistant_win_download_url?: string
+    assistant_win_signature?: string
+    assistant_published_at?: number
     turnstile_check?: boolean
     turnstile_site_key?: string
     email_verification?: boolean
@@ -169,6 +177,14 @@ export interface SystemStatus {
   wechat_group_enabled?: boolean
   wechat_group_qrcode_url_light?: string
   wechat_group_qrcode_url_dark?: string
+  assistant_version?: string
+  assistant_force_update?: boolean
+  assistant_release_notes?: string
+  assistant_mac_download_url?: string
+  assistant_mac_signature?: string
+  assistant_win_download_url?: string
+  assistant_win_signature?: string
+  assistant_published_at?: number
   turnstile_check?: boolean
   turnstile_site_key?: string
   email_verification?: boolean

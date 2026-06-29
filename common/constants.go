@@ -142,6 +142,14 @@ var QQGroupQRCodeURLDark = ""
 var WeChatGroupEnabled = false
 var WeChatGroupQRCodeURLLight = ""
 var WeChatGroupQRCodeURLDark = ""
+var AssistantVersion = ""
+var AssistantForceUpdate = false
+var AssistantReleaseNotes = ""
+var AssistantMacDownloadURL = ""
+var AssistantMacSignature = ""
+var AssistantWinDownloadURL = ""
+var AssistantWinSignature = ""
+var AssistantPublishedAt int64 = 0
 
 var TurnstileSiteKey = ""
 var TurnstileSecretKey = ""

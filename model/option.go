@@ -134,6 +134,14 @@ func InitOptionMap() {
 	common.OptionMap["WeChatGroupEnabled"] = strconv.FormatBool(common.WeChatGroupEnabled)
 	common.OptionMap["WeChatGroupQRCodeURLLight"] = common.WeChatGroupQRCodeURLLight
 	common.OptionMap["WeChatGroupQRCodeURLDark"] = common.WeChatGroupQRCodeURLDark
+	common.OptionMap["AssistantVersion"] = common.AssistantVersion
+	common.OptionMap["AssistantForceUpdate"] = strconv.FormatBool(common.AssistantForceUpdate)
+	common.OptionMap["AssistantReleaseNotes"] = common.AssistantReleaseNotes
+	common.OptionMap["AssistantMacDownloadURL"] = common.AssistantMacDownloadURL
+	common.OptionMap["AssistantMacSignature"] = common.AssistantMacSignature
+	common.OptionMap["AssistantWinDownloadURL"] = common.AssistantWinDownloadURL
+	common.OptionMap["AssistantWinSignature"] = common.AssistantWinSignature
+	common.OptionMap["AssistantPublishedAt"] = strconv.FormatInt(common.AssistantPublishedAt, 10)
 	common.OptionMap["TurnstileSiteKey"] = ""
 	common.OptionMap["TurnstileSecretKey"] = ""
 	common.OptionMap["QuotaForNewUser"] = strconv.Itoa(common.QuotaForNewUser)
@@ -508,6 +516,22 @@ func updateOptionMap(key string, value string) (err error) {
 		common.WeChatGroupQRCodeURLLight = value
 	case "WeChatGroupQRCodeURLDark":
 		common.WeChatGroupQRCodeURLDark = value
+	case "AssistantVersion":
+		common.AssistantVersion = value
+	case "AssistantForceUpdate":
+		common.AssistantForceUpdate = value == "true"
+	case "AssistantReleaseNotes":
+		common.AssistantReleaseNotes = value
+	case "AssistantMacDownloadURL":
+		common.AssistantMacDownloadURL = value
+	case "AssistantMacSignature":
+		common.AssistantMacSignature = value
+	case "AssistantWinDownloadURL":
+		common.AssistantWinDownloadURL = value
+	case "AssistantWinSignature":
+		common.AssistantWinSignature = value
+	case "AssistantPublishedAt":
+		common.AssistantPublishedAt, _ = strconv.ParseInt(value, 10, 64)
 	case "TelegramBotToken":
 		common.TelegramBotToken = value
 	case "TelegramBotName":

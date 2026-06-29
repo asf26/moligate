@@ -28,6 +28,7 @@ import { NoticeSection } from '../maintenance/notice-section'
 import { SidebarModulesSection } from '../maintenance/sidebar-modules-section'
 import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { AssistantVersionSection } from './assistant-version-section'
 import { QQGroupSection } from './qq-group-section'
 
 const SITE_SECTIONS = [
@@ -78,6 +79,25 @@ const SITE_SECTIONS = [
           WeChatGroupEnabled: settings.WeChatGroupEnabled,
           WeChatGroupQRCodeURLLight: settings.WeChatGroupQRCodeURLLight,
           WeChatGroupQRCodeURLDark: settings.WeChatGroupQRCodeURLDark,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'assistant-version',
+    titleKey: 'Assistant Version Management',
+    descriptionKey: 'Configure the assistant version and release package links',
+    build: (settings: SiteSettings) => (
+      <AssistantVersionSection
+        defaultValues={{
+          AssistantVersion: settings.AssistantVersion,
+          AssistantForceUpdate: settings.AssistantForceUpdate,
+          AssistantReleaseNotes: settings.AssistantReleaseNotes,
+          AssistantMacDownloadURL: settings.AssistantMacDownloadURL,
+          AssistantMacSignature: settings.AssistantMacSignature,
+          AssistantWinDownloadURL: settings.AssistantWinDownloadURL,
+          AssistantWinSignature: settings.AssistantWinSignature,
+          AssistantPublishedAt: settings.AssistantPublishedAt,
         }}
       />
     ),

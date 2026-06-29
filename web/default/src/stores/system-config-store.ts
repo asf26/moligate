@@ -51,6 +51,17 @@ export interface WeChatGroupConfig {
   qrcodeUrlDark: string
 }
 
+export interface AssistantConfig {
+  version: string
+  forceUpdate: boolean
+  releaseNotes: string
+  macDownloadUrl: string
+  macSignature: string
+  winDownloadUrl: string
+  winSignature: string
+  publishedAt: number
+}
+
 export interface SystemConfig {
   systemName: string
   logo: string
@@ -60,6 +71,7 @@ export interface SystemConfig {
   currency: CurrencyConfig
   qqGroup: QQGroupConfig
   wechatGroup: WeChatGroupConfig
+  assistant: AssistantConfig
 }
 
 export const DEFAULT_CURRENCY_CONFIG: CurrencyConfig = {
@@ -84,6 +96,17 @@ export const DEFAULT_WECHAT_GROUP_CONFIG: WeChatGroupConfig = {
   qrcodeUrlDark: '',
 }
 
+export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = {
+  version: '',
+  forceUpdate: false,
+  releaseNotes: '',
+  macDownloadUrl: '',
+  macSignature: '',
+  winDownloadUrl: '',
+  winSignature: '',
+  publishedAt: 0,
+}
+
 interface SystemConfigState {
   config: SystemConfig
   loading: boolean
@@ -106,6 +129,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         currency: { ...DEFAULT_CURRENCY_CONFIG },
         qqGroup: { ...DEFAULT_QQ_GROUP_CONFIG },
         wechatGroup: { ...DEFAULT_WECHAT_GROUP_CONFIG },
+        assistant: { ...DEFAULT_ASSISTANT_CONFIG },
       },
       loading: true,
       loadedLogoUrl: DEFAULT_LOGO,
@@ -125,6 +149,10 @@ export const useSystemConfigStore = create<SystemConfigState>()(
             wechatGroup: {
               ...state.config.wechatGroup,
               ...(newConfig.wechatGroup ?? {}),
+            },
+            assistant: {
+              ...state.config.assistant,
+              ...(newConfig.assistant ?? {}),
             },
           },
         })),

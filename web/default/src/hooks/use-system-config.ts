@@ -28,6 +28,7 @@ import {
   DEFAULT_CURRENCY_CONFIG,
   DEFAULT_QQ_GROUP_CONFIG,
   DEFAULT_WECHAT_GROUP_CONFIG,
+  DEFAULT_ASSISTANT_CONFIG,
 } from '@/stores/system-config-store'
 
 interface UseSystemConfigOptions {
@@ -56,6 +57,14 @@ interface StatusApiResponse {
     wechat_group_enabled?: boolean
     wechat_group_qrcode_url_light?: string
     wechat_group_qrcode_url_dark?: string
+    assistant_version?: string
+    assistant_force_update?: boolean
+    assistant_release_notes?: string
+    assistant_mac_download_url?: string
+    assistant_mac_signature?: string
+    assistant_win_download_url?: string
+    assistant_win_signature?: string
+    assistant_published_at?: number
   }
 }
 
@@ -126,6 +135,31 @@ export function mapStatusDataToConfig(
       qrcodeUrlDark:
         data.wechat_group_qrcode_url_dark?.trim() ??
         DEFAULT_WECHAT_GROUP_CONFIG.qrcodeUrlDark,
+    },
+    assistant: {
+      version:
+        data.assistant_version?.trim() ?? DEFAULT_ASSISTANT_CONFIG.version,
+      forceUpdate:
+        data.assistant_force_update ?? DEFAULT_ASSISTANT_CONFIG.forceUpdate,
+      releaseNotes:
+        data.assistant_release_notes?.trim() ??
+        DEFAULT_ASSISTANT_CONFIG.releaseNotes,
+      macDownloadUrl:
+        data.assistant_mac_download_url?.trim() ??
+        DEFAULT_ASSISTANT_CONFIG.macDownloadUrl,
+      macSignature:
+        data.assistant_mac_signature?.trim() ??
+        DEFAULT_ASSISTANT_CONFIG.macSignature,
+      winDownloadUrl:
+        data.assistant_win_download_url?.trim() ??
+        DEFAULT_ASSISTANT_CONFIG.winDownloadUrl,
+      winSignature:
+        data.assistant_win_signature?.trim() ??
+        DEFAULT_ASSISTANT_CONFIG.winSignature,
+      publishedAt: toNumber(
+        data.assistant_published_at,
+        DEFAULT_ASSISTANT_CONFIG.publishedAt
+      ),
     },
   }
 }

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -50,36 +52,44 @@ func GetStatus(c *gin.Context) {
 	monitorSetting := operation_setting.GetMonitorSetting()
 
 	data := gin.H{
-		"version":                       common.Version,
-		"start_time":                    common.StartTime,
-		"email_verification":            common.EmailVerificationEnabled,
-		"github_oauth":                  common.GitHubOAuthEnabled,
-		"github_client_id":              common.GitHubClientId,
-		"discord_oauth":                 system_setting.GetDiscordSettings().Enabled,
-		"discord_client_id":             system_setting.GetDiscordSettings().ClientId,
-		"linuxdo_oauth":                 common.LinuxDOOAuthEnabled,
-		"linuxdo_client_id":             common.LinuxDOClientId,
-		"linuxdo_minimum_trust_level":   common.LinuxDOMinimumTrustLevel,
-		"telegram_oauth":                common.TelegramOAuthEnabled,
-		"telegram_bot_name":             common.TelegramBotName,
-		"theme":                         system_setting.GetThemeSettings().Frontend,
-		"system_name":                   common.SystemName,
-		"logo":                          common.Logo,
-		"footer_html":                   common.Footer,
-		"wechat_qrcode":                 common.WeChatAccountQRCodeImageURL,
-		"wechat_login":                  common.WeChatAuthEnabled,
-		"qq_group_enabled":              common.QQGroupEnabled,
-		"qq_group_number":               common.QQGroupNumber,
-		"qq_group_qrcode_url_light":     common.QQGroupQRCodeURLLight,
-		"qq_group_qrcode_url_dark":      common.QQGroupQRCodeURLDark,
-		"wechat_group_enabled":          common.WeChatGroupEnabled,
-		"wechat_group_qrcode_url_light": common.WeChatGroupQRCodeURLLight,
-		"wechat_group_qrcode_url_dark":  common.WeChatGroupQRCodeURLDark,
-		"server_address":                system_setting.ServerAddress,
-		"turnstile_check":               common.TurnstileCheckEnabled,
-		"turnstile_site_key":            common.TurnstileSiteKey,
-		"docs_link":                     operation_setting.GetGeneralSetting().DocsLink,
-		"quota_per_unit":                common.QuotaPerUnit,
+		"version":                                  common.Version,
+		"start_time":                               common.StartTime,
+		"email_verification":                       common.EmailVerificationEnabled,
+		"github_oauth":                             common.GitHubOAuthEnabled,
+		"github_client_id":                         common.GitHubClientId,
+		"discord_oauth":                            system_setting.GetDiscordSettings().Enabled,
+		"discord_client_id":                        system_setting.GetDiscordSettings().ClientId,
+		"linuxdo_oauth":                            common.LinuxDOOAuthEnabled,
+		"linuxdo_client_id":                        common.LinuxDOClientId,
+		"linuxdo_minimum_trust_level":              common.LinuxDOMinimumTrustLevel,
+		"telegram_oauth":                           common.TelegramOAuthEnabled,
+		"telegram_bot_name":                        common.TelegramBotName,
+		"theme":                                    system_setting.GetThemeSettings().Frontend,
+		"system_name":                              common.SystemName,
+		"logo":                                     common.Logo,
+		"footer_html":                              common.Footer,
+		"wechat_qrcode":                            common.WeChatAccountQRCodeImageURL,
+		"wechat_login":                             common.WeChatAuthEnabled,
+		"qq_group_enabled":                         common.QQGroupEnabled,
+		"qq_group_number":                          common.QQGroupNumber,
+		"qq_group_qrcode_url_light":                common.QQGroupQRCodeURLLight,
+		"qq_group_qrcode_url_dark":                 common.QQGroupQRCodeURLDark,
+		"wechat_group_enabled":                     common.WeChatGroupEnabled,
+		"wechat_group_qrcode_url_light":            common.WeChatGroupQRCodeURLLight,
+		"wechat_group_qrcode_url_dark":             common.WeChatGroupQRCodeURLDark,
+		"assistant_version":                        common.AssistantVersion,
+		"assistant_force_update":                   common.AssistantForceUpdate,
+		"assistant_release_notes":                  common.AssistantReleaseNotes,
+		"assistant_mac_download_url":               common.AssistantMacDownloadURL,
+		"assistant_mac_signature":                  common.AssistantMacSignature,
+		"assistant_win_download_url":               common.AssistantWinDownloadURL,
+		"assistant_win_signature":                  common.AssistantWinSignature,
+		"assistant_published_at":                   common.AssistantPublishedAt,
+		"server_address":                           system_setting.ServerAddress,
+		"turnstile_check":                          common.TurnstileCheckEnabled,
+		"turnstile_site_key":                       common.TurnstileSiteKey,
+		"docs_link":                                operation_setting.GetGeneralSetting().DocsLink,
+		"quota_per_unit":                           common.QuotaPerUnit,
 		"channel_monitor_default_interval_seconds": monitorSetting.ChannelMonitorDefaultIntervalSeconds,
 		// 兼容旧前端：保留 display_in_currency，同时提供新的 quota_display_type
 		"display_in_currency":           operation_setting.IsCurrencyDisplay(),
@@ -177,6 +187,125 @@ func GetStatus(c *gin.Context) {
 		"data":    data,
 	})
 	return
+}
+
+func GetAssistantVersion(c *gin.Context) {
+	target := strings.ToLower(strings.TrimSpace(c.Query("target")))
+	arch := strings.ToLower(strings.TrimSpace(c.Query("arch")))
+	currentVersion := normalizeAssistantVersion(c.Query("current_version"))
+	if target != "" || arch != "" || currentVersion != "" {
+		writeAssistantUpdateManifest(c, target, arch, currentVersion)
+		return
+	}
+
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+
+	c.JSON(http.StatusOK, gin.H{
+		"version":          common.AssistantVersion,
+		"force_update":     common.AssistantForceUpdate,
+		"release_notes":    common.AssistantReleaseNotes,
+		"mac_download_url": common.AssistantMacDownloadURL,
+		"mac_signature":    common.AssistantMacSignature,
+		"win_download_url": common.AssistantWinDownloadURL,
+		"win_signature":    common.AssistantWinSignature,
+		"published_at":     common.AssistantPublishedAt,
+	})
+}
+
+func writeAssistantUpdateManifest(c *gin.Context, target string, arch string, currentVersion string) {
+	common.OptionMapRWMutex.RLock()
+	version := normalizeAssistantVersion(common.AssistantVersion)
+	notes := common.AssistantReleaseNotes
+	publishedAt := common.AssistantPublishedAt
+	url, signature := assistantUpdateArtifact(target, arch)
+	common.OptionMapRWMutex.RUnlock()
+
+	if version == "" || url == "" || signature == "" {
+		c.Status(http.StatusNoContent)
+		return
+	}
+	if version == currentVersion {
+		c.Status(http.StatusNoContent)
+		return
+	}
+	if compareAssistantVersion(version, currentVersion) <= 0 {
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	response := gin.H{
+		"version":   version,
+		"url":       url,
+		"signature": signature,
+	}
+	if strings.TrimSpace(notes) != "" {
+		response["notes"] = notes
+	}
+	if publishedAt > 0 {
+		response["pub_date"] = time.Unix(publishedAt, 0).UTC().Format(time.RFC3339)
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func assistantUpdateArtifact(target string, arch string) (string, string) {
+	switch target {
+	case "darwin":
+		if arch == "x86_64" || arch == "aarch64" {
+			return common.AssistantMacDownloadURL, common.AssistantMacSignature
+		}
+	case "windows":
+		if arch == "x86_64" {
+			return common.AssistantWinDownloadURL, common.AssistantWinSignature
+		}
+	}
+	return "", ""
+}
+
+func normalizeAssistantVersion(value string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(value), "v"), "V")
+}
+
+func compareAssistantVersion(left string, right string) int {
+	leftParts := assistantVersionParts(left)
+	rightParts := assistantVersionParts(right)
+	maxLen := len(leftParts)
+	if len(rightParts) > maxLen {
+		maxLen = len(rightParts)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		leftValue := 0
+		rightValue := 0
+		if i < len(leftParts) {
+			leftValue = leftParts[i]
+		}
+		if i < len(rightParts) {
+			rightValue = rightParts[i]
+		}
+		if leftValue > rightValue {
+			return 1
+		}
+		if leftValue < rightValue {
+			return -1
+		}
+	}
+	return 0
+}
+
+func assistantVersionParts(version string) []int {
+	parts := strings.FieldsFunc(version, func(r rune) bool {
+		return r < '0' || r > '9'
+	})
+	values := make([]int, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err == nil {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 func GetNotice(c *gin.Context) {

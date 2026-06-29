@@ -45,6 +45,14 @@ const STATUS_RELATED_KEYS = [
   'WeChatGroupEnabled',
   'WeChatGroupQRCodeURLLight',
   'WeChatGroupQRCodeURLDark',
+  'AssistantVersion',
+  'AssistantForceUpdate',
+  'AssistantReleaseNotes',
+  'AssistantMacDownloadURL',
+  'AssistantMacSignature',
+  'AssistantWinDownloadURL',
+  'AssistantWinSignature',
+  'AssistantPublishedAt',
 ]
 
 const NOTICE_RELATED_KEYS = ['Notice', 'NoticeForcePopup']

@@ -69,6 +69,14 @@ export type SiteSettings = {
   WeChatGroupEnabled: boolean
   WeChatGroupQRCodeURLLight: string
   WeChatGroupQRCodeURLDark: string
+  AssistantVersion: string
+  AssistantForceUpdate: boolean
+  AssistantReleaseNotes: string
+  AssistantMacDownloadURL: string
+  AssistantMacSignature: string
+  AssistantWinDownloadURL: string
+  AssistantWinSignature: string
+  AssistantPublishedAt: string
   Footer: string
   About: string
   HomePageContent: string
