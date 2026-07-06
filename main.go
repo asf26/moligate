@@ -122,6 +122,9 @@ func main() {
 	// Channel monitor scheduled checks
 	service.StartChannelMonitorTask()
 
+	// Persistent system maintenance task runner
+	service.StartSystemTaskRunner()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
 		a := relay.GetTaskAdaptor(platform)

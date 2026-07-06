@@ -12,7 +12,13 @@ type MonitorSetting struct {
 	AutoTestChannelMinutes               float64 `json:"auto_test_channel_minutes"`
 	ChannelMonitorEnabled                bool    `json:"channel_monitor_enabled"`
 	ChannelMonitorDefaultIntervalSeconds int     `json:"channel_monitor_default_interval_seconds"`
+	ChannelTestMode                      string  `json:"channel_test_mode"`
 }
+
+const (
+	ChannelTestModeScheduledAll    = "scheduled_all"
+	ChannelTestModePassiveRecovery = "passive_recovery"
+)
 
 // 默认配置
 var monitorSetting = MonitorSetting{
@@ -20,6 +26,7 @@ var monitorSetting = MonitorSetting{
 	AutoTestChannelMinutes:               10,
 	ChannelMonitorEnabled:                true,
 	ChannelMonitorDefaultIntervalSeconds: 60,
+	ChannelTestMode:                      ChannelTestModeScheduledAll,
 }
 
 func init() {
@@ -33,7 +40,17 @@ func GetMonitorSetting() *MonitorSetting {
 		if err == nil && frequency > 0 {
 			monitorSetting.AutoTestChannelEnabled = true
 			monitorSetting.AutoTestChannelMinutes = float64(frequency)
+			monitorSetting.ChannelTestMode = ChannelTestModeScheduledAll
 		}
+	}
+	if enabled, ok := os.LookupEnv("CHANNEL_TEST_ENABLED"); ok {
+		parsed, err := strconv.ParseBool(enabled)
+		if err == nil {
+			monitorSetting.AutoTestChannelEnabled = parsed
+		}
+	}
+	if monitorSetting.ChannelTestMode != ChannelTestModePassiveRecovery {
+		monitorSetting.ChannelTestMode = ChannelTestModeScheduledAll
 	}
 	return &monitorSetting
 }
