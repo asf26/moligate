@@ -18,19 +18,14 @@ import (
 func setupSubscriptionControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	originalUsingSQLite := common.UsingSQLite
-	originalUsingMySQL := common.UsingMySQL
-	originalUsingPostgreSQL := common.UsingPostgreSQL
+	originalMainDatabaseType := common.MainDatabaseType()
+	originalLogDatabaseType := common.LogDatabaseType()
 	t.Cleanup(func() {
-		common.UsingSQLite = originalUsingSQLite
-		common.UsingMySQL = originalUsingMySQL
-		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.SetDatabaseTypes(originalMainDatabaseType, originalLogDatabaseType)
 	})
 
 	gin.SetMode(gin.TestMode)
-	common.UsingSQLite = true
-	common.UsingMySQL = false
-	common.UsingPostgreSQL = false
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

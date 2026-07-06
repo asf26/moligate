@@ -18,28 +18,32 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { type ColumnDef } from '@tanstack/react-table'
-import { useMediaQuery } from '@/hooks'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
-import { useIsAdmin } from '@/hooks/use-admin'
-import { useTableUrlState } from '@/hooks/use-table-url-state'
+
 import {
   DataTablePage,
   DataTableRow,
   useDataTable,
 } from '@/components/data-table'
+import { useMediaQuery } from '@/hooks'
+import { useIsAdmin } from '@/hooks/use-admin'
+import { useTableUrlState } from '@/hooks/use-table-url-state'
+import { cn } from '@/lib/utils'
+
+import { exportLogs } from '../api'
 import {
   DEFAULT_LOGS_DATA,
   LOG_TYPE_ALL_VALUE,
   LOG_TYPE_ENUM,
 } from '../constants'
 import { useColumnsByCategory } from '../lib/columns'
-import { fetchLogsByCategory } from '../lib/utils'
+import { buildApiParams, fetchLogsByCategory } from '../lib/utils'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
 import { TaskLogsFilterBar } from './task-logs-filter-bar'
+import { UsageLogsExportDialog } from './usage-logs-export-dialog'
 import { UsageLogsMobileList } from './usage-logs-mobile-card'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
@@ -57,8 +61,27 @@ function getColumnVisibilityStorageKey(
 }
 
 function deserializeLogTypeFilter(value: unknown): unknown[] {
-  const values = Array.isArray(value) ? value : value ? [value] : []
+  let values: unknown[] = []
+  if (Array.isArray(value)) {
+    values = value
+  } else if (value) {
+    values = [value]
+  }
   return values.filter((item) => String(item) !== LOG_TYPE_ALL_VALUE)
+}
+
+function downloadCsv(blob: Blob): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `usage-logs-${new Date()
+    .toISOString()
+    .replaceAll(/[-:]/g, '')
+    .replace(/\..+$/, '')}.csv`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 interface UsageLogsTableProps {
@@ -148,6 +171,28 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const logs = data?.items || []
   const columns = useColumnsByCategory(logCategory, isAdmin)
   const isLoadingData = isLoading || (isFetching && !data)
+  const handleExportLogs = async (fields: string[]) => {
+    try {
+      const params = buildApiParams({
+        page: 1,
+        pageSize: pagination.pageSize,
+        searchParams,
+        columnFilters,
+        isAdmin,
+      })
+      const filters = { ...params }
+      delete filters.p
+      delete filters.page_size
+      const blob = await exportLogs({
+        ...filters,
+        fields: fields.join(','),
+      })
+      downloadCsv(blob)
+      toast.success(t('CSV export started'))
+    } catch {
+      toast.error(t('Failed to export CSV'))
+    }
+  }
 
   const { table } = useDataTable({
     data: logs as Record<string, unknown>[],
@@ -193,7 +238,17 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       }
       toolbar={
         isCommon ? (
-          <CommonLogsFilterBar table={table} />
+          <CommonLogsFilterBar
+            table={table}
+            actionStart={
+              isAdmin ? (
+                <UsageLogsExportDialog
+                  disabled={isLoadingData}
+                  onExport={handleExportLogs}
+                />
+              ) : null
+            }
+          />
         ) : (
           <TaskLogsFilterBar table={table} logCategory={logCategory} />
         )

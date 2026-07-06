@@ -291,6 +291,13 @@ export interface GetLogsParams {
   upstream_request_id?: string
 }
 
+export interface ExportLogsParams extends Omit<
+  GetLogsParams,
+  'p' | 'page_size'
+> {
+  fields?: string
+}
+
 export interface GetLogsResponse {
   success: boolean
   message?: string

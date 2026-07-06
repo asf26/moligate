@@ -20,21 +20,16 @@ import (
 func setupAffiliateCommissionControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	originalUsingSQLite := common.UsingSQLite
-	originalUsingMySQL := common.UsingMySQL
-	originalUsingPostgreSQL := common.UsingPostgreSQL
+	originalMainDatabaseType := common.MainDatabaseType()
+	originalLogDatabaseType := common.LogDatabaseType()
 	originalRedisEnabled := common.RedisEnabled
 	t.Cleanup(func() {
-		common.UsingSQLite = originalUsingSQLite
-		common.UsingMySQL = originalUsingMySQL
-		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.SetDatabaseTypes(originalMainDatabaseType, originalLogDatabaseType)
 		common.RedisEnabled = originalRedisEnabled
 	})
 
 	gin.SetMode(gin.TestMode)
-	common.UsingSQLite = true
-	common.UsingMySQL = false
-	common.UsingPostgreSQL = false
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	common.RedisEnabled = false
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

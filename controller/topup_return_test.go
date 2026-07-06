@@ -50,21 +50,16 @@ func setupEpayReturnTestDB(t *testing.T) *gorm.DB {
 
 	originalDB := model.DB
 	originalLogDB := model.LOG_DB
-	originalUsingSQLite := common.UsingSQLite
-	originalUsingMySQL := common.UsingMySQL
-	originalUsingPostgreSQL := common.UsingPostgreSQL
+	originalMainDatabaseType := common.MainDatabaseType()
+	originalLogDatabaseType := common.LogDatabaseType()
 
 	t.Cleanup(func() {
 		model.DB = originalDB
 		model.LOG_DB = originalLogDB
-		common.UsingSQLite = originalUsingSQLite
-		common.UsingMySQL = originalUsingMySQL
-		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.SetDatabaseTypes(originalMainDatabaseType, originalLogDatabaseType)
 	})
 
-	common.UsingSQLite = true
-	common.UsingMySQL = false
-	common.UsingPostgreSQL = false
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

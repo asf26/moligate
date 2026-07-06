@@ -300,7 +300,11 @@ func migrateDB() error {
 		&ChannelMonitor{},
 		&ChannelMonitorRequestTemplate{},
 		&ChannelMonitorHistory{},
+		&SystemInstance{},
 		&SystemTask{},
+		&SystemTaskLock{},
+		&CasbinRule{},
+		&AuthzRole{},
 	)
 	if err != nil {
 		return err
@@ -374,7 +378,9 @@ func migrateDBFast() error {
 		{&ChannelMonitor{}, "ChannelMonitor"},
 		{&ChannelMonitorRequestTemplate{}, "ChannelMonitorRequestTemplate"},
 		{&ChannelMonitorHistory{}, "ChannelMonitorHistory"},
+		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
+		{&SystemTaskLock{}, "SystemTaskLock"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -532,7 +538,7 @@ type sqliteColumnDef struct {
 }
 
 func ensureAffiliateCdkOrderTableSQLite() error {
-	if !common.UsingSQLite {
+	if !common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		return nil
 	}
 	tableName := "affiliate_cdk_orders"

@@ -17,16 +17,29 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import { buildQueryParams } from './lib/utils'
+
 import type {
   GetLogsParams,
   GetLogsResponse,
+  ExportLogsParams,
   GetLogStatsParams,
   GetLogStatsResponse,
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
   UserInfo,
 } from './types'
+
+function buildQueryParams(params: Record<string, unknown>): URLSearchParams {
+  const queryParams = new URLSearchParams()
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      queryParams.append(key, String(value))
+    }
+  })
+
+  return queryParams
+}
 
 // ============================================================================
 // Generic API Helpers
@@ -75,6 +88,16 @@ export const getAllLogs = (params: GetLogsParams = {}) =>
 export const getUserLogs = (
   params: Omit<GetLogsParams, 'username' | 'channel'> = {}
 ) => fetchLogs('/api/log', params, false)
+
+export async function exportLogs(params: ExportLogsParams): Promise<Blob> {
+  const queryParams = buildQueryParams(params as Record<string, unknown>)
+  const res = await api.get(`/api/log/export?${queryParams}`, {
+    responseType: 'blob',
+    disableDuplicate: true,
+    skipBusinessError: true,
+  })
+  return res.data
+}
 
 export const getLogStats = (params: GetLogStatsParams = {}) =>
   fetchLogStats('/api/log', params, true)

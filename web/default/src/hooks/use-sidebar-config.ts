@@ -17,9 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo } from 'react'
-import { useAuthStore } from '@/stores/auth-store'
-import { useStatus } from '@/hooks/use-status'
+
 import type { NavGroup, NavItem } from '@/components/layout/types'
+import { useStatus } from '@/hooks/use-status'
+import { useAuthStore } from '@/stores/auth-store'
 
 type SidebarSectionConfig = {
   enabled: boolean
@@ -390,4 +391,32 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
   )
 
   return filteredNavGroups
+}
+
+/**
+ * Check whether a single route is visible under the current sidebar_modules
+ * config. Used by entries living outside the sidebar (e.g. the profile
+ * dropdown's wallet link) so they honour the same "wallet display" toggle.
+ */
+export function useIsSidebarModuleVisible(url: string): boolean {
+  const { status } = useStatus()
+  const { auth } = useAuthStore()
+
+  const adminConfig = parseSidebarConfig(
+    status?.SidebarModulesAdmin as string | null | undefined
+  )
+  const userConfig =
+    auth?.user?.permissions?.sidebar_settings === false
+      ? null
+      : parseUserSidebarConfig(auth?.user?.sidebar_modules)
+  const canAccessAffiliateModule = auth?.user?.distribution_enabled === true
+  const canAccessAffiliateCdkModule = auth?.user?.affiliate_cdk_enabled === true
+
+  return isModuleEnabled(
+    url,
+    adminConfig,
+    userConfig,
+    canAccessAffiliateModule,
+    canAccessAffiliateCdkModule
+  )
 }

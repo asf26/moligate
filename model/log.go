@@ -13,7 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 )
 
@@ -22,13 +21,39 @@ func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) (*gorm
 		return tx, nil
 	}
 	if strings.Contains(value, "%") {
-		pattern, err := sanitizeLikePattern(value)
+		condition, pattern, err := buildLogLikeCondition(column, value)
 		if err != nil {
 			return nil, err
 		}
-		return tx.Where(column+" LIKE ? ESCAPE '!'", pattern), nil
+		return tx.Where(condition, pattern), nil
 	}
 	return tx.Where(column+" = ?", value), nil
+}
+
+func buildLogLikeCondition(column string, value string) (string, string, error) {
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		pattern, err := sanitizeClickHouseLikePattern(value)
+		if err != nil {
+			return "", "", err
+		}
+		return column + " LIKE ?", pattern, nil
+	}
+
+	pattern, err := sanitizeLikePattern(value)
+	if err != nil {
+		return "", "", err
+	}
+	return column + " LIKE ? ESCAPE '!'", pattern, nil
+}
+
+func sanitizeClickHouseLikePattern(input string) (string, error) {
+	input = strings.ReplaceAll(input, `\`, `\\`)
+	input = strings.ReplaceAll(input, `_`, `\_`)
+
+	if err := validateLikePattern(input); err != nil {
+		return "", err
+	}
+	return input, nil
 }
 
 type Log struct {
@@ -196,8 +221,8 @@ func RecordLoginLog(userId int, username string, content string, ip string, acti
 }
 
 // RecordOperationAuditLog 记录管理/高危操作审计日志（type=LogTypeManage）。
-// logUserId 为日志归属者（面向用户的操作如额度调整归属目标用户，资源类操作如渠道/系统设置归属操作者），
-// username 内部按 logUserId 查询。content 为英文兜底文本（导出/经典前端用）。
+// logUserId 为日志归属者，管理审计日志应归属实际操作者；目标资源/用户放入
+// action params。username 内部按 logUserId 查询。content 为英文兜底文本（导出/经典前端用）。
 // action+params 写入 Other.op，供前端本地化渲染（普通用户可见，不含敏感信息）。
 // adminInfo 存放操作者身份（写入 Other.admin_info，普通用户查询时剥离）；
 // auditInfo 存放路由/方法/结果等中间件兜底信息（写入 Other.audit_info，普通用户查询时剥离）。
@@ -363,20 +388,18 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		logger.LogError(c, "failed to record log: "+err.Error())
 	}
 	if common.DataExportEnabled {
-		gopool.Go(func() {
-			LogQuotaData(QuotaDataLogParams{
-				UserID:    userId,
-				Username:  username,
-				TokenID:   params.TokenId,
-				TokenName: params.TokenName,
-				ModelName: params.ModelName,
-				Quota:     params.Quota,
-				CreatedAt: createdAt,
-				TokenUsed: params.PromptTokens + params.CompletionTokens,
-				UseGroup:  params.Group,
-				ChannelID: params.ChannelId,
-				NodeName:  common.NodeName,
-			})
+		LogQuotaData(QuotaDataLogParams{
+			UserID:    userId,
+			Username:  username,
+			TokenID:   params.TokenId,
+			TokenName: params.TokenName,
+			ModelName: params.ModelName,
+			Quota:     params.Quota,
+			CreatedAt: createdAt,
+			TokenUsed: params.PromptTokens + params.CompletionTokens,
+			UseGroup:  params.Group,
+			ChannelID: params.ChannelId,
+			NodeName:  common.NodeName,
 		})
 	}
 }
@@ -391,6 +414,7 @@ type RecordTaskBillingLogParams struct {
 	TokenId   int
 	Group     string
 	Other     map[string]interface{}
+	NodeName  string // 任务发起节点；为空时回退当前节点
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -424,57 +448,137 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		common.SysLog("failed to record task billing log: " + err.Error())
 	}
 	if params.LogType == LogTypeConsume && common.DataExportEnabled {
-		gopool.Go(func() {
-			LogQuotaData(QuotaDataLogParams{
-				UserID:    params.UserId,
-				Username:  username,
-				TokenID:   params.TokenId,
-				TokenName: tokenName,
-				ModelName: params.ModelName,
-				Quota:     params.Quota,
-				CreatedAt: createdAt,
-				UseGroup:  params.Group,
-				ChannelID: params.ChannelId,
-				NodeName:  common.NodeName,
-			})
+		nodeName := params.NodeName
+		if nodeName == "" {
+			nodeName = common.NodeName
+		}
+		LogQuotaData(QuotaDataLogParams{
+			UserID:    params.UserId,
+			Username:  username,
+			TokenID:   params.TokenId,
+			TokenName: tokenName,
+			ModelName: params.ModelName,
+			Quota:     params.Quota,
+			CreatedAt: createdAt,
+			UseGroup:  params.Group,
+			ChannelID: params.ChannelId,
+			NodeName:  nodeName,
 		})
 	}
 }
 
-func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
-	var tx *gorm.DB
-	if logType == LogTypeUnknown {
-		tx = LOG_DB
-	} else {
-		tx = LOG_DB.Where("logs.type = ?", logType)
+type LogQuery struct {
+	UserId            int
+	LogType           int
+	StartTimestamp    int64
+	EndTimestamp      int64
+	ModelName         string
+	Username          string
+	TokenName         string
+	Channel           int
+	Group             string
+	RequestId         string
+	UpstreamRequestId string
+}
+
+func buildLogQuery(query LogQuery, adminView bool) (*gorm.DB, error) {
+	tx := LOG_DB
+	if !adminView {
+		tx = tx.Where("logs.user_id = ?", query.UserId)
+	}
+	if query.LogType != LogTypeUnknown {
+		tx = tx.Where("logs.type = ?", query.LogType)
 	}
 
-	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
+	var err error
+	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", query.ModelName); err != nil {
+		return nil, err
+	}
+	if adminView {
+		if tx, err = applyExplicitLogTextFilter(tx, "logs.username", query.Username); err != nil {
+			return nil, err
+		}
+	}
+	if query.TokenName != "" {
+		tx = tx.Where("logs.token_name = ?", query.TokenName)
+	}
+	if query.RequestId != "" {
+		tx = tx.Where("logs.request_id = ?", query.RequestId)
+	}
+	if query.UpstreamRequestId != "" {
+		tx = tx.Where("logs.upstream_request_id = ?", query.UpstreamRequestId)
+	}
+	if query.StartTimestamp != 0 {
+		tx = tx.Where("logs.created_at >= ?", query.StartTimestamp)
+	}
+	if query.EndTimestamp != 0 {
+		tx = tx.Where("logs.created_at <= ?", query.EndTimestamp)
+	}
+	if adminView && query.Channel != 0 {
+		tx = tx.Where("logs.channel_id = ?", query.Channel)
+	}
+	if query.Group != "" {
+		tx = tx.Where("logs."+logGroupCol+" = ?", query.Group)
+	}
+	return tx, nil
+}
+
+func hydrateLogChannelNames(logs []*Log) error {
+	channelIds := types.NewSet[int]()
+	for _, log := range logs {
+		if log.ChannelId != 0 {
+			channelIds.Add(log.ChannelId)
+		}
+	}
+
+	if channelIds.Len() == 0 {
+		return nil
+	}
+
+	var channels []struct {
+		Id   int    `gorm:"column:id"`
+		Name string `gorm:"column:name"`
+	}
+	if common.MemoryCacheEnabled {
+		for _, channelId := range channelIds.Items() {
+			if cacheChannel, err := CacheGetChannel(channelId); err == nil {
+				channels = append(channels, struct {
+					Id   int    `gorm:"column:id"`
+					Name string `gorm:"column:name"`
+				}{
+					Id:   channelId,
+					Name: cacheChannel.Name,
+				})
+			}
+		}
+	} else if err := DB.Table("channels").Select("id, name").Where("id IN ?", channelIds.Items()).Find(&channels).Error; err != nil {
+		return err
+	}
+	channelMap := make(map[int]string, len(channels))
+	for _, channel := range channels {
+		channelMap[channel.Id] = channel.Name
+	}
+	for i := range logs {
+		logs[i].ChannelName = channelMap[logs[i].ChannelId]
+	}
+	return nil
+}
+
+func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+	tx, err := buildLogQuery(LogQuery{
+		LogType:           logType,
+		StartTimestamp:    startTimestamp,
+		EndTimestamp:      endTimestamp,
+		ModelName:         modelName,
+		Username:          username,
+		TokenName:         tokenName,
+		Channel:           channel,
+		Group:             group,
+		RequestId:         requestId,
+		UpstreamRequestId: upstreamRequestId,
+	}, true)
+	if err != nil {
 		return nil, 0, err
-	}
-	if tx, err = applyExplicitLogTextFilter(tx, "logs.username", username); err != nil {
-		return nil, 0, err
-	}
-	if tokenName != "" {
-		tx = tx.Where("logs.token_name = ?", tokenName)
-	}
-	if requestId != "" {
-		tx = tx.Where("logs.request_id = ?", requestId)
-	}
-	if upstreamRequestId != "" {
-		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
-	}
-	if startTimestamp != 0 {
-		tx = tx.Where("logs.created_at >= ?", startTimestamp)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("logs.created_at <= ?", endTimestamp)
-	}
-	if channel != 0 {
-		tx = tx.Where("logs.channel_id = ?", channel)
-	}
-	if group != "" {
-		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
 	err = tx.Model(&Log{}).Count(&total).Error
 	if err != nil {
@@ -492,44 +596,8 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 		assignDisplayLogIds(logs, startIdx)
 	}
 
-	channelIds := types.NewSet[int]()
-	for _, log := range logs {
-		if log.ChannelId != 0 {
-			channelIds.Add(log.ChannelId)
-		}
-	}
-
-	if channelIds.Len() > 0 {
-		var channels []struct {
-			Id   int    `gorm:"column:id"`
-			Name string `gorm:"column:name"`
-		}
-		if common.MemoryCacheEnabled {
-			// Cache get channel
-			for _, channelId := range channelIds.Items() {
-				if cacheChannel, err := CacheGetChannel(channelId); err == nil {
-					channels = append(channels, struct {
-						Id   int    `gorm:"column:id"`
-						Name string `gorm:"column:name"`
-					}{
-						Id:   channelId,
-						Name: cacheChannel.Name,
-					})
-				}
-			}
-		} else {
-			// Bulk query channels from DB
-			if err = DB.Table("channels").Select("id, name").Where("id IN ?", channelIds.Items()).Find(&channels).Error; err != nil {
-				return logs, total, err
-			}
-		}
-		channelMap := make(map[int]string, len(channels))
-		for _, channel := range channels {
-			channelMap[channel.Id] = channel.Name
-		}
-		for i := range logs {
-			logs[i].ChannelName = channelMap[logs[i].ChannelId]
-		}
+	if err = hydrateLogChannelNames(logs); err != nil {
+		return logs, total, err
 	}
 
 	return logs, total, err
@@ -538,33 +606,19 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 const logSearchCountLimit = 10000
 
 func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
-	var tx *gorm.DB
-	if logType == LogTypeUnknown {
-		tx = LOG_DB.Where("logs.user_id = ?", userId)
-	} else {
-		tx = LOG_DB.Where("logs.user_id = ? and logs.type = ?", userId, logType)
-	}
-
-	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
+	tx, err := buildLogQuery(LogQuery{
+		UserId:            userId,
+		LogType:           logType,
+		StartTimestamp:    startTimestamp,
+		EndTimestamp:      endTimestamp,
+		ModelName:         modelName,
+		TokenName:         tokenName,
+		Group:             group,
+		RequestId:         requestId,
+		UpstreamRequestId: upstreamRequestId,
+	}, false)
+	if err != nil {
 		return nil, 0, err
-	}
-	if tokenName != "" {
-		tx = tx.Where("logs.token_name = ?", tokenName)
-	}
-	if requestId != "" {
-		tx = tx.Where("logs.request_id = ?", requestId)
-	}
-	if upstreamRequestId != "" {
-		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
-	}
-	if startTimestamp != 0 {
-		tx = tx.Where("logs.created_at >= ?", startTimestamp)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("logs.created_at <= ?", endTimestamp)
-	}
-	if group != "" {
-		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
 	err = tx.Model(&Log{}).Limit(logSearchCountLimit).Count(&total).Error
 	if err != nil {
@@ -583,6 +637,32 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 
 	formatUserLogs(logs, startIdx)
 	return logs, total, err
+}
+
+func ExportLogs(query LogQuery, adminView bool, limit int) ([]*Log, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	tx, err := buildLogQuery(query, adminView)
+	if err != nil {
+		return nil, err
+	}
+	order := "logs.created_at desc, logs.id desc"
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		order = clickHouseLogOrder("logs.")
+	}
+	var logs []*Log
+	if err := tx.Order(order).Limit(limit).Find(&logs).Error; err != nil {
+		return nil, err
+	}
+	if adminView {
+		if err := hydrateLogChannelNames(logs); err != nil {
+			return logs, err
+		}
+		return logs, nil
+	}
+	formatUserLogs(logs, 0)
+	return logs, nil
 }
 
 type Stat struct {

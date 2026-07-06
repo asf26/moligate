@@ -32,9 +32,8 @@ func setupRegisterControllerTestDB(t *testing.T) *gorm.DB {
 	originalQuotaForNewUser := common.QuotaForNewUser
 	originalQuotaForInviter := common.QuotaForInviter
 	originalQuotaForInvitee := common.QuotaForInvitee
-	originalUsingSQLite := common.UsingSQLite
-	originalUsingMySQL := common.UsingMySQL
-	originalUsingPostgreSQL := common.UsingPostgreSQL
+	originalMainDatabaseType := common.MainDatabaseType()
+	originalLogDatabaseType := common.LogDatabaseType()
 
 	t.Cleanup(func() {
 		common.RegisterEnabled = originalRegisterEnabled
@@ -44,9 +43,7 @@ func setupRegisterControllerTestDB(t *testing.T) *gorm.DB {
 		common.QuotaForNewUser = originalQuotaForNewUser
 		common.QuotaForInviter = originalQuotaForInviter
 		common.QuotaForInvitee = originalQuotaForInvitee
-		common.UsingSQLite = originalUsingSQLite
-		common.UsingMySQL = originalUsingMySQL
-		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.SetDatabaseTypes(originalMainDatabaseType, originalLogDatabaseType)
 	})
 
 	gin.SetMode(gin.TestMode)
@@ -57,9 +54,7 @@ func setupRegisterControllerTestDB(t *testing.T) *gorm.DB {
 	common.QuotaForNewUser = 0
 	common.QuotaForInviter = 0
 	common.QuotaForInvitee = 0
-	common.UsingSQLite = true
-	common.UsingMySQL = false
-	common.UsingPostgreSQL = false
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
