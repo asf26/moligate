@@ -35,6 +35,7 @@ import {
   useDebouncedColumnFilter,
   useDataTable,
 } from '@/components/data-table'
+import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -218,7 +219,14 @@ export function ChannelsTable() {
 
   // Fetch channels data
   // eslint-disable-next-line @tanstack/query/exhaustive-deps
-  const { data, isLoading, isFetching } = useQuery({
+  const {
+    data,
+    error,
+    isError,
+    isLoading,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: channelsQueryKeys.list({
       keyword: globalFilter,
       model: modelFilter,
@@ -399,6 +407,19 @@ export function ChannelsTable() {
       label: sensitiveVisible ? option.label : '••••',
     })),
   ]
+
+  if (isError) {
+    return (
+      <ErrorState
+        title={t('We could not load channels.')}
+        description={error instanceof Error ? error.message : undefined}
+        onRetry={() => {
+          void refetch()
+        }}
+        className='min-h-[360px]'
+      />
+    )
+  }
 
   return (
     <DataTablePage
