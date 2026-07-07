@@ -75,6 +75,18 @@ const PROGRESS_BAR_CLASS_NAME: Record<SystemTaskStatus, string> = {
   failed: '[&_[data-slot=progress-indicator]]:bg-destructive',
 }
 
+function getTaskStatus(status: string): SystemTaskStatus {
+  if (
+    status === 'pending' ||
+    status === 'running' ||
+    status === 'succeeded' ||
+    status === 'failed'
+  ) {
+    return status
+  }
+  return 'failed'
+}
+
 // Maps backend system task type constants to i18n source keys. Unknown/future
 // types fall back to their raw identifier so the panel never shows blank.
 const TYPE_LABEL: Record<string, string> = {
@@ -133,6 +145,7 @@ function SystemTasksTable(props: SystemTasksTableProps) {
         </TableHeader>
         <TableBody>
           {props.tasks.map((task) => {
+            const status = getTaskStatus(task.status)
             const progress = getProgress(task)
             return (
               <TableRow key={task.task_id} className='hover:bg-muted/30'>
@@ -148,17 +161,17 @@ function SystemTasksTable(props: SystemTasksTableProps) {
                 </TableCell>
                 <TableCell className='py-3 align-middle'>
                   <Badge
-                    variant={STATUS_VARIANT[task.status]}
-                    className={cn('gap-1.5', STATUS_CLASS_NAME[task.status])}
+                    variant={STATUS_VARIANT[status]}
+                    className={cn('gap-1.5', STATUS_CLASS_NAME[status])}
                   >
                     <span
                       className={cn(
                         'size-1.5 rounded-full',
-                        STATUS_DOT_CLASS_NAME[task.status]
+                        STATUS_DOT_CLASS_NAME[status]
                       )}
                       aria-hidden='true'
                     />
-                    {t(task.status)}
+                    {status === task.status ? t(task.status) : t('Unknown')}
                   </Badge>
                 </TableCell>
                 <TableCell className='py-3 align-middle'>
@@ -167,7 +180,7 @@ function SystemTasksTable(props: SystemTasksTableProps) {
                       value={progress ?? 0}
                       className={cn(
                         'w-24',
-                        PROGRESS_BAR_CLASS_NAME[task.status]
+                        PROGRESS_BAR_CLASS_NAME[status]
                       )}
                     />
                     <span className='text-muted-foreground w-10 text-right text-xs tabular-nums'>
@@ -217,7 +230,9 @@ export function SystemTasksPanel() {
     staleTime: 30 * 1000,
     retry: false,
     refetchInterval: (query) =>
-      query.state.data?.some((task) => isActiveStatus(task.status))
+      query.state.data?.some((task) =>
+        isActiveStatus(getTaskStatus(task.status))
+      )
         ? ACTIVE_POLL_INTERVAL_MS
         : false,
   })
@@ -225,9 +240,15 @@ export function SystemTasksPanel() {
   const tasks = tasksQuery.data ?? []
   const loading = tasksQuery.isLoading
   const refreshing = tasksQuery.isFetching && !tasksQuery.isLoading
-  const hasActiveTasks = tasks.some((task) => isActiveStatus(task.status))
-  const activeTasks = tasks.filter((task) => isActiveStatus(task.status))
-  const historyTasks = tasks.filter((task) => !isActiveStatus(task.status))
+  const hasActiveTasks = tasks.some((task) =>
+    isActiveStatus(getTaskStatus(task.status))
+  )
+  const activeTasks = tasks.filter((task) =>
+    isActiveStatus(getTaskStatus(task.status))
+  )
+  const historyTasks = tasks.filter(
+    (task) => !isActiveStatus(getTaskStatus(task.status))
+  )
 
   return (
     <section className='bg-card overflow-hidden rounded-lg border shadow-xs'>

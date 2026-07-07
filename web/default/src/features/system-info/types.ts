@@ -65,7 +65,7 @@ export type SystemInstanceInfo = {
 
 export type SystemInstance = {
   node_name: string
-  status: SystemInstanceStatus
+  status: string
   stale_after_seconds: number
   started_at: number
   last_seen_at: number

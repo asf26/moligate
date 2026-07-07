@@ -83,6 +83,11 @@ const STATUS_DOT_CLASS_NAME: Record<SystemInstanceStatus, string> = {
   stale: 'bg-amber-500',
 }
 
+function getInstanceStatus(status: string): SystemInstanceStatus {
+  if (status === 'online' || status === 'stale') return status
+  return 'stale'
+}
+
 function roleLabel(instance: SystemInstance) {
   if (instance.info?.role?.is_master) return 'master'
   return 'worker'
@@ -215,7 +220,11 @@ function ResourceCell(props: ResourceCellProps) {
   return (
     <TooltipProvider delay={100}>
       <Tooltip>
-        <TooltipTrigger className='block w-full rounded-sm text-left focus-visible:ring-2 focus-visible:outline-none'>
+        <TooltipTrigger
+          render={
+            <span className='block w-full rounded-sm text-left focus-visible:ring-2 focus-visible:outline-none' />
+          }
+        >
           {content}
         </TooltipTrigger>
         <TooltipContent className='max-w-80'>{props.tooltip}</TooltipContent>
@@ -272,6 +281,7 @@ function SystemInstancesList(props: SystemInstancesTableProps) {
         </TableHeader>
         <TableBody>
           {props.instances.map((instance) => {
+            const status = getInstanceStatus(instance.status)
             const shouldConfigure =
               instance.info?.node?.should_configure_manually === true
             const resources = instance.info?.resources
@@ -286,7 +296,7 @@ function SystemInstancesList(props: SystemInstancesTableProps) {
                     <span
                       className={cn(
                         'size-2 shrink-0 rounded-full',
-                        STATUS_DOT_CLASS_NAME[instance.status]
+                        STATUS_DOT_CLASS_NAME[status]
                       )}
                       aria-hidden='true'
                     />
@@ -298,7 +308,9 @@ function SystemInstancesList(props: SystemInstancesTableProps) {
                         {shouldConfigure && (
                           <Popover>
                             <PopoverTrigger
-                              className='inline-flex shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none'
+                              render={
+                                <span className='inline-flex shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none' />
+                              }
                               aria-label={t('Configure NODE_NAME')}
                             >
                               <Badge
@@ -352,24 +364,26 @@ function SystemInstancesList(props: SystemInstancesTableProps) {
                     variant='secondary'
                     className={cn(
                       'gap-1.5',
-                      STATUS_CLASS_NAME[instance.status]
+                      STATUS_CLASS_NAME[status]
                     )}
                   >
                     <span
                       className={cn(
                         'size-1.5 rounded-full',
-                        STATUS_DOT_CLASS_NAME[instance.status]
+                        STATUS_DOT_CLASS_NAME[status]
                       )}
                       aria-hidden='true'
                     />
-                    {t(instance.status)}
+                    {status === instance.status ? t(instance.status) : t('Unknown')}
                   </Badge>
                 </TableCell>
                 <TableCell className='py-2.5 align-middle'>
                   <TooltipProvider delay={100}>
                     <Tooltip>
                       <TooltipTrigger
-                        className='inline-flex shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none'
+                        render={
+                          <span className='inline-flex shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none' />
+                        }
                         aria-label={t('Node role')}
                       >
                         <Badge variant='outline'>{roleLabel(instance)}</Badge>
@@ -441,7 +455,7 @@ function SystemInstancesList(props: SystemInstancesTableProps) {
                   )}
                 </TableCell>
                 <TableCell className='py-2.5 pr-4 text-right align-middle'>
-                  {instance.status === 'stale' ? (
+                  {status === 'stale' ? (
                     <TooltipProvider delay={100}>
                       <Tooltip>
                         <TooltipTrigger

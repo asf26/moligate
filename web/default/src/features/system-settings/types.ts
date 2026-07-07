@@ -60,7 +60,7 @@ export type SystemTask<
   id: number
   task_id: string
   type: string
-  status: SystemTaskStatus
+  status: string
   active_key?: string
   payload?: TPayload
   state?: TState
