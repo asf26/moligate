@@ -55,23 +55,17 @@ export function Channels() {
   if (retryLabel) {
     retryBadge = isRoot ? (
       <Tooltip>
-        <TooltipTrigger
-          render={
-            <Badge
-              variant='outline'
-              className='shrink-0 cursor-pointer'
-              aria-label={t('Retry Settings')}
-              render={
-                <Link
-                  to='/system-settings/models/$section'
-                  params={{ section: 'routing-reliability' }}
-                />
-              }
-            />
-          }
-        >
-          <span>{retryLabel}</span>
-          <Settings2 data-icon='inline-end' />
+        <TooltipTrigger render={<span className='inline-flex shrink-0' />}>
+          <Link
+            to='/system-settings/models/$section'
+            params={{ section: 'routing-reliability' }}
+            aria-label={t('Retry Settings')}
+          >
+            <Badge variant='outline' className='cursor-pointer'>
+              <span>{retryLabel}</span>
+              <Settings2 data-icon='inline-end' />
+            </Badge>
+          </Link>
         </TooltipTrigger>
         <TooltipContent>
           <p>{t('Retry Settings')}</p>
