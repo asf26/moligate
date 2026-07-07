@@ -30,6 +30,8 @@ import type {
   CreemProduct,
   PaymentMethod,
   WaffoPayMethod,
+  RechargeBonusInfo,
+  InviteRankingInfo,
 } from '../types'
 
 // ============================================================================
@@ -163,6 +165,57 @@ function parseDiscountMap(data: unknown): Record<number, number> {
   )
 }
 
+function parseRechargeBonus(data: unknown): RechargeBonusInfo | undefined {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined
+  }
+  const item = data as Record<string, unknown>
+  return {
+    enabled: item.enabled === true,
+    active: item.active === true,
+    min_amount: Number(item.min_amount) || 0,
+    bonus_rate: Number(item.bonus_rate) || 0,
+    start_time: Number(item.start_time) || 0,
+    end_time: Number(item.end_time) || 0,
+    title: typeof item.title === 'string' ? item.title : undefined,
+    description:
+      typeof item.description === 'string' ? item.description : undefined,
+    show_on_topup: item.show_on_topup !== false,
+    show_bonus_ratio: item.show_bonus_ratio !== false,
+  }
+}
+
+function parseInviteRanking(data: unknown): InviteRankingInfo | undefined {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined
+  }
+  const item = data as Record<string, unknown>
+  const rawItems = Array.isArray(item.items) ? item.items : []
+  return {
+    enabled: item.enabled === true,
+    active: item.active === true,
+    start_time: Number(item.start_time) || 0,
+    end_time: Number(item.end_time) || 0,
+    title: typeof item.title === 'string' ? item.title : undefined,
+    show_top_n: Number(item.show_top_n) || 5,
+    mask_users: item.mask_users !== false,
+    show_on_topup: item.show_on_topup !== false,
+    items: rawItems
+      .filter(
+        (entry): entry is Record<string, unknown> =>
+          !!entry && typeof entry === 'object'
+      )
+      .map((entry) => ({
+        rank: Number(entry.rank) || 0,
+        user_id: Number(entry.user_id) || 0,
+        display_name:
+          typeof entry.display_name === 'string' ? entry.display_name : '',
+        invite_count: Number(entry.invite_count) || 0,
+      }))
+      .filter((entry) => entry.rank > 0 && entry.invite_count > 0),
+  }
+}
+
 export function useTopupInfo() {
   const [topupInfo, setTopupInfo] = useState<TopupInfo | null>(null)
   const [presetAmounts, setPresetAmounts] = useState<PresetAmount[]>([])
@@ -188,6 +241,8 @@ export function useTopupInfo() {
         ),
         amount_options: parseAmountOptions(response.data.amount_options),
         discount: parseDiscountMap(response.data.discount),
+        recharge_bonus: parseRechargeBonus(response.data.recharge_bonus),
+        invite_ranking: parseInviteRanking(response.data.invite_ranking),
         creem_products: parseCreemProducts(response.data.creem_products),
         waffo_pay_methods: parseWaffoPayMethods(
           response.data.waffo_pay_methods

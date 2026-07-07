@@ -134,6 +134,10 @@ export interface TopupInfo {
   amount_options: number[]
   /** Discount rates by amount */
   discount: Record<number, number>
+  /** Active recharge bonus campaign */
+  recharge_bonus?: RechargeBonusInfo
+  /** Active invite ranking campaign */
+  invite_ranking?: InviteRankingInfo
   /** Optional topup link for purchasing codes */
   topup_link?: string
   /** Whether Creem topup is enabled */
@@ -156,6 +160,38 @@ export interface TopupInfo {
   payment_compliance_confirmed?: boolean
   /** Current compliance terms version */
   payment_compliance_terms_version?: string
+}
+
+export interface RechargeBonusInfo {
+  enabled: boolean
+  active: boolean
+  min_amount: number
+  bonus_rate: number
+  start_time: number
+  end_time: number
+  title?: string
+  description?: string
+  show_on_topup?: boolean
+  show_bonus_ratio?: boolean
+}
+
+export interface InviteRankingItem {
+  rank: number
+  user_id: number
+  display_name: string
+  invite_count: number
+}
+
+export interface InviteRankingInfo {
+  enabled: boolean
+  active: boolean
+  start_time: number
+  end_time: number
+  title?: string
+  show_top_n: number
+  mask_users: boolean
+  show_on_topup?: boolean
+  items: InviteRankingItem[]
 }
 
 /**

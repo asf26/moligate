@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LayoutDashboard } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -48,168 +47,106 @@ type SectionDef = {
   modules: { key: string; title: string; description: string }[]
 }
 
-const migrateSidebarModulesConfig = (
-  config: SidebarModulesConfig
-): SidebarModulesConfig => {
-  const personalChannelStatus = config.personal?.channel_status
-  if (personalChannelStatus === undefined) {
-    return config
-  }
-
-  const consoleSection = config.console ?? { enabled: true }
-  config.console = {
-    ...consoleSection,
-    channel_status: consoleSection.channel_status ?? personalChannelStatus,
-  }
-  delete config.personal.channel_status
-
-  return config
-}
-
 export function SidebarModulesCard() {
   const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [config, setConfig] = useState<SidebarModulesConfig>({})
   const currentUser = useAuthStore((s) => s.auth.user)
   const setUser = useAuthStore((s) => s.auth.setUser)
-  const canAccessAffiliateModule = currentUser?.distribution_enabled === true
-  const canAccessAffiliateCdkModule =
-    currentUser?.affiliate_cdk_enabled === true
 
-  const sectionDefs = useMemo<SectionDef[]>(
-    () => [
-      {
-        key: 'chat',
-        title: t('Chat Area'),
-        description: t('Playground and chat functions'),
-        modules: [
-          {
-            key: 'playground',
-            title: t('Playground'),
-            description: t('AI model testing environment'),
-          },
-          {
-            key: 'chat',
-            title: t('Chat'),
-            description: t('Chat session management'),
-          },
-        ],
-      },
-      {
-        key: 'console',
-        title: t('Console Area'),
-        description: t('Data management and log viewing'),
-        modules: [
-          {
-            key: 'detail',
-            title: t('Dashboard'),
-            description: t('System data statistics'),
-          },
-          {
-            key: 'token',
-            title: t('Token Management'),
-            description: t('API token management'),
-          },
-          {
-            key: 'log',
-            title: t('Usage Logs'),
-            description: t('API usage records'),
-          },
-          {
-            key: 'midjourney',
-            title: t('Drawing Logs'),
-            description: t('Drawing task records'),
-          },
-          {
-            key: 'task',
-            title: t('Task Logs'),
-            description: t('System task records'),
-          },
-          {
-            key: 'channel_status',
-            title: t('Channel Status'),
-            description: t(
-              'Run configured channel monitors and show user-facing status data'
-            ),
-          },
-        ],
-      },
-      {
-        key: 'personal',
-        title: t('Personal Center Area'),
-        description: t('User personal functions'),
-        modules: [
-          {
-            key: 'topup',
-            title: t('Wallet Management'),
-            description: t('Balance and top-up management'),
-          },
-          ...(canAccessAffiliateModule
-            ? [
-                {
-                  key: 'affiliate',
-                  title: t('Top-up Rewards'),
-                  description: t(
-                    'Invite users to top up, then redeem earned reward points.'
-                  ),
-                },
-              ]
-            : []),
-          ...(canAccessAffiliateCdkModule
-            ? [
-                {
-                  key: 'affiliate_cdk',
-                  title: t('CDK purchase module'),
-                  description: t(
-                    'Controls whether this user can see and use the sidebar CDK purchase module.'
-                  ),
-                },
-              ]
-            : []),
-          {
-            key: 'personal',
-            title: t('Personal Settings'),
-            description: t('Personal info settings'),
-          },
-        ],
-      },
-    ],
-    [canAccessAffiliateCdkModule, canAccessAffiliateModule, t]
-  )
+  const sectionDefs: SectionDef[] = [
+    {
+      key: 'chat',
+      title: t('Chat Area'),
+      description: t('Playground and chat functions'),
+      modules: [
+        {
+          key: 'playground',
+          title: t('Playground'),
+          description: t('AI model testing environment'),
+        },
+        {
+          key: 'chat',
+          title: t('Chat'),
+          description: t('Chat session management'),
+        },
+      ],
+    },
+    {
+      key: 'console',
+      title: t('Console Area'),
+      description: t('Data management and log viewing'),
+      modules: [
+        {
+          key: 'detail',
+          title: t('Dashboard'),
+          description: t('System data statistics'),
+        },
+        {
+          key: 'token',
+          title: t('Token Management'),
+          description: t('API token management'),
+        },
+        {
+          key: 'log',
+          title: t('Usage Logs'),
+          description: t('API usage records'),
+        },
+        {
+          key: 'midjourney',
+          title: t('Drawing Logs'),
+          description: t('Drawing task records'),
+        },
+        {
+          key: 'task',
+          title: t('Task Logs'),
+          description: t('System task records'),
+        },
+      ],
+    },
+    {
+      key: 'personal',
+      title: t('Personal Center Area'),
+      description: t('User personal functions'),
+      modules: [
+        {
+          key: 'topup',
+          title: t('Wallet Management'),
+          description: t('Balance and top-up management'),
+        },
+        {
+          key: 'personal',
+          title: t('Personal Settings'),
+          description: t('Personal info settings'),
+        },
+      ],
+    },
+  ]
 
-  const buildDefaultConfig = useCallback(() => {
-    const defaults: SidebarModulesConfig = {}
-    for (const sec of sectionDefs) {
-      defaults[sec.key] = { enabled: true }
-      for (const mod of sec.modules) defaults[sec.key][mod.key] = true
+  const loadConfig = useCallback(async () => {
+    try {
+      const res = await api.get('/api/user/self')
+      if (res.data.success && res.data.data?.sidebar_modules) {
+        const raw = res.data.data.sidebar_modules
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+        setConfig(parsed)
+      } else {
+        const defaults: SidebarModulesConfig = {}
+        for (const sec of sectionDefs) {
+          defaults[sec.key] = { enabled: true }
+          for (const mod of sec.modules) defaults[sec.key][mod.key] = true
+        }
+        setConfig(defaults)
+      }
+    } catch {
+      /* ignore */
     }
-    return defaults
-  }, [sectionDefs])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
-    let ignore = false
-
-    api
-      .get('/api/user/self')
-      .then((res) => {
-        if (ignore) return
-
-        if (res.data.success && res.data.data?.sidebar_modules) {
-          const raw = res.data.data.sidebar_modules
-          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-          setConfig(migrateSidebarModulesConfig(parsed))
-        } else {
-          setConfig(buildDefaultConfig())
-        }
-      })
-      .catch(() => {
-        /* ignore */
-      })
-
-    return () => {
-      ignore = true
-    }
-  }, [buildDefaultConfig])
+    loadConfig()
+  }, [loadConfig])
 
   const toggleSection = (sectionKey: string, val: boolean) => {
     setConfig((prev) => ({
@@ -254,7 +191,12 @@ export function SidebarModulesCard() {
   }
 
   const handleReset = () => {
-    setConfig(buildDefaultConfig())
+    const defaults: SidebarModulesConfig = {}
+    for (const sec of sectionDefs) {
+      defaults[sec.key] = { enabled: true }
+      for (const mod of sec.modules) defaults[sec.key][mod.key] = true
+    }
+    setConfig(defaults)
     toast.success(t('Reset to default configuration'))
   }
 

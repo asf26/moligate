@@ -141,6 +141,24 @@ const paymentSchema = z.object({
       })
     }
   }),
+  RechargeBonus: z.string(),
+  InviteRanking: z.string(),
+  RechargeBonusEnabled: z.boolean(),
+  RechargeBonusMinAmount: z.coerce.number().min(0),
+  RechargeBonusRatePercent: z.coerce.number().min(0).max(100),
+  RechargeBonusStartTime: z.string(),
+  RechargeBonusEndTime: z.string(),
+  RechargeBonusTitle: z.string(),
+  RechargeBonusDescription: z.string(),
+  RechargeBonusShowOnTopup: z.boolean(),
+  RechargeBonusShowBonusRatio: z.boolean(),
+  InviteRankingEnabled: z.boolean(),
+  InviteRankingStartTime: z.string(),
+  InviteRankingEndTime: z.string(),
+  InviteRankingTitle: z.string(),
+  InviteRankingShowTopN: z.coerce.number().min(1).max(20),
+  InviteRankingMaskUsers: z.boolean(),
+  InviteRankingShowOnTopup: z.boolean(),
   StripeApiSecret: z.string(),
   StripeWebhookSecret: z.string(),
   StripePriceId: z.string(),
@@ -180,9 +198,30 @@ const paymentSchema = z.object({
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
 type WaffoFormFieldValues = Omit<WaffoSettingsValues, 'WaffoPayMethods'>
+type CampaignFormFieldValues = Pick<
+  PaymentFormValues,
+  | 'RechargeBonusEnabled'
+  | 'RechargeBonusMinAmount'
+  | 'RechargeBonusRatePercent'
+  | 'RechargeBonusStartTime'
+  | 'RechargeBonusEndTime'
+  | 'RechargeBonusTitle'
+  | 'RechargeBonusDescription'
+  | 'RechargeBonusShowOnTopup'
+  | 'RechargeBonusShowBonusRatio'
+  | 'InviteRankingEnabled'
+  | 'InviteRankingStartTime'
+  | 'InviteRankingEndTime'
+  | 'InviteRankingTitle'
+  | 'InviteRankingShowTopN'
+  | 'InviteRankingMaskUsers'
+  | 'InviteRankingShowOnTopup'
+>
 type PaymentBaseFormValues = Omit<
   PaymentFormValues,
-  keyof WaffoFormFieldValues | keyof WaffoPancakeSettingsValues
+  | keyof WaffoFormFieldValues
+  | keyof WaffoPancakeSettingsValues
+  | keyof CampaignFormFieldValues
 >
 
 const CURRENT_COMPLIANCE_TERMS_VERSION = 'v1'
@@ -193,6 +232,28 @@ type PaymentComplianceDefaults = {
   termsVersion: string
   confirmedAt: number
   confirmedBy: number
+}
+
+type RechargeBonusConfig = {
+  enabled?: boolean
+  min_amount?: number
+  bonus_rate?: number
+  start_time?: number
+  end_time?: number
+  title?: string
+  description?: string
+  show_on_topup?: boolean
+  show_bonus_ratio?: boolean
+}
+
+type InviteRankingConfig = {
+  enabled?: boolean
+  start_time?: number
+  end_time?: number
+  title?: string
+  show_top_n?: number
+  mask_users?: boolean
+  show_on_topup?: boolean
 }
 
 type PaymentSettingsSectionProps = {
@@ -213,6 +274,39 @@ function parseWaffoPayMethods(value: string): PayMethod[] {
   }
 }
 
+function parseJsonObject<T extends Record<string, unknown>>(
+  value: string,
+  fallback: T
+): T {
+  try {
+    const parsed = JSON.parse(value || '{}')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { ...fallback, ...parsed }
+    }
+  } catch {
+    /* empty */
+  }
+  return fallback
+}
+
+function timestampToLocalInput(timestamp: number | undefined): string {
+  if (!timestamp) return ''
+  const date = new Date(timestamp * 1000)
+  if (Number.isNaN(date.getTime())) return ''
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+}
+
+function localInputToTimestamp(value: string): number {
+  if (!value.trim()) return 0
+  const timestamp = Math.floor(new Date(value).getTime() / 1000)
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function normalizeCampaignJson(value: unknown): string {
+  return JSON.stringify(value)
+}
+
 export function PaymentSettingsSection({
   defaultValues,
   waffoDefaultValues,
@@ -224,13 +318,66 @@ export function PaymentSettingsSection({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
+  const campaignDefaults = React.useMemo(() => {
+    const rechargeBonus = parseJsonObject<RechargeBonusConfig>(
+      defaultValues.RechargeBonus,
+      {
+        enabled: false,
+        min_amount: 0,
+        bonus_rate: 0.1,
+        start_time: 0,
+        end_time: 0,
+        title: '',
+        description: '',
+        show_on_topup: true,
+        show_bonus_ratio: true,
+      }
+    )
+    const inviteRanking = parseJsonObject<InviteRankingConfig>(
+      defaultValues.InviteRanking,
+      {
+        enabled: false,
+        start_time: 0,
+        end_time: 0,
+        title: 'Invite Leaderboard',
+        show_top_n: 5,
+        mask_users: true,
+        show_on_topup: true,
+      }
+    )
+    return {
+      RechargeBonusEnabled: !!rechargeBonus.enabled,
+      RechargeBonusMinAmount: Number(rechargeBonus.min_amount) || 0,
+      RechargeBonusRatePercent:
+        Math.round((Number(rechargeBonus.bonus_rate) || 0) * 10000) / 100,
+      RechargeBonusStartTime: timestampToLocalInput(rechargeBonus.start_time),
+      RechargeBonusEndTime: timestampToLocalInput(rechargeBonus.end_time),
+      RechargeBonusTitle: rechargeBonus.title ?? '',
+      RechargeBonusDescription: rechargeBonus.description ?? '',
+      RechargeBonusShowOnTopup: rechargeBonus.show_on_topup !== false,
+      RechargeBonusShowBonusRatio: rechargeBonus.show_bonus_ratio !== false,
+      InviteRankingEnabled: !!inviteRanking.enabled,
+      InviteRankingStartTime: timestampToLocalInput(inviteRanking.start_time),
+      InviteRankingEndTime: timestampToLocalInput(inviteRanking.end_time),
+      InviteRankingTitle: inviteRanking.title ?? 'Invite Leaderboard',
+      InviteRankingShowTopN: Number(inviteRanking.show_top_n) || 5,
+      InviteRankingMaskUsers: inviteRanking.mask_users !== false,
+      InviteRankingShowOnTopup: inviteRanking.show_on_topup !== false,
+    }
+  }, [defaultValues.InviteRanking, defaultValues.RechargeBonus])
   const initialFormValues = React.useMemo<PaymentFormValues>(
     () => ({
       ...defaultValues,
       ...waffoDefaultValues,
       ...waffoPancakeDefaultValues,
+      ...campaignDefaults,
     }),
-    [defaultValues, waffoDefaultValues, waffoPancakeDefaultValues]
+    [
+      campaignDefaults,
+      defaultValues,
+      waffoDefaultValues,
+      waffoPancakeDefaultValues,
+    ]
   )
   const initialRef = React.useRef(initialFormValues)
   const defaultsSignature = React.useMemo(
@@ -352,6 +499,7 @@ export function PaymentSettingsSection({
     mode: 'onChange', // Enable real-time validation
     defaultValues: {
       ...initialFormValues,
+      ...campaignDefaults,
       PayMethods: formatJsonForEditor(initialFormValues.PayMethods),
       AmountOptions: formatJsonForEditor(initialFormValues.AmountOptions),
       AmountDiscount: formatJsonForEditor(initialFormValues.AmountDiscount),
@@ -409,12 +557,13 @@ export function PaymentSettingsSection({
     initialRef.current = parsedDefaults
     form.reset({
       ...parsedDefaults,
+      ...campaignDefaults,
       PayMethods: formatJsonForEditor(parsedDefaults.PayMethods),
       AmountOptions: formatJsonForEditor(parsedDefaults.AmountOptions),
       AmountDiscount: formatJsonForEditor(parsedDefaults.AmountDiscount),
       CreemProducts: formatJsonForEditor(parsedDefaults.CreemProducts),
     })
-  }, [defaultsSignature, form])
+  }, [campaignDefaults, defaultsSignature, form])
 
   const onSubmit = async (values: PaymentFormValues) => {
     const sanitized = {
@@ -427,6 +576,26 @@ export function PaymentSettingsSection({
       PayMethods: values.PayMethods.trim(),
       AmountOptions: values.AmountOptions.trim(),
       AmountDiscount: values.AmountDiscount.trim(),
+      RechargeBonus: normalizeCampaignJson({
+        enabled: values.RechargeBonusEnabled,
+        min_amount: values.RechargeBonusMinAmount,
+        bonus_rate: values.RechargeBonusRatePercent / 100,
+        start_time: localInputToTimestamp(values.RechargeBonusStartTime),
+        end_time: localInputToTimestamp(values.RechargeBonusEndTime),
+        title: values.RechargeBonusTitle.trim(),
+        description: values.RechargeBonusDescription.trim(),
+        show_on_topup: values.RechargeBonusShowOnTopup,
+        show_bonus_ratio: values.RechargeBonusShowBonusRatio,
+      }),
+      InviteRanking: normalizeCampaignJson({
+        enabled: values.InviteRankingEnabled,
+        start_time: localInputToTimestamp(values.InviteRankingStartTime),
+        end_time: localInputToTimestamp(values.InviteRankingEndTime),
+        title: values.InviteRankingTitle.trim(),
+        show_top_n: values.InviteRankingShowTopN,
+        mask_users: values.InviteRankingMaskUsers,
+        show_on_topup: values.InviteRankingShowOnTopup,
+      }),
       StripeApiSecret: values.StripeApiSecret.trim(),
       StripeWebhookSecret: values.StripeWebhookSecret.trim(),
       StripePriceId: values.StripePriceId.trim(),
@@ -471,6 +640,8 @@ export function PaymentSettingsSection({
       PayMethods: initialRef.current.PayMethods.trim(),
       AmountOptions: initialRef.current.AmountOptions.trim(),
       AmountDiscount: initialRef.current.AmountDiscount.trim(),
+      RechargeBonus: defaultValues.RechargeBonus.trim(),
+      InviteRanking: defaultValues.InviteRanking.trim(),
       StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
       StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
       StripePriceId: initialRef.current.StripePriceId.trim(),
@@ -563,10 +734,33 @@ export function PaymentSettingsSection({
     }
 
     if (
+      normalizeJsonForComparison(sanitized.RechargeBonus) !==
+      normalizeJsonForComparison(initial.RechargeBonus)
+    ) {
+      updates.push({
+        key: 'payment_setting.recharge_bonus',
+        value: sanitized.RechargeBonus,
+      })
+    }
+
+    if (
+      normalizeJsonForComparison(sanitized.InviteRanking) !==
+      normalizeJsonForComparison(initial.InviteRanking)
+    ) {
+      updates.push({
+        key: 'payment_setting.invite_ranking',
+        value: sanitized.InviteRanking,
+      })
+    }
+
+    if (
       sanitized.StripeApiSecret &&
       sanitized.StripeApiSecret !== initial.StripeApiSecret
     ) {
-      updates.push({ key: 'StripeApiSecret', value: sanitized.StripeApiSecret })
+      updates.push({
+        key: 'StripeApiSecret',
+        value: sanitized.StripeApiSecret,
+      })
     }
 
     if (
@@ -584,7 +778,10 @@ export function PaymentSettingsSection({
     }
 
     if (sanitized.StripeUnitPrice !== initial.StripeUnitPrice) {
-      updates.push({ key: 'StripeUnitPrice', value: sanitized.StripeUnitPrice })
+      updates.push({
+        key: 'StripeUnitPrice',
+        value: sanitized.StripeUnitPrice,
+      })
     }
 
     if (sanitized.StripeMinTopUp !== initial.StripeMinTopUp) {
@@ -638,7 +835,10 @@ export function PaymentSettingsSection({
     }
 
     if (sanitized.WaffoMerchantId !== initial.WaffoMerchantId) {
-      updates.push({ key: 'WaffoMerchantId', value: sanitized.WaffoMerchantId })
+      updates.push({
+        key: 'WaffoMerchantId',
+        value: sanitized.WaffoMerchantId,
+      })
     }
 
     if (sanitized.WaffoCurrency !== initial.WaffoCurrency) {
@@ -662,7 +862,10 @@ export function PaymentSettingsSection({
     }
 
     if (sanitized.WaffoPublicCert !== initial.WaffoPublicCert) {
-      updates.push({ key: 'WaffoPublicCert', value: sanitized.WaffoPublicCert })
+      updates.push({
+        key: 'WaffoPublicCert',
+        value: sanitized.WaffoPublicCert,
+      })
     }
 
     if (sanitized.WaffoSandboxPublicCert !== initial.WaffoSandboxPublicCert) {
@@ -677,7 +880,10 @@ export function PaymentSettingsSection({
     }
 
     if (sanitized.WaffoPrivateKey) {
-      updates.push({ key: 'WaffoPrivateKey', value: sanitized.WaffoPrivateKey })
+      updates.push({
+        key: 'WaffoPrivateKey',
+        value: sanitized.WaffoPrivateKey,
+      })
     }
 
     if (sanitized.WaffoSandboxApiKey) {
@@ -698,7 +904,10 @@ export function PaymentSettingsSection({
       normalizeJsonForComparison(sanitized.WaffoPayMethods) !==
       normalizeJsonForComparison(initial.WaffoPayMethods)
     ) {
-      updates.push({ key: 'WaffoPayMethods', value: sanitized.WaffoPayMethods })
+      updates.push({
+        key: 'WaffoPayMethods',
+        value: sanitized.WaffoPayMethods,
+      })
     }
 
     const hasWaffoPancakeChanges =
@@ -946,6 +1155,321 @@ export function PaymentSettingsSection({
                       </FormItem>
                     )}
                   />
+                </div>
+
+                <div className='rounded-lg border p-4'>
+                  <div className='mb-4'>
+                    <h4 className='text-sm font-medium'>
+                      {t('Recharge bonus campaign')}
+                    </h4>
+                    <p className='text-muted-foreground text-sm'>
+                      {t(
+                        'Give extra balance when users recharge during a campaign window.'
+                      )}
+                    </p>
+                  </div>
+                  <div className='grid gap-4 md:grid-cols-2'>
+                    <FormField
+                      control={form.control}
+                      name='RechargeBonusEnabled'
+                      render={({ field }) => (
+                        <SettingsSwitchItem>
+                          <SettingsSwitchContent>
+                            <FormLabel>{t('Enable recharge bonus')}</FormLabel>
+                            <FormDescription>
+                              {t(
+                                'Apply the configured bonus ratio to qualifying top-ups.'
+                              )}
+                            </FormDescription>
+                          </SettingsSwitchContent>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </SettingsSwitchItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='RechargeBonusShowOnTopup'
+                      render={({ field }) => (
+                        <SettingsSwitchItem>
+                          <SettingsSwitchContent>
+                            <FormLabel>{t('Show on top-up page')}</FormLabel>
+                            <FormDescription>
+                              {t(
+                                'Display campaign details on the user recharge page.'
+                              )}
+                            </FormDescription>
+                          </SettingsSwitchContent>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </SettingsSwitchItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='RechargeBonusMinAmount'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Minimum recharge amount')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='number'
+                              min={0}
+                              {...safeNumberFieldProps(field)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='RechargeBonusRatePercent'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Bonus ratio (%)')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='number'
+                              step='0.01'
+                              min={0}
+                              max={100}
+                              {...safeNumberFieldProps(field)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='RechargeBonusStartTime'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Start time')}</FormLabel>
+                          <FormControl>
+                            <Input type='datetime-local' {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='RechargeBonusEndTime'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('End time')}</FormLabel>
+                          <FormControl>
+                            <Input type='datetime-local' {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='RechargeBonusTitle'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Campaign title')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder={t('Limited-time recharge bonus')}
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='RechargeBonusShowBonusRatio'
+                      render={({ field }) => (
+                        <SettingsSwitchItem>
+                          <SettingsSwitchContent>
+                            <FormLabel>{t('Show bonus ratio')}</FormLabel>
+                            <FormDescription>
+                              {t(
+                                'Show the bonus percentage next to amount options.'
+                              )}
+                            </FormDescription>
+                          </SettingsSwitchContent>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </SettingsSwitchItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='RechargeBonusDescription'
+                      render={({ field }) => (
+                        <FormItem className='md:col-span-2'>
+                          <FormLabel>{t('Campaign description')}</FormLabel>
+                          <FormControl>
+                            <Textarea rows={3} {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <div className='rounded-lg border p-4'>
+                  <div className='mb-4'>
+                    <h4 className='text-sm font-medium'>
+                      {t('Invite ranking campaign')}
+                    </h4>
+                    <p className='text-muted-foreground text-sm'>
+                      {t(
+                        'Show the top inviters by new users registered during the campaign window.'
+                      )}
+                    </p>
+                  </div>
+                  <div className='grid gap-4 md:grid-cols-2'>
+                    <FormField
+                      control={form.control}
+                      name='InviteRankingEnabled'
+                      render={({ field }) => (
+                        <SettingsSwitchItem>
+                          <SettingsSwitchContent>
+                            <FormLabel>{t('Enable invite ranking')}</FormLabel>
+                            <FormDescription>
+                              {t(
+                                'Calculate and display the campaign invite leaderboard.'
+                              )}
+                            </FormDescription>
+                          </SettingsSwitchContent>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </SettingsSwitchItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='InviteRankingShowOnTopup'
+                      render={({ field }) => (
+                        <SettingsSwitchItem>
+                          <SettingsSwitchContent>
+                            <FormLabel>
+                              {t('Show leaderboard on top-up page')}
+                            </FormLabel>
+                            <FormDescription>
+                              {t(
+                                'Display the top inviters below the recharge campaign.'
+                              )}
+                            </FormDescription>
+                          </SettingsSwitchContent>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </SettingsSwitchItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='InviteRankingStartTime'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Start time')}</FormLabel>
+                          <FormControl>
+                            <Input type='datetime-local' {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='InviteRankingEndTime'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('End time')}</FormLabel>
+                          <FormControl>
+                            <Input type='datetime-local' {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='InviteRankingTitle'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Leaderboard title')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder={t('Invite Leaderboard')}
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='InviteRankingShowTopN'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Leaderboard size')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='number'
+                              min={1}
+                              max={20}
+                              {...safeNumberFieldProps(field)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='InviteRankingMaskUsers'
+                      render={({ field }) => (
+                        <SettingsSwitchItem className='md:col-span-2'>
+                          <SettingsSwitchContent>
+                            <FormLabel>{t('Mask usernames')}</FormLabel>
+                            <FormDescription>
+                              {t(
+                                'Hide full usernames in the public leaderboard.'
+                              )}
+                            </FormDescription>
+                          </SettingsSwitchContent>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </SettingsSwitchItem>
+                      )}
+                    />
+                  </div>
                 </div>
 
                 <FormField

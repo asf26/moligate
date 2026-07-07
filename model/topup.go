@@ -137,6 +137,24 @@ func calculateQuotaFromMoney(money float64) int {
 	return int(decimal.NewFromFloat(money).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
 }
 
+func calculateRechargeBonusQuota(qualifyingAmount int64, baseQuota int, now int64) int {
+	if baseQuota <= 0 {
+		return 0
+	}
+	bonus := operation_setting.GetPaymentSetting().RechargeBonus
+	if !bonus.AppliesToAmount(qualifyingAmount, now) {
+		return 0
+	}
+	return int(decimal.NewFromInt(int64(baseQuota)).Mul(decimal.NewFromFloat(bonus.BonusRate)).IntPart())
+}
+
+func rechargeBonusQualifyingAmount(topUp *TopUp, baseQuota int) int64 {
+	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		return int64(baseQuota)
+	}
+	return topUp.Amount
+}
+
 func NormalizeTopUpAmountForStorage(amount int64) int64 {
 	if operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens {
 		return amount
@@ -176,14 +194,17 @@ func creditedQuotaFromTopUp(topUp *TopUp) int {
 	if topUp == nil {
 		return 0
 	}
+	var baseQuota int
 	switch topUp.PaymentProvider {
 	case PaymentProviderStripe:
-		return calculateQuotaFromMoney(topUp.Money)
+		baseQuota = calculateQuotaFromMoney(topUp.Money)
 	case PaymentProviderCreem:
-		return int(topUp.Amount)
+		baseQuota = int(topUp.Amount)
 	default:
-		return calculateQuotaFromAmount(topUp.Amount)
+		baseQuota = calculateQuotaFromAmount(topUp.Amount)
 	}
+	qualifyingAmount := rechargeBonusQualifyingAmount(topUp, baseQuota)
+	return baseQuota + calculateRechargeBonusQuota(qualifyingAmount, baseQuota, common.GetTimestamp())
 }
 
 func Recharge(referenceId string, customerId string, callerIp string) (err error) {
@@ -213,7 +234,7 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 			return errors.New("充值订单状态错误")
 		}
 
-		quotaToAdd = calculateQuotaFromMoney(topUp.Money)
+		quotaToAdd = creditedQuotaFromTopUp(topUp)
 		return completeTopUpSuccessWithTx(tx, topUp, quotaToAdd, map[string]interface{}{"stripe_customer": customerId})
 	})
 
@@ -419,11 +440,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		// 计算应充值额度：
 		// - Stripe 订单：Money 代表经分组倍率换算后的美元数量，直接 * QuotaPerUnit
 		// - 其他订单（如易支付）：Amount 为美元数量，* QuotaPerUnit
-		if topUp.PaymentProvider == PaymentProviderStripe {
-			quotaToAdd = calculateQuotaFromMoney(topUp.Money)
-		} else {
-			quotaToAdd = calculateQuotaFromAmount(topUp.Amount)
-		}
+		quotaToAdd = creditedQuotaFromTopUp(topUp)
 		if err := completeTopUpSuccessWithTx(tx, topUp, quotaToAdd, nil); err != nil {
 			return err
 		}
@@ -476,7 +493,7 @@ func CompleteEpayTopUp(tradeNo string, actualPaymentMethod string, callerIp stri
 			topUp.PaymentMethod = actualPaymentMethod
 		}
 
-		quotaToAdd = calculateQuotaFromAmount(topUp.Amount)
+		quotaToAdd = creditedQuotaFromTopUp(topUp)
 		if err := completeTopUpSuccessWithTx(tx, topUp, quotaToAdd, nil); err != nil {
 			return err
 		}
@@ -521,7 +538,7 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		}
 
 		// Creem 直接使用 Amount 作为充值额度（整数）
-		quotaToAdd = int(topUp.Amount)
+		quotaToAdd = creditedQuotaFromTopUp(topUp)
 
 		// 构建更新字段，优先使用邮箱，如果邮箱为空则使用用户名
 		updateFields := map[string]interface{}{}
@@ -585,7 +602,7 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 			return errors.New("充值订单状态错误")
 		}
 
-		quotaToAdd = calculateQuotaFromAmount(topUp.Amount)
+		quotaToAdd = creditedQuotaFromTopUp(topUp)
 		return completeTopUpSuccessWithTx(tx, topUp, quotaToAdd, nil)
 	})
 
@@ -632,7 +649,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 			return errors.New("充值订单状态错误")
 		}
 
-		quotaToAdd = calculateQuotaFromAmount(topUp.Amount)
+		quotaToAdd = creditedQuotaFromTopUp(topUp)
 		return completeTopUpSuccessWithTx(tx, topUp, quotaToAdd, nil)
 	})
 

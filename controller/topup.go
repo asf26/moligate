@@ -20,6 +20,74 @@ import (
 	"github.com/samber/lo"
 )
 
+func buildRechargeBonusInfo() gin.H {
+	bonus := operation_setting.GetPaymentSetting().RechargeBonus
+	now := common.GetTimestamp()
+	return gin.H{
+		"enabled":          bonus.Enabled,
+		"active":           bonus.IsActive(now),
+		"min_amount":       bonus.MinAmount,
+		"bonus_rate":       bonus.BonusRate,
+		"start_time":       bonus.StartTime,
+		"end_time":         bonus.EndTime,
+		"title":            bonus.Title,
+		"description":      bonus.Description,
+		"show_on_topup":    bonus.ShowOnTopup,
+		"show_bonus_ratio": bonus.ShowBonusRatio,
+	}
+}
+
+func maskInviteRankingName(name string) string {
+	if name == "" {
+		return "User"
+	}
+	runes := []rune(name)
+	if len(runes) <= 2 {
+		return string(runes[:1]) + "*"
+	}
+	return string(runes[:1]) + "***" + string(runes[len(runes)-1:])
+}
+
+func buildInviteRankingInfo(c *gin.Context) gin.H {
+	ranking := operation_setting.GetPaymentSetting().InviteRanking
+	now := common.GetTimestamp()
+	active := ranking.IsActive(now)
+	items := make([]gin.H, 0)
+	if active && ranking.ShowOnTopup {
+		rows, err := model.GetInviteRanking(ranking.StartTime, ranking.EndTime, ranking.ShowTopN)
+		if err != nil {
+			logger.LogError(c.Request.Context(), "获取活动拉新排行榜失败: "+err.Error())
+		} else {
+			for index, row := range rows {
+				name := row.DisplayName
+				if name == "" {
+					name = row.Username
+				}
+				if ranking.MaskUsers {
+					name = maskInviteRankingName(name)
+				}
+				items = append(items, gin.H{
+					"rank":         index + 1,
+					"user_id":      row.UserId,
+					"display_name": name,
+					"invite_count": row.InviteCount,
+				})
+			}
+		}
+	}
+	return gin.H{
+		"enabled":       ranking.Enabled,
+		"active":        active,
+		"start_time":    ranking.StartTime,
+		"end_time":      ranking.EndTime,
+		"title":         ranking.Title,
+		"show_top_n":    ranking.ShowTopN,
+		"mask_users":    ranking.MaskUsers,
+		"show_on_topup": ranking.ShowOnTopup,
+		"items":         items,
+	}
+}
+
 func GetTopUpInfo(c *gin.Context) {
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
 
@@ -117,6 +185,8 @@ func GetTopUpInfo(c *gin.Context) {
 		"waffo_pancake_min_topup": setting.WaffoPancakeMinTopUp,
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,
+		"recharge_bonus":          buildRechargeBonusInfo(),
+		"invite_ranking":          buildInviteRankingInfo(c),
 		"topup_link":              common.TopUpLink,
 	}
 	common.ApiSuccess(c, data)

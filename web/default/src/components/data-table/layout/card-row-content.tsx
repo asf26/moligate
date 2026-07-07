@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { Row } from '@tanstack/react-table'
+import type { Cell, Row } from '@tanstack/react-table'
 import * as React from 'react'
 
 import { StatusBadgeTypeContext } from '@/components/status-badge'
@@ -89,14 +89,14 @@ function CompactContent<TData>({ row }: { row: Row<TData> }) {
   return (
     <>
       {/* Row 1: Title + Badge */}
-      <div className='flex items-start justify-between gap-2'>
+      <div className='flex items-center justify-between gap-2'>
         {titleCell && (
           <div className='min-w-0 flex-1 text-sm font-medium [&_[data-slot=status-badge]]:max-w-full [&_[data-slot=status-badge]]:whitespace-normal'>
             {renderCellContent(titleCell)}
           </div>
         )}
         {badgeCell && (
-          <div className='flex shrink-0 justify-end pt-0.5 [&_[data-slot=status-badge]]:max-w-none'>
+          <div className='flex-none [&_[data-slot=status-badge]]:max-w-none'>
             {renderCellContent(badgeCell)}
           </div>
         )}
@@ -114,7 +114,7 @@ function CompactContent<TData>({ row }: { row: Row<TData> }) {
                     {label}
                   </div>
                 )}
-                <div className='min-w-0 overflow-hidden text-xs [&_:is([data-slot=badge-cell],[data-slot=provider-badge],[data-slot=status-badge])]:ml-0 [&_[data-slot=status-badge]]:whitespace-normal'>
+                <div className='min-w-0 overflow-hidden text-xs [&_:is([data-slot=badge-cell],[data-slot=provider-badge],[data-slot=status-badge])]:ml-0'>
                   <StatusBadgeTypeContext.Provider value='text'>
                     {renderCellContent(cell) ?? '-'}
                   </StatusBadgeTypeContext.Provider>

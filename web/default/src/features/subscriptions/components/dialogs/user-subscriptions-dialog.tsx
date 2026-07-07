@@ -16,13 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Plus } from 'lucide-react'
+import { Ban, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { StaticDataTable } from '@/components/data-table'
+import { DataTableRowActionMenu, StaticDataTable } from '@/components/data-table'
 import {
   sideDrawerContentClassName,
   sideDrawerFormClassName,
@@ -51,6 +51,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { formatQuota } from '@/lib/format'
 
 import {
@@ -61,7 +62,7 @@ import {
   deleteUserSubscription,
   resetUserSubscriptionsByPlan,
 } from '../../api'
-import { formatSubscriptionPrice, formatTimestamp } from '../../lib'
+import { formatTimestamp } from '../../lib'
 import type { PlanRecord, UserSubscriptionRecord } from '../../types'
 
 interface Props {
@@ -243,16 +244,15 @@ export function UserSubscriptionsDialog(props: Props) {
           <div className={sideDrawerFormClassName()}>
             <div className='flex gap-2'>
               <Select
-                items={[
-                  ...plans.map((p) => ({
-                    value: String(p.plan.id),
-                    label: (
-                      <>
-                        {p.plan.title} ({formatSubscriptionPrice(p.plan)})
-                      </>
-                    ),
-                  })),
-                ]}
+                items={plans.map((p) => ({
+                  value: String(p.plan.id),
+                  label: (
+                    <>
+                      {p.plan.title}($
+                      {Number(p.plan.price_amount || 0).toFixed(2)})
+                    </>
+                  ),
+                }))}
                 value={selectedPlanId}
                 onValueChange={(v) => v !== null && setSelectedPlanId(v)}
               >
@@ -263,7 +263,8 @@ export function UserSubscriptionsDialog(props: Props) {
                   <SelectGroup>
                     {plans.map((p) => (
                       <SelectItem key={p.plan.id} value={String(p.plan.id)}>
-                        {p.plan.title} ({formatSubscriptionPrice(p.plan)})
+                        {p.plan.title} ($
+                        {Number(p.plan.price_amount || 0).toFixed(2)})
                       </SelectItem>
                     ))}
                   </SelectGroup>

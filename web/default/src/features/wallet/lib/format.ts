@@ -88,6 +88,23 @@ export function getDiscountLabel(discount: number): string {
   return `${off}% OFF`
 }
 
+export function getBonusLabel(bonusRate: number): string {
+  if (bonusRate <= 0) {
+    return ''
+  }
+  return `+${Math.round(bonusRate * 100)}%`
+}
+
+export function formatCampaignDate(timestamp: number): string {
+  if (!timestamp) return ''
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(timestamp * 1000))
+}
+
 /**
  * Calculate pricing details for a preset amount
  */

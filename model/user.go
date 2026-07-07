@@ -293,6 +293,60 @@ func GetMaxUserId() int {
 	return user.Id
 }
 
+type InviteRankingItem struct {
+	UserId      int    `json:"user_id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	InviteCount int64  `json:"invite_count"`
+}
+
+func GetInviteRanking(startTime int64, endTime int64, limit int) ([]InviteRankingItem, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 20 {
+		limit = 20
+	}
+
+	invitees := DB.Model(&User{}).
+		Select("inviter_id, COUNT(*) AS invite_count").
+		Where("inviter_id > 0")
+	if startTime > 0 {
+		invitees = invitees.Where("created_at >= ?", startTime)
+	}
+	if endTime > 0 {
+		invitees = invitees.Where("created_at <= ?", endTime)
+	}
+	invitees = invitees.Group("inviter_id")
+
+	var rows []struct {
+		UserId      int
+		Username    string
+		DisplayName string
+		InviteCount int64
+	}
+	err := DB.Table("(?) AS invite_stats", invitees).
+		Select("users.id AS user_id, users.username AS username, users.display_name AS display_name, invite_stats.invite_count AS invite_count").
+		Joins("JOIN users ON users.id = invite_stats.inviter_id AND users.deleted_at IS NULL").
+		Order("invite_stats.invite_count DESC, users.id ASC").
+		Limit(limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]InviteRankingItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, InviteRankingItem{
+			UserId:      row.UserId,
+			Username:    row.Username,
+			DisplayName: row.DisplayName,
+			InviteCount: row.InviteCount,
+		})
+	}
+	return items, nil
+}
+
 func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err error) {
 	// Start transaction
 	tx := DB.Begin()
@@ -559,10 +613,6 @@ func (user *User) Insert(inviterId int) error {
 		return err
 	}
 
-	result := DB.Create(user)
-	if result.Error != nil {
-		return result.Error
-	}
 	if err := DB.Model(&User{}).
 		Where("id = ?", user.Id).
 		Updates(map[string]interface{}{
@@ -629,20 +679,21 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 			user.SetSetting(defaultSetting)
 		}
 
-	result := tx.Create(user)
-	if result.Error != nil {
-		return result.Error
-	}
-	if err := tx.Model(&User{}).
-		Where("id = ?", user.Id).
-		Updates(map[string]interface{}{
-			"distribution_enabled":  user.DistributionEnabled,
-			"affiliate_cdk_enabled": user.AffiliateCdkEnabled,
-		}).Error; err != nil {
-		return err
-	}
+		result := tx.Create(user)
+		if result.Error != nil {
+			return result.Error
+		}
+		if err := tx.Model(&User{}).
+			Where("id = ?", user.Id).
+			Updates(map[string]interface{}{
+				"distribution_enabled":  user.DistributionEnabled,
+				"affiliate_cdk_enabled": user.AffiliateCdkEnabled,
+			}).Error; err != nil {
+			return err
+		}
 
-	return nil
+		return nil
+	})
 }
 
 func migrateDisableExistingUserDistribution() error {

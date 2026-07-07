@@ -20,7 +20,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import z from 'zod'
 
 import { Redemptions } from '@/features/redemption-codes'
-import { REDEMPTION_STATUS_VALUES } from '@/features/redemption-codes/constants'
+import { REDEMPTION_FILTER_VALUES } from '@/features/redemption-codes/constants'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 

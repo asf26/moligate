@@ -54,7 +54,7 @@ func TestRedemptionListsIncludeCreatorUsername(t *testing.T) {
 	assert.Equal(t, "Creator A", creatorsByName["creator-list-a"])
 	assert.Equal(t, "creator_b", creatorsByName["creator-list-b"])
 
-	searchResults, searchTotal, err := SearchRedemptions("creator-list-a", 0, 10)
+	searchResults, searchTotal, err := SearchRedemptions("creator-list-a", "", 0, 10)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, searchTotal)
 	require.Len(t, searchResults, 1)

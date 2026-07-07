@@ -16,7 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
+import {
+  Gift,
+  ExternalLink,
+  Loader2,
+  Receipt,
+  Trophy,
+  WalletCards,
+} from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -37,6 +44,8 @@ import { cn } from '@/lib/utils'
 
 import {
   getDiscountLabel,
+  getBonusLabel,
+  formatCampaignDate,
   getPaymentIcon,
   getMinTopupAmount,
   calculatePresetPricing,
@@ -53,6 +62,22 @@ import type {
 } from '../types'
 import { CreemProductsSection } from './creem-products-section'
 import { WalletContactSupportButton } from './wallet-contact-support-button'
+
+const presetSkeletonKeys = [
+  'preset-skeleton-1',
+  'preset-skeleton-2',
+  'preset-skeleton-3',
+  'preset-skeleton-4',
+  'preset-skeleton-5',
+  'preset-skeleton-6',
+  'preset-skeleton-7',
+  'preset-skeleton-8',
+]
+const paymentSkeletonKeys = [
+  'payment-skeleton-1',
+  'payment-skeleton-2',
+  'payment-skeleton-3',
+]
 
 interface RechargeFormCardProps {
   topupInfo: TopupInfo | null
@@ -120,7 +145,7 @@ export function RechargeFormCard({
 
   const handleAmountChange = (value: string) => {
     setLocalAmount(value)
-    const numValue = parseInt(value) || 0
+    const numValue = Number.parseInt(value) || 0
     if (numValue >= 0) {
       onTopupAmountChange(numValue)
     }
@@ -138,6 +163,88 @@ export function RechargeFormCard({
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
   const minTopup = getMinTopupAmount(topupInfo)
   const redemptionEnabled = topupInfo?.enable_redemption !== false
+  const rechargeBonus = topupInfo?.recharge_bonus
+  const showRechargeBonus =
+    rechargeBonus?.active &&
+    rechargeBonus.show_on_topup !== false &&
+    rechargeBonus.bonus_rate > 0
+  const inviteRanking = topupInfo?.invite_ranking
+  const showInviteRanking =
+    inviteRanking?.active &&
+    inviteRanking.show_on_topup !== false &&
+    Array.isArray(inviteRanking.items) &&
+    inviteRanking.items.length > 0
+  const bonusLabel = getBonusLabel(rechargeBonus?.bonus_rate || 0)
+  let standardPaymentMethodsContent = null
+  if (hasStandardPaymentMethods) {
+    standardPaymentMethodsContent = (
+      <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
+        {topupInfo?.pay_methods?.map((method) => {
+          const minTopup = method.min_topup || 0
+          const disabled = minTopup > topupAmount
+          let disabledReason: string | undefined
+          let disabledLabel: string | undefined
+          if (disabled) {
+            disabledReason = t('Minimum topup amount: {{amount}}', {
+              amount: formatUsdCreditAmount(minTopup),
+            })
+            disabledLabel = `${t('Minimum:')} ${formatUsdCreditAmount(minTopup)}`
+          }
+          const paymentIcon =
+            paymentLoading === method.type ? (
+              <Loader2 className='h-4 w-4 animate-spin' />
+            ) : (
+              getPaymentIcon(method.type, 'h-4 w-4', method.icon, method.name)
+            )
+
+          const button = (
+            <Button
+              key={method.type}
+              variant='outline'
+              onClick={() => onPaymentMethodSelect(method)}
+              disabled={disabled || !!paymentLoading}
+              title={disabledReason}
+              aria-label={
+                disabledReason
+                  ? `${method.name}. ${disabledReason}`
+                  : method.name
+              }
+              className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
+            >
+              {paymentIcon}
+              <span className='flex min-w-0 flex-col items-start gap-0.5'>
+                <span className='max-w-full truncate'>{method.name}</span>
+                {disabledLabel && (
+                  <span className='text-muted-foreground max-w-full truncate text-[11px] leading-4 font-normal'>
+                    {disabledLabel}
+                  </span>
+                )}
+              </span>
+            </Button>
+          )
+
+          return disabled ? (
+            <TooltipProvider key={method.type}>
+              <Tooltip>
+                <TooltipTrigger render={button} />
+                <TooltipContent>{disabledReason}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            button
+          )
+        })}
+      </div>
+    )
+  } else if (!hasWaffoPaymentMethods) {
+    standardPaymentMethodsContent = (
+      <Alert>
+        <AlertDescription>
+          {t('No payment methods available. Please contact administrator.')}
+        </AlertDescription>
+      </Alert>
+    )
+  }
 
   if (loading) {
     return (
@@ -152,8 +259,8 @@ export function RechargeFormCard({
             <div className='space-y-3'>
               <Skeleton className='h-3 w-16' />
               <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className='h-[72px] rounded-lg' />
+                {presetSkeletonKeys.map((key) => (
+                  <Skeleton key={key} className='h-[72px] rounded-lg' />
                 ))}
               </div>
             </div>
@@ -168,8 +275,8 @@ export function RechargeFormCard({
             <div className='space-y-3'>
               <Skeleton className='h-3 w-32' />
               <div className='flex flex-wrap gap-3'>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className='h-10 w-24 rounded-lg' />
+                {paymentSkeletonKeys.map((key) => (
+                  <Skeleton key={key} className='h-10 w-24 rounded-lg' />
                 ))}
               </div>
             </div>
@@ -217,13 +324,97 @@ export function RechargeFormCard({
         <div className='space-y-4 sm:space-y-6'>
           {hasConfigurableTopup && (
             <>
+              {(showRechargeBonus || showInviteRanking) && (
+                <div className='grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.72fr)]'>
+                  {showRechargeBonus && (
+                    <div className='border-primary/20 bg-primary/5 rounded-lg border p-3'>
+                      <div className='flex items-start justify-between gap-3'>
+                        <div className='min-w-0 space-y-1'>
+                          <div className='flex items-center gap-2'>
+                            <Gift className='text-primary h-4 w-4' />
+                            <p className='text-sm font-semibold'>
+                              {rechargeBonus.title ||
+                                t('Limited-time recharge bonus')}
+                            </p>
+                          </div>
+                          <p className='text-muted-foreground text-xs leading-5'>
+                            {rechargeBonus.description ||
+                              t(
+                                'Recharge at least {{amount}} and receive {{bonus}} extra balance.',
+                                {
+                                  amount: formatUsdCreditAmount(
+                                    rechargeBonus.min_amount || minTopup
+                                  ),
+                                  bonus: bonusLabel,
+                                }
+                              )}
+                          </p>
+                          {(rechargeBonus.start_time ||
+                            rechargeBonus.end_time) && (
+                            <p className='text-muted-foreground text-[11px]'>
+                              {[
+                                rechargeBonus.start_time
+                                  ? formatCampaignDate(rechargeBonus.start_time)
+                                  : '',
+                                rechargeBonus.end_time
+                                  ? formatCampaignDate(rechargeBonus.end_time)
+                                  : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' - ')}
+                            </p>
+                          )}
+                        </div>
+                        {bonusLabel && (
+                          <span className='bg-primary text-primary-foreground shrink-0 rounded-md px-2 py-1 text-xs font-semibold'>
+                            {bonusLabel}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {showInviteRanking && (
+                    <div className='rounded-lg border p-3'>
+                      <div className='mb-2 flex items-center gap-2'>
+                        <Trophy className='h-4 w-4 text-amber-500' />
+                        <p className='text-sm font-semibold'>
+                          {inviteRanking.title || t('Invite Leaderboard')}
+                        </p>
+                      </div>
+                      <div className='space-y-1.5'>
+                        {inviteRanking.items.slice(0, 5).map((item) => (
+                          <div
+                            key={`${item.rank}-${item.user_id}`}
+                            className='flex items-center justify-between gap-3 text-xs'
+                          >
+                            <div className='flex min-w-0 items-center gap-2'>
+                              <span className='bg-muted flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] font-semibold'>
+                                {item.rank}
+                              </span>
+                              <span className='truncate'>
+                                {item.display_name}
+                              </span>
+                            </div>
+                            <span className='text-muted-foreground shrink-0'>
+                              {t('{{count}} invites', {
+                                count: item.invite_count,
+                              })}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {presetAmounts.length > 0 && (
                 <div className='space-y-2.5 sm:space-y-3'>
                   <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
                     {t('Amount')}
                   </Label>
                   <div className='grid grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-4'>
-                    {presetAmounts.map((preset, index) => {
+                    {presetAmounts.map((preset) => {
                       const discount =
                         preset.discount ??
                         resolveAmountDiscount(preset.value, topupInfo?.discount)
@@ -233,9 +424,12 @@ export function RechargeFormCard({
                           priceRatio,
                           discount
                         )
+                      const hasBonus =
+                        showRechargeBonus &&
+                        preset.value >= (rechargeBonus.min_amount || 0)
                       return (
                         <Button
-                          key={index}
+                          key={`preset-${preset.value}`}
                           variant='outline'
                           className={cn(
                             'flex min-h-16 flex-col items-start rounded-lg px-3 py-2.5 text-left whitespace-normal sm:min-h-[72px] sm:p-4',
@@ -254,13 +448,18 @@ export function RechargeFormCard({
                                 {getDiscountLabel(discount)}
                               </div>
                             )}
+                            {hasBonus && rechargeBonus.show_bonus_ratio && (
+                              <div className='text-xs font-medium text-amber-600'>
+                                {bonusLabel}
+                              </div>
+                            )}
                           </div>
                           <div className='text-muted-foreground mt-1.5 w-full text-xs sm:mt-2'>
-                            Pay {formatLocalPaymentAmount(actualPrice)}
+                            {t('Pay')} {formatLocalPaymentAmount(actualPrice)}
                             {hasDiscount && savedAmount > 0 && (
                               <span className='text-green-600'>
-                                {' '}
-                                • Save {formatLocalPaymentAmount(savedAmount)}
+                                {' • '}
+                                {t('Save')} {formatLocalPaymentAmount(savedAmount)}
                               </span>
                             )}
                           </div>
@@ -285,7 +484,9 @@ export function RechargeFormCard({
                     value={localAmount}
                     onChange={(e) => handleAmountChange(e.target.value)}
                     min={minTopup}
-                    placeholder={`Minimum ${formatUsdCreditAmount(minTopup)}`}
+                    placeholder={t('Minimum {{amount}}', {
+                      amount: formatUsdCreditAmount(minTopup),
+                    })}
                     className='h-9 text-base sm:h-10 sm:text-lg'
                   />
                   <div className='bg-muted/30 flex min-h-9 items-center justify-between gap-2 rounded-md border px-3 lg:min-w-52'>
@@ -307,78 +508,7 @@ export function RechargeFormCard({
                 <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
                   {t('Payment Method')}
                 </Label>
-                {hasStandardPaymentMethods ? (
-                  <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
-                    {topupInfo?.pay_methods?.map((method) => {
-                      const minTopup = method.min_topup || 0
-                      const disabled = minTopup > topupAmount
-                      const disabledReason = disabled
-                        ? t('Minimum topup amount: {{amount}}', {
-                            amount: formatUsdCreditAmount(minTopup),
-                          })
-                        : undefined
-                      const disabledLabel = disabled
-                        ? `${t('Minimum:')} ${formatUsdCreditAmount(minTopup)}`
-                        : undefined
-
-                      const button = (
-                        <Button
-                          key={method.type}
-                          variant='outline'
-                          onClick={() => onPaymentMethodSelect(method)}
-                          disabled={disabled || !!paymentLoading}
-                          title={disabledReason}
-                          aria-label={
-                            disabledReason
-                              ? `${method.name}. ${disabledReason}`
-                              : method.name
-                          }
-                          className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
-                        >
-                          {paymentLoading === method.type ? (
-                            <Loader2 className='h-4 w-4 animate-spin' />
-                          ) : (
-                            getPaymentIcon(
-                              method.type,
-                              'h-4 w-4',
-                              method.icon,
-                              method.name
-                            )
-                          )}
-                          <span className='flex min-w-0 flex-col items-start gap-0.5'>
-                            <span className='max-w-full truncate'>
-                              {method.name}
-                            </span>
-                            {disabledLabel && (
-                              <span className='text-muted-foreground max-w-full truncate text-[11px] leading-4 font-normal'>
-                                {disabledLabel}
-                              </span>
-                            )}
-                          </span>
-                        </Button>
-                      )
-
-                      return disabled ? (
-                        <TooltipProvider key={method.type}>
-                          <Tooltip>
-                            <TooltipTrigger render={button}></TooltipTrigger>
-                            <TooltipContent>{disabledReason}</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      ) : (
-                        button
-                      )
-                    })}
-                  </div>
-                ) : hasWaffoPaymentMethods ? null : (
-                  <Alert>
-                    <AlertDescription>
-                      {t(
-                        'No payment methods available. Please contact administrator.'
-                      )}
-                    </AlertDescription>
-                  </Alert>
-                )}
+                {standardPaymentMethodsContent}
               </div>
 
               {enableWaffoTopup &&
@@ -402,9 +532,24 @@ export function RechargeFormCard({
                           ? `${t('Minimum:')} ${formatUsdCreditAmount(waffoMin)}`
                           : undefined
 
+                        let methodIcon = getPaymentIcon('waffo')
+                        if (paymentLoading === loadingKey) {
+                          methodIcon = (
+                            <Loader2 className='h-4 w-4 animate-spin' />
+                          )
+                        } else if (method.icon) {
+                          methodIcon = (
+                            <img
+                              src={method.icon}
+                              alt={method.name}
+                              className='h-4 w-4 object-contain'
+                            />
+                          )
+                        }
+
                         const button = (
                           <Button
-                            key={`${method.name}-${index}`}
+                            key={`${method.name}-${method.payMethodType || index}`}
                             variant='outline'
                             onClick={() => onWaffoMethodSelect(method, index)}
                             disabled={belowMin || !!paymentLoading}
@@ -416,17 +561,7 @@ export function RechargeFormCard({
                             }
                             className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
                           >
-                            {paymentLoading === loadingKey ? (
-                              <Loader2 className='h-4 w-4 animate-spin' />
-                            ) : method.icon ? (
-                              <img
-                                src={method.icon}
-                                alt={method.name}
-                                className='h-4 w-4 object-contain'
-                              />
-                            ) : (
-                              getPaymentIcon('waffo')
-                            )}
+                            {methodIcon}
                             <span className='flex min-w-0 flex-col items-start gap-0.5'>
                               <span className='max-w-full truncate'>
                                 {method.name}
@@ -441,9 +576,11 @@ export function RechargeFormCard({
                         )
 
                         return belowMin ? (
-                          <TooltipProvider key={`${method.name}-${index}`}>
+                          <TooltipProvider
+                            key={`${method.name}-${method.payMethodType || index}`}
+                          >
                             <Tooltip>
-                              <TooltipTrigger render={button}></TooltipTrigger>
+                              <TooltipTrigger render={button} />
                               <TooltipContent>{disabledReason}</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>

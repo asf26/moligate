@@ -31,6 +31,11 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+var (
+	errUserPasswordUnset    = errors.New("user password is not set")
+	errOriginalPasswordFail = errors.New("original password is incorrect")
+)
+
 type RegisterRequest struct {
 	model.User
 	Aff string `json:"aff"`
