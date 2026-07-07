@@ -4229,6 +4229,8 @@
     "Reset {{count}} active subscriptions": "Reset {{count}} active subscriptions",
     "Reset 2FA": "Reset 2FA",
     "Reset 2FA for {{username}}? The user must set up 2FA again to continue using it.": "Reset 2FA for {{username}}? The user must set up 2FA again to continue using it.",
+    "Reset active {{plan}} subscriptions for this user?": "要重置此用戶的有效 {{plan}} 訂閱嗎？",
+    "Reset all active subscriptions under {{plan}}?": "要重置 {{plan}} 下的所有有效訂閱嗎？",
     "Reset all model prices?": "Reset all model prices?",
     "Reset all model ratios?": "Reset all model ratios?",
     "Reset all settings to default values": "Reset all settings to default values",

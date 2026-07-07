@@ -4229,6 +4229,8 @@
     "Reset {{count}} active subscriptions": "Đã đặt lại {{count}} gói đăng ký đang hoạt động",
     "Reset 2FA": "Đặt lại 2FA",
     "Reset 2FA for {{username}}? The user must set up 2FA again to continue using it.": "Đặt lại 2FA cho {{username}}? Người dùng phải thiết lập lại 2FA để tiếp tục sử dụng.",
+    "Reset active {{plan}} subscriptions for this user?": "要重置此用戶的有效 {{plan}} 訂閱嗎？",
+    "Reset all active subscriptions under {{plan}}?": "要重置 {{plan}} 下的所有有效訂閱嗎？",
     "Reset all model prices?": "Đặt lại tất cả giá mô hình?",
     "Reset all model ratios?": "Đặt lại tất cả tỷ lệ mô hình?",
     "Reset all settings to default values": "Đặt lại tất cả cài đặt về giá trị mặc định",

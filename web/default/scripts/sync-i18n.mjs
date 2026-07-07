@@ -21,6 +21,7 @@ import path from 'node:path'
 
 // This script is executed from the web/ package root (see package.json script).
 const LOCALES_DIR = path.resolve('src/i18n/locales')
+const BASE_LOCALE = 'en'
 const FALLBACK_COMPARE_LOCALE = 'en' // used for "still English" detection only
 const OBFUSCATED_KEYS = [
   {
@@ -244,7 +245,6 @@ async function main() {
     .map((e) => e.name)
     .sort((a, b) => a.localeCompare(b))
 
-  // Auto-pick base locale as the one with the most leaf keys under translation (most "rich").
   const parsedByLocale = {}
   for (const filename of localeFiles) {
     const locale = filename.replace(/\.json$/i, '')
@@ -252,20 +252,13 @@ async function main() {
     parsedByLocale[locale] = JSON.parse(raw)
   }
 
-  const baseLocale = Object.keys(parsedByLocale)
-    .map((locale) => {
-      const json = parsedByLocale[locale]
-      const trans = json?.translation ?? {}
-      return { locale, score: countLeafKeys(trans) }
-    })
-    .sort(
-      (a, b) => b.score - a.score || a.locale.localeCompare(b.locale)
-    )[0]?.locale
+  if (!parsedByLocale[BASE_LOCALE]) {
+    throw new Error(`Base locale ${BASE_LOCALE}.json not found.`)
+  }
 
-  if (!baseLocale) throw new Error('No locale files found.')
-
-  const baseFile = `${baseLocale}.json`
-  const baseJson = parsedByLocale[baseLocale]
+  const baseLocale = BASE_LOCALE
+  const baseFile = `${BASE_LOCALE}.json`
+  const baseJson = parsedByLocale[BASE_LOCALE]
 
   const compareJson = parsedByLocale[FALLBACK_COMPARE_LOCALE] ?? baseJson
 

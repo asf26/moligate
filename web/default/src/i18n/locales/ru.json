@@ -4229,6 +4229,8 @@
     "Reset {{count}} active subscriptions": "Сброшено активных подписок: {{count}}",
     "Reset 2FA": "Сбросить 2FA",
     "Reset 2FA for {{username}}? The user must set up 2FA again to continue using it.": "Сбросить 2FA для {{username}}? Пользователь должен будет настроить 2FA заново, чтобы продолжить ее использовать.",
+    "Reset active {{plan}} subscriptions for this user?": "要重置此用戶的有效 {{plan}} 訂閱嗎？",
+    "Reset all active subscriptions under {{plan}}?": "要重置 {{plan}} 下的所有有效訂閱嗎？",
     "Reset all model prices?": "Сбросить все цены моделей?",
     "Reset all model ratios?": "Сбросить все соотношения моделей?",
     "Reset all settings to default values": "Сбросить все настройки до значений по умолчанию",
