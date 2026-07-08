@@ -23,6 +23,7 @@ import {
   formatQuotaWithCurrency,
   getCurrencyDisplay,
 } from './currency'
+import { normalizeIntlLocales } from './intl-locale'
 
 // ============================================================================
 // Number Formatting
@@ -33,9 +34,9 @@ export function formatNumber(
   locales?: Intl.LocalesArgument
 ): string {
   if (value == null || Number.isNaN(value as number)) return '-'
-  return Intl.NumberFormat(locales, { maximumFractionDigits: 2 }).format(
-    value as number
-  )
+  return Intl.NumberFormat(normalizeIntlLocales(locales), {
+    maximumFractionDigits: 2,
+  }).format(value as number)
 }
 
 export function formatCompactNumber(
@@ -43,7 +44,7 @@ export function formatCompactNumber(
   locales?: Intl.LocalesArgument
 ): string {
   if (value == null || Number.isNaN(value as number)) return '-'
-  return Intl.NumberFormat(locales, {
+  return Intl.NumberFormat(normalizeIntlLocales(locales), {
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(value as number)

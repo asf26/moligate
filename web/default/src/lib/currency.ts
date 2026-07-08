@@ -85,6 +85,8 @@ import {
   type CurrencyDisplayType,
 } from '@/stores/system-config-store'
 
+import { normalizeIntlLocales } from './intl-locale'
+
 export interface CurrencyFormatOptions {
   /** Fraction digits to use when |value| >= 1 */
   digitsLarge?: number
@@ -240,7 +242,9 @@ function mergeOptions(
       options.minimumNonZero ?? DEFAULT_FORMAT_OPTIONS.minimumNonZero,
     compact: options.compact ?? DEFAULT_FORMAT_OPTIONS.compact,
     showSymbol: options.showSymbol ?? DEFAULT_FORMAT_OPTIONS.showSymbol,
-    locale: options.locale ?? DEFAULT_FORMAT_OPTIONS.locale,
+    locale: normalizeIntlLocales(
+      options.locale ?? DEFAULT_FORMAT_OPTIONS.locale
+    ),
   }
 }
 
