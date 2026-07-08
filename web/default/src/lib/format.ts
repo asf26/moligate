@@ -146,7 +146,7 @@ export function formatTimestampRelative(
   const ms = unit === 'seconds' ? timestamp * 1000 : timestamp
   const diffSeconds = Math.round((ms - Date.now()) / 1000)
   const absSeconds = Math.abs(diffSeconds)
-  const formatter = new Intl.RelativeTimeFormat(locales, {
+  const formatter = new Intl.RelativeTimeFormat(normalizeIntlLocales(locales), {
     numeric: 'always',
   })
 
