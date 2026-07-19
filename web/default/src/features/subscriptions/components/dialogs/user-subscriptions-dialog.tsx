@@ -16,12 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Ban, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { Ban, Eye, Plus, RotateCcw, Tags, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { MultiSelect } from '@/components/multi-select'
 import { DataTableRowActionMenu, StaticDataTable } from '@/components/data-table'
 import {
   sideDrawerContentClassName,
@@ -31,6 +32,7 @@ import {
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -58,12 +60,19 @@ import {
   getAdminPlans,
   getUserSubscriptions,
   createUserSubscription,
+  previewSubscriptionUsage,
   invalidateUserSubscription,
   deleteUserSubscription,
   resetUserSubscriptionsByPlan,
+  updateUserSubscriptionGroups,
+  getGroups,
 } from '../../api'
 import { formatTimestamp } from '../../lib'
-import type { PlanRecord, UserSubscriptionRecord } from '../../types'
+import type {
+  PlanRecord,
+  SubscriptionUsagePreview,
+  UserSubscriptionRecord,
+} from '../../types'
 
 interface Props {
   open: boolean
@@ -113,7 +122,14 @@ export function UserSubscriptionsDialog(props: Props) {
   const [creating, setCreating] = useState(false)
   const [plans, setPlans] = useState<PlanRecord[]>([])
   const [subs, setSubs] = useState<UserSubscriptionRecord[]>([])
+  const [groupOptions, setGroupOptions] = useState<string[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string>('')
+  const [effectiveStart, setEffectiveStart] = useState('')
+  const [importUsage, setImportUsage] = useState(false)
+  const [clearWallet, setClearWallet] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const [preview, setPreview] = useState<SubscriptionUsagePreview | null>(null)
+  const [confirmOverLimit, setConfirmOverLimit] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [advanceResetTime, setAdvanceResetTime] = useState(true)
   const [resetAction, setResetAction] = useState<{
@@ -123,6 +139,10 @@ export function UserSubscriptionsDialog(props: Props) {
   const [confirmAction, setConfirmAction] = useState<{
     type: 'invalidate' | 'delete'
     subId: number
+  } | null>(null)
+  const [groupAction, setGroupAction] = useState<{
+    subId: number
+    groups: string[]
   } | null>(null)
 
   const planTitleMap = useMemo(() => {
@@ -137,12 +157,14 @@ export function UserSubscriptionsDialog(props: Props) {
     if (!props.user?.id) return
     setLoading(true)
     try {
-      const [plansRes, subsRes] = await Promise.all([
+      const [plansRes, subsRes, groupsRes] = await Promise.all([
         getAdminPlans(),
         getUserSubscriptions(props.user.id),
+        getGroups(),
       ])
       if (plansRes.success) setPlans(plansRes.data || [])
       if (subsRes.success) setSubs(subsRes.data || [])
+      if (groupsRes.success) setGroupOptions(groupsRes.data || [])
     } catch {
       toast.error(t('Loading failed'))
     } finally {
@@ -153,23 +175,71 @@ export function UserSubscriptionsDialog(props: Props) {
   useEffect(() => {
     if (props.open && props.user?.id) {
       setSelectedPlanId('')
+      const now = new Date()
+      setEffectiveStart(
+        new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+          .toISOString()
+          .slice(0, 16)
+      )
+      setImportUsage(false)
+      setClearWallet(false)
+      setPreview(null)
       loadData()
     }
   }, [props.open, props.user?.id, loadData])
+
+  const effectiveStartTime = Math.floor(
+    new Date(effectiveStart).getTime() / 1000
+  )
+
+  const handlePreview = async () => {
+    if (!props.user?.id || !selectedPlanId || !effectiveStartTime) return
+    setPreviewing(true)
+    try {
+      const res = await previewSubscriptionUsage({
+        user_id: props.user.id,
+        plan_id: Number(selectedPlanId),
+        effective_start_time: effectiveStartTime,
+      })
+      if (res.success && res.data) {
+        setPreview(res.data)
+        setConfirmOverLimit(false)
+      } else {
+        toast.error(res.message || t('Preview failed'))
+      }
+    } catch {
+      toast.error(t('Preview failed'))
+    } finally {
+      setPreviewing(false)
+    }
+  }
 
   const handleCreate = async () => {
     if (!props.user?.id || !selectedPlanId) {
       toast.error(t('Please select a subscription plan'))
       return
     }
+    if (importUsage && !preview) {
+      await handlePreview()
+      return
+    }
+    if (importUsage && preview?.exceeds_any_limit && !confirmOverLimit) {
+      setConfirmOverLimit(true)
+      return
+    }
     setCreating(true)
     try {
       const res = await createUserSubscription(props.user.id, {
         plan_id: Number(selectedPlanId),
+        effective_start_time: effectiveStartTime,
+        import_usage: importUsage,
+        clear_wallet: clearWallet,
+        confirm_over_limit: confirmOverLimit,
       })
       if (res.success) {
         toast.success(res.data?.message || t('Added successfully'))
         setSelectedPlanId('')
+        setPreview(null)
         await loadData()
         props.onSuccess?.()
       }
@@ -230,6 +300,26 @@ export function UserSubscriptionsDialog(props: Props) {
     }
   }
 
+  const handleGroupsConfirm = async () => {
+    if (!groupAction) return
+    try {
+      const res = await updateUserSubscriptionGroups(
+        groupAction.subId,
+        groupAction.groups
+      )
+      if (res.success) {
+        toast.success(t('Subscription groups updated'))
+        await loadData()
+      } else {
+        toast.error(res.message || t('Operation failed'))
+      }
+    } catch {
+      toast.error(t('Operation failed'))
+    } finally {
+      setGroupAction(null)
+    }
+  }
+
   return (
     <>
       <Sheet open={props.open} onOpenChange={props.onOpenChange}>
@@ -242,7 +332,8 @@ export function UserSubscriptionsDialog(props: Props) {
           </SheetHeader>
 
           <div className={sideDrawerFormClassName()}>
-            <div className='flex gap-2'>
+            <div className='grid gap-3 border-b pb-4'>
+              <div className='flex gap-2'>
               <Select
                 items={plans.map((p) => ({
                   value: String(p.plan.id),
@@ -277,6 +368,82 @@ export function UserSubscriptionsDialog(props: Props) {
                 <Plus className='mr-1 h-4 w-4' />
                 {t('Add subscription')}
               </Button>
+              </div>
+
+              <div className='grid gap-3 sm:grid-cols-2'>
+                <label className='grid gap-1.5 text-sm'>
+                  <span className='font-medium'>{t('Effective start time')}</span>
+                  <Input
+                    type='datetime-local'
+                    value={effectiveStart}
+                    max={new Date().toISOString().slice(0, 16)}
+                    onChange={(event) => {
+                      setEffectiveStart(event.target.value)
+                      setPreview(null)
+                    }}
+                  />
+                </label>
+                <div className='grid gap-2'>
+                  <label className='flex items-center justify-between gap-3 text-sm'>
+                    <span>{t('Import historical usage')}</span>
+                    <Switch
+                      checked={importUsage}
+                      onCheckedChange={(checked) => {
+                        setImportUsage(!!checked)
+                        setPreview(null)
+                      }}
+                    />
+                  </label>
+                  <label className='flex items-center justify-between gap-3 text-sm'>
+                    <span>{t('Clear wallet balance after binding')}</span>
+                    <Switch
+                      checked={clearWallet}
+                      onCheckedChange={(checked) => setClearWallet(!!checked)}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {importUsage && (
+                <div className='flex items-center justify-between gap-3'>
+                  <p className='text-muted-foreground text-xs'>
+                    {t('Usage is calculated from consume logs in the selected plan groups')}
+                  </p>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    disabled={previewing || !selectedPlanId || !effectiveStartTime}
+                    onClick={handlePreview}
+                  >
+                    <Eye className='mr-1 h-4 w-4' />
+                    {t('Preview usage')}
+                  </Button>
+                </div>
+              )}
+
+              {importUsage && preview && (
+                <div className='grid grid-cols-2 gap-x-4 gap-y-2 rounded-md border px-3 py-2 text-sm sm:grid-cols-4'>
+                  {[
+                    [t('Total'), preview.amount_used, preview.amount_total, preview.exceeds_amount_total],
+                    [t('Daily'), preview.daily_used, preview.daily_amount, preview.exceeds_daily_amount],
+                    [t('Weekly'), preview.weekly_used, preview.weekly_amount, preview.exceeds_weekly_amount],
+                    [t('Monthly'), preview.monthly_used, preview.monthly_amount, preview.exceeds_monthly_amount],
+                  ].map(([label, used, limit, exceeded]) => (
+                    <div key={String(label)}>
+                      <div className='text-muted-foreground text-xs'>{label}</div>
+                      <div className={exceeded ? 'text-destructive font-medium' : 'font-medium'}>
+                        {formatQuota(Number(used))} / {Number(limit) > 0 ? formatQuota(Number(limit)) : t('Unlimited')}
+                      </div>
+                    </div>
+                  ))}
+                  {!preview.consume_log_enabled && (
+                    <p className='text-destructive col-span-full text-xs'>
+                      {t('Consume logging is disabled; imported usage may be incomplete')}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <StaticDataTable
@@ -348,6 +515,18 @@ export function UserSubscriptionsDialog(props: Props) {
                   },
                 },
                 {
+                  id: 'groups',
+                  header: t('API key groups'),
+                  cell: (record) => {
+                    const groups = record.subscription.applicable_groups || []
+                    return (
+                      <span className='text-muted-foreground text-sm'>
+                        {groups.length > 0 ? groups.join(', ') : t('All groups')}
+                      </span>
+                    )
+                  },
+                },
+                {
                   id: 'actions',
                   header: t('Actions'),
                   className: 'text-right',
@@ -361,6 +540,20 @@ export function UserSubscriptionsDialog(props: Props) {
 
                     return (
                       <DataTableRowActionMenu ariaLabel={t('Actions')}>
+                        <DropdownMenuItem
+                          onSelect={(event) => {
+                            event.preventDefault()
+                            setGroupAction({
+                              subId: sub.id,
+                              groups: sub.applicable_groups || [],
+                            })
+                          }}
+                        >
+                          {t('Edit API key groups')}
+                          <DropdownMenuShortcut>
+                            <Tags size={16} />
+                          </DropdownMenuShortcut>
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           disabled={!isActive}
                           onClick={() => {
@@ -460,6 +653,48 @@ export function UserSubscriptionsDialog(props: Props) {
               aria-label={t('Advance next reset time')}
             />
           </label>
+        </ConfirmDialog>
+      )}
+
+      {confirmOverLimit && preview?.exceeds_any_limit && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && setConfirmOverLimit(false)}
+          title={t('Imported usage exceeds plan limits')}
+          desc={t('The subscription will be created with exhausted quota in the exceeded periods. Continue?')}
+          confirmText={t('Create anyway')}
+          destructive
+          handleConfirm={handleCreate}
+          isLoading={creating}
+        />
+      )}
+
+      {groupAction && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && setGroupAction(null)}
+          title={t('Edit API key groups')}
+          desc={t('Leave empty to allow this subscription in every API key group')}
+          confirmText={t('Save changes')}
+          handleConfirm={handleGroupsConfirm}
+        >
+          <MultiSelect
+            options={[...new Set([...groupOptions, ...groupAction.groups])].map(
+              (group) => ({
+                value: group,
+                label: groupOptions.includes(group)
+                  ? group
+                  : `${group} (${t('Deleted group')})`,
+              })
+            )}
+            selected={groupAction.groups}
+            onChange={(groups) =>
+              setGroupAction((current) =>
+                current ? { ...current, groups } : current
+              )
+            }
+            placeholder={t('All API key groups')}
+          />
         </ConfirmDialog>
       )}
     </>

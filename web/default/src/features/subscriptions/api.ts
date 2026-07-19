@@ -30,6 +30,7 @@ import type {
   SubscriptionPayResponse,
   SubscriptionPayRequest,
   SelfSubscriptionData,
+  SubscriptionUsagePreview,
 } from './types'
 
 // ============================================================================
@@ -90,6 +91,15 @@ export async function createUserSubscription(
   return res.data
 }
 
+export async function previewSubscriptionUsage(data: {
+  user_id: number
+  plan_id: number
+  effective_start_time: number
+}): Promise<ApiResponse<SubscriptionUsagePreview>> {
+  const res = await api.post('/api/subscription/admin/usage-preview', data)
+  return res.data
+}
+
 export async function invalidateUserSubscription(
   subId: number
 ): Promise<ApiResponse<{ message?: string }>> {
@@ -104,6 +114,17 @@ export async function deleteUserSubscription(
 ): Promise<ApiResponse> {
   const res = await api.delete(
     `/api/subscription/admin/user_subscriptions/${subId}`
+  )
+  return res.data
+}
+
+export async function updateUserSubscriptionGroups(
+  subId: number,
+  applicableGroups: string[]
+): Promise<ApiResponse<{ applicable_groups: string[] }>> {
+  const res = await api.patch(
+    `/api/subscription/admin/user_subscriptions/${subId}/groups`,
+    { applicable_groups: applicableGroups }
   )
   return res.data
 }

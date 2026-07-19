@@ -32,6 +32,7 @@ import {
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
 import { Button } from '@/components/ui/button'
+import { MultiSelect } from '@/components/multi-select'
 import {
   Form,
   FormControl,
@@ -318,6 +319,35 @@ export function SubscriptionsMutateDrawer({
               />
 
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+                <FormField
+                  control={form.control}
+                  name='applicable_groups'
+                  render={({ field }) => (
+                    <FormItem className='sm:col-span-2'>
+                      <FormLabel>{t('Applicable API key groups')}</FormLabel>
+                      <FormControl>
+                        <MultiSelect
+                          options={[...new Set([
+                            ...groupOptions,
+                            ...(field.value || []),
+                          ])].map((group) => ({
+                            label: groupOptions.includes(group)
+                              ? group
+                              : `${group} (${t('Deleted group')})`,
+                            value: group,
+                          }))}
+                          selected={field.value || []}
+                          onChange={field.onChange}
+                          placeholder={t('All API key groups')}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('Leave empty to allow this subscription in every API key group')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name='price_amount'

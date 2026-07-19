@@ -64,6 +64,7 @@ func subscriptionPlanPayload(t *testing.T, currency string) []byte {
 			"weekly_amount":         500,
 			"monthly_amount":        2000,
 			"quota_reset_period":    model.SubscriptionResetNever,
+			"applicable_groups":     []string{"default"},
 		},
 	})
 	require.NoError(t, err)
@@ -84,6 +85,7 @@ func TestAdminCreateSubscriptionPlanForcesCNY(t *testing.T) {
 	assert.EqualValues(t, 100, plan.DailyAmount)
 	assert.EqualValues(t, 500, plan.WeeklyAmount)
 	assert.EqualValues(t, 2000, plan.MonthlyAmount)
+	assert.Equal(t, []string{"default"}, plan.ApplicableGroups)
 }
 
 func TestAdminUpdateSubscriptionPlanForcesCNY(t *testing.T) {
@@ -112,6 +114,7 @@ func TestAdminUpdateSubscriptionPlanForcesCNY(t *testing.T) {
 	assert.EqualValues(t, 100, updated.DailyAmount)
 	assert.EqualValues(t, 500, updated.WeeklyAmount)
 	assert.EqualValues(t, 2000, updated.MonthlyAmount)
+	assert.Equal(t, []string{"default"}, updated.ApplicableGroups)
 }
 
 func TestAdminCreateSubscriptionPlanRejectsNegativePeriodQuota(t *testing.T) {

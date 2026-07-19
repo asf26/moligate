@@ -33,6 +33,16 @@ func StartSubscriptionQuotaResetTask() {
 		}
 		gopool.Go(func() {
 			logger.LogInfo(context.Background(), fmt.Sprintf("subscription quota reset task started: tick=%s", subscriptionResetTickInterval))
+			for {
+				n, err := model.MigrateActiveSubscriptionPeriodResetAnchors(subscriptionResetBatchSize)
+				if err != nil {
+					logger.LogWarn(context.Background(), fmt.Sprintf("subscription reset anchor migration failed: %v", err))
+					break
+				}
+				if n < subscriptionResetBatchSize {
+					break
+				}
+			}
 			ticker := time.NewTicker(subscriptionResetTickInterval)
 			defer ticker.Stop()
 

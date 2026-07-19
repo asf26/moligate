@@ -44,6 +44,7 @@ export const subscriptionPlanSchema = z.object({
   monthly_amount: z.number().default(0),
   upgrade_group: z.string().optional(),
   downgrade_group: z.string().optional(),
+  applicable_groups: z.array(z.string()).default([]),
   stripe_price_id: z.string().optional(),
   creem_product_id: z.string().optional(),
   waffo_pancake_product_id: z.string().optional(),
@@ -78,6 +79,7 @@ export const userSubscriptionSchema = z.object({
   monthly_amount: z.number().optional(),
   monthly_used: z.number().optional(),
   monthly_reset_time: z.number().optional(),
+  applicable_groups: z.array(z.string()).optional(),
   next_reset_time: z.number().optional(),
 })
 
@@ -127,6 +129,33 @@ export interface SubscriptionPayResponse {
 
 export interface CreateUserSubscriptionRequest {
   plan_id: number
+  effective_start_time?: number
+  import_usage?: boolean
+  clear_wallet?: boolean
+  confirm_over_limit?: boolean
+}
+
+export interface SubscriptionUsagePreview {
+  user_id: number
+  plan_id: number
+  effective_start_time: number
+  end_time: number
+  applicable_groups: string[]
+  amount_used: number
+  daily_used: number
+  weekly_used: number
+  monthly_used: number
+  amount_total: number
+  daily_amount: number
+  weekly_amount: number
+  monthly_amount: number
+  exceeds_amount_total: boolean
+  exceeds_daily_amount: boolean
+  exceeds_weekly_amount: boolean
+  exceeds_monthly_amount: boolean
+  exceeds_any_limit: boolean
+  wallet_quota: number
+  consume_log_enabled: boolean
 }
 
 export interface ResetUserSubscriptionsRequest {

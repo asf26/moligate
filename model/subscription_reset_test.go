@@ -16,6 +16,9 @@ func seedSubscriptionResetPlan(t *testing.T, plan *SubscriptionPlan) {
 
 func seedSubscriptionResetSub(t *testing.T, sub *UserSubscription) {
 	t.Helper()
+	if sub.PeriodResetAnchorVersion == 0 {
+		sub.PeriodResetAnchorVersion = subscriptionPeriodResetAnchorVersion
+	}
 	require.NoError(t, DB.Create(sub).Error)
 }
 
@@ -78,7 +81,8 @@ func TestAdminResetUserSubscriptionsByPlanResetsAllActiveMatchesAndAdvancesTime(
 		assert.Zero(t, sub.AmountUsed)
 		assert.GreaterOrEqual(t, sub.LastResetTime, beforeReset)
 		assert.LessOrEqual(t, sub.LastResetTime, afterReset)
-		assert.Equal(t, calcNextResetTime(time.Unix(sub.LastResetTime, 0), plan, sub.EndTime), sub.NextResetTime)
+		reset := time.Unix(sub.LastResetTime, 0)
+		assert.Equal(t, calcNextResetTime(reset, reset, plan, sub.EndTime), sub.NextResetTime)
 	}
 	assert.EqualValues(t, 60, getSubscriptionResetSub(t, 9203).AmountUsed)
 	assert.EqualValues(t, 700, getSubscriptionResetSub(t, 9204).AmountUsed)

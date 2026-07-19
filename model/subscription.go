@@ -32,14 +32,50 @@ const (
 	SubscriptionResetWeekly  = "weekly"
 	SubscriptionResetMonthly = "monthly"
 	SubscriptionResetCustom  = "custom"
+
+	subscriptionPeriodResetAnchorVersion = 1
 )
 
 const SubscriptionCurrencyCNY = "CNY"
 
 var (
-	ErrSubscriptionOrderNotFound      = errors.New("subscription order not found")
-	ErrSubscriptionOrderStatusInvalid = errors.New("subscription order status invalid")
+	ErrSubscriptionOrderNotFound          = errors.New("subscription order not found")
+	ErrSubscriptionOrderStatusInvalid     = errors.New("subscription order status invalid")
+	ErrSubscriptionImportedUsageOverLimit = errors.New("imported subscription usage exceeds plan limits")
 )
+
+type AdminSubscriptionUsagePreview struct {
+	UserId               int      `json:"user_id"`
+	PlanId               int      `json:"plan_id"`
+	EffectiveStartTime   int64    `json:"effective_start_time"`
+	EndTime              int64    `json:"end_time"`
+	ApplicableGroups     []string `json:"applicable_groups"`
+	AmountUsed           int64    `json:"amount_used"`
+	DailyUsed            int64    `json:"daily_used"`
+	WeeklyUsed           int64    `json:"weekly_used"`
+	MonthlyUsed          int64    `json:"monthly_used"`
+	DailyWindowStart     int64    `json:"daily_window_start"`
+	WeeklyWindowStart    int64    `json:"weekly_window_start"`
+	MonthlyWindowStart   int64    `json:"monthly_window_start"`
+	AmountTotal          int64    `json:"amount_total"`
+	DailyAmount          int64    `json:"daily_amount"`
+	WeeklyAmount         int64    `json:"weekly_amount"`
+	MonthlyAmount        int64    `json:"monthly_amount"`
+	ExceedsAmountTotal   bool     `json:"exceeds_amount_total"`
+	ExceedsDailyAmount   bool     `json:"exceeds_daily_amount"`
+	ExceedsWeeklyAmount  bool     `json:"exceeds_weekly_amount"`
+	ExceedsMonthlyAmount bool     `json:"exceeds_monthly_amount"`
+	ExceedsAnyLimit      bool     `json:"exceeds_any_limit"`
+	WalletQuota          int      `json:"wallet_quota"`
+	ConsumeLogEnabled    bool     `json:"consume_log_enabled"`
+}
+
+type AdminSubscriptionBindOptions struct {
+	EffectiveStartTime int64
+	ImportUsage        bool
+	ClearWallet        bool
+	ConfirmOverLimit   bool
+}
 
 const (
 	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v1"
@@ -179,7 +215,8 @@ type SubscriptionPlan struct {
 	UpgradeGroup string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
 
 	// Downgrade user group on expiry (empty = revert to the group held before purchase)
-	DowngradeGroup string `json:"downgrade_group" gorm:"type:varchar(64);default:''"`
+	DowngradeGroup   string   `json:"downgrade_group" gorm:"type:varchar(64);default:''"`
+	ApplicableGroups []string `json:"applicable_groups" gorm:"type:text;serializer:json"`
 
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
@@ -216,6 +253,41 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 	if p.AllowWalletOverflow == nil {
 		p.AllowWalletOverflow = common.GetPointer(true)
 	}
+	p.ApplicableGroups = normalizeSubscriptionGroups(p.ApplicableGroups)
+}
+
+func normalizeSubscriptionGroups(groups []string) []string {
+	seen := make(map[string]struct{}, len(groups))
+	result := make([]string, 0, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" || len(group) > 64 {
+			continue
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		seen[group] = struct{}{}
+		result = append(result, group)
+	}
+	return result
+}
+
+func NormalizeSubscriptionApplicableGroups(groups []string) []string {
+	return normalizeSubscriptionGroups(groups)
+}
+
+func subscriptionGroupMatches(groups []string, effective string) bool {
+	if len(groups) == 0 {
+		return true
+	}
+	effective = strings.TrimSpace(effective)
+	for _, group := range groups {
+		if group == effective {
+			return true
+		}
+	}
+	return false
 }
 
 // Subscription order (payment -> webhook -> create UserSubscription)
@@ -277,6 +349,8 @@ type UserSubscription struct {
 	MonthlyAmount    int64 `json:"monthly_amount" gorm:"type:bigint;not null;default:0"`
 	MonthlyUsed      int64 `json:"monthly_used" gorm:"type:bigint;not null;default:0"`
 	MonthlyResetTime int64 `json:"monthly_reset_time" gorm:"type:bigint;default:0"`
+	// Version 1 anchors recurring quota windows to the subscription start time.
+	PeriodResetAnchorVersion int `json:"period_reset_anchor_version" gorm:"column:period_reset_anchor_version"`
 
 	StartTime int64  `json:"start_time" gorm:"bigint"`
 	EndTime   int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
@@ -291,7 +365,8 @@ type UserSubscription struct {
 	PrevUserGroup string `json:"prev_user_group" gorm:"type:varchar(64);default:''"`
 
 	// Downgrade target group on expiry (snapshot from plan; empty = revert to PrevUserGroup)
-	DowngradeGroup string `json:"downgrade_group" gorm:"type:varchar(64);default:''"`
+	DowngradeGroup   string   `json:"downgrade_group" gorm:"type:varchar(64);default:''"`
+	ApplicableGroups []string `json:"applicable_groups" gorm:"type:text;serializer:json"`
 
 	// Whether wallet fallback is allowed after this subscription's quota is exhausted (snapshot from plan)
 	AllowWalletOverflow bool `json:"allow_wallet_overflow"`
@@ -361,38 +436,47 @@ func NormalizeResetPeriod(period string) string {
 	}
 }
 
-func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64) int64 {
-	if plan == nil {
-		return 0
-	}
-	period := NormalizeResetPeriod(plan.QuotaResetPeriod)
-	if period == SubscriptionResetNever {
-		return 0
+func calcNextAnchoredPeriodReset(anchor time.Time, after time.Time, period string, endUnix int64) int64 {
+	if after.Before(anchor) {
+		after = anchor
 	}
 	var next time.Time
 	switch period {
 	case SubscriptionResetDaily:
-		next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
-			AddDate(0, 0, 1)
+		anchorDate := time.Date(anchor.Year(), anchor.Month(), anchor.Day(), 0, 0, 0, 0, time.UTC)
+		afterDate := time.Date(after.Year(), after.Month(), after.Day(), 0, 0, 0, 0, time.UTC)
+		days := int(afterDate.Sub(anchorDate) / (24 * time.Hour))
+		next = anchor.AddDate(0, 0, days)
+		if !next.After(after) {
+			next = next.AddDate(0, 0, 1)
+		}
 	case SubscriptionResetWeekly:
-		// Align to next Monday 00:00
-		weekday := int(base.Weekday()) // Sunday=0
-		// Convert to Monday=1..Sunday=7
-		if weekday == 0 {
-			weekday = 7
+		anchorDate := time.Date(anchor.Year(), anchor.Month(), anchor.Day(), 0, 0, 0, 0, time.UTC)
+		afterDate := time.Date(after.Year(), after.Month(), after.Day(), 0, 0, 0, 0, time.UTC)
+		days := int(afterDate.Sub(anchorDate) / (24 * time.Hour))
+		weeks := days / 7
+		next = anchor.AddDate(0, 0, weeks*7)
+		if !next.After(after) {
+			next = next.AddDate(0, 0, 7)
 		}
-		daysUntil := 8 - weekday
-		next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
-			AddDate(0, 0, daysUntil)
 	case SubscriptionResetMonthly:
-		// Align to first day of next month 00:00
-		next = time.Date(base.Year(), base.Month(), 1, 0, 0, 0, 0, base.Location()).
-			AddDate(0, 1, 0)
-	case SubscriptionResetCustom:
-		if plan.QuotaResetCustomSeconds <= 0 {
-			return 0
+		months := (after.Year()-anchor.Year())*12 + int(after.Month()-anchor.Month())
+		if months < 0 {
+			months = 0
 		}
-		next = base.Add(time.Duration(plan.QuotaResetCustomSeconds) * time.Second)
+		for {
+			monthStart := time.Date(anchor.Year(), anchor.Month()+time.Month(months), 1, anchor.Hour(), anchor.Minute(), anchor.Second(), anchor.Nanosecond(), anchor.Location())
+			lastDay := time.Date(monthStart.Year(), monthStart.Month()+1, 0, anchor.Hour(), anchor.Minute(), anchor.Second(), anchor.Nanosecond(), anchor.Location()).Day()
+			day := anchor.Day()
+			if day > lastDay {
+				day = lastDay
+			}
+			next = time.Date(monthStart.Year(), monthStart.Month(), day, anchor.Hour(), anchor.Minute(), anchor.Second(), anchor.Nanosecond(), anchor.Location())
+			if next.After(after) {
+				break
+			}
+			months++
+		}
 	default:
 		return 0
 	}
@@ -402,29 +486,25 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64) in
 	return next.Unix()
 }
 
-func calcNextCalendarReset(base time.Time, period string, endUnix int64) int64 {
-	var next time.Time
-	switch period {
-	case SubscriptionResetDaily:
-		next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
-			AddDate(0, 0, 1)
-	case SubscriptionResetWeekly:
-		weekday := int(base.Weekday())
-		if weekday == 0 {
-			weekday = 7
+func calcNextResetTime(anchor time.Time, after time.Time, plan *SubscriptionPlan, endUnix int64) int64 {
+	if plan == nil {
+		return 0
+	}
+	period := NormalizeResetPeriod(plan.QuotaResetPeriod)
+	if period == SubscriptionResetNever {
+		return 0
+	}
+	if period == SubscriptionResetCustom {
+		if plan.QuotaResetCustomSeconds <= 0 {
+			return 0
 		}
-		next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
-			AddDate(0, 0, 8-weekday)
-	case SubscriptionResetMonthly:
-		next = time.Date(base.Year(), base.Month(), 1, 0, 0, 0, 0, base.Location()).
-			AddDate(0, 1, 0)
-	default:
-		return 0
+		next := after.Add(time.Duration(plan.QuotaResetCustomSeconds) * time.Second)
+		if endUnix > 0 && next.Unix() > endUnix {
+			return 0
+		}
+		return next.Unix()
 	}
-	if endUnix > 0 && next.Unix() > endUnix {
-		return 0
-	}
-	return next.Unix()
+	return calcNextAnchoredPeriodReset(anchor, after, period, endUnix)
 }
 
 func GetSubscriptionPlanById(id int) (*SubscriptionPlan, error) {
@@ -554,22 +634,22 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		return nil, err
 	}
 	resetBase := now
-	nextReset := calcNextResetTime(resetBase, plan, endUnix)
+	nextReset := calcNextResetTime(resetBase, resetBase, plan, endUnix)
 	lastReset := int64(0)
 	if nextReset > 0 {
 		lastReset = now.Unix()
 	}
 	dailyReset := int64(0)
 	if plan.DailyAmount > 0 {
-		dailyReset = calcNextCalendarReset(now, SubscriptionResetDaily, endUnix)
+		dailyReset = calcNextAnchoredPeriodReset(now, now, SubscriptionResetDaily, endUnix)
 	}
 	weeklyReset := int64(0)
 	if plan.WeeklyAmount > 0 {
-		weeklyReset = calcNextCalendarReset(now, SubscriptionResetWeekly, endUnix)
+		weeklyReset = calcNextAnchoredPeriodReset(now, now, SubscriptionResetWeekly, endUnix)
 	}
 	monthlyReset := int64(0)
 	if plan.MonthlyAmount > 0 {
-		monthlyReset = calcNextCalendarReset(now, SubscriptionResetMonthly, endUnix)
+		monthlyReset = calcNextAnchoredPeriodReset(now, now, SubscriptionResetMonthly, endUnix)
 	}
 	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
 	prevGroup := ""
@@ -591,31 +671,33 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		allowWalletOverflow = *plan.AllowWalletOverflow
 	}
 	sub := &UserSubscription{
-		UserId:              userId,
-		PlanId:              plan.Id,
-		AmountTotal:         plan.TotalAmount,
-		AmountUsed:          0,
-		DailyAmount:         plan.DailyAmount,
-		DailyUsed:           0,
-		DailyResetTime:      dailyReset,
-		WeeklyAmount:        plan.WeeklyAmount,
-		WeeklyUsed:          0,
-		WeeklyResetTime:     weeklyReset,
-		MonthlyAmount:       plan.MonthlyAmount,
-		MonthlyUsed:         0,
-		MonthlyResetTime:    monthlyReset,
-		StartTime:           now.Unix(),
-		EndTime:             endUnix,
-		Status:              "active",
-		Source:              source,
-		LastResetTime:       lastReset,
-		NextResetTime:       nextReset,
-		UpgradeGroup:        upgradeGroup,
-		PrevUserGroup:       prevGroup,
-		DowngradeGroup:      strings.TrimSpace(plan.DowngradeGroup),
-		AllowWalletOverflow: allowWalletOverflow,
-		CreatedAt:           common.GetTimestamp(),
-		UpdatedAt:           common.GetTimestamp(),
+		UserId:                   userId,
+		PlanId:                   plan.Id,
+		AmountTotal:              plan.TotalAmount,
+		AmountUsed:               0,
+		DailyAmount:              plan.DailyAmount,
+		DailyUsed:                0,
+		DailyResetTime:           dailyReset,
+		WeeklyAmount:             plan.WeeklyAmount,
+		WeeklyUsed:               0,
+		WeeklyResetTime:          weeklyReset,
+		MonthlyAmount:            plan.MonthlyAmount,
+		MonthlyUsed:              0,
+		MonthlyResetTime:         monthlyReset,
+		PeriodResetAnchorVersion: subscriptionPeriodResetAnchorVersion,
+		StartTime:                now.Unix(),
+		EndTime:                  endUnix,
+		Status:                   "active",
+		Source:                   source,
+		LastResetTime:            lastReset,
+		NextResetTime:            nextReset,
+		UpgradeGroup:             upgradeGroup,
+		PrevUserGroup:            prevGroup,
+		DowngradeGroup:           strings.TrimSpace(plan.DowngradeGroup),
+		ApplicableGroups:         normalizeSubscriptionGroups(plan.ApplicableGroups),
+		AllowWalletOverflow:      allowWalletOverflow,
+		CreatedAt:                common.GetTimestamp(),
+		UpdatedAt:                common.GetTimestamp(),
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
@@ -759,27 +841,221 @@ func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) err
 	})
 }
 
-// Admin bind (no payment). Creates a UserSubscription from a plan.
-func AdminBindSubscription(userId int, planId int, sourceNote string) (string, error) {
+func anchoredPeriodWindowStart(anchor, now time.Time, period string) int64 {
+	next := calcNextAnchoredPeriodReset(anchor, now, period, 0)
+	if next == 0 {
+		return anchor.Unix()
+	}
+	nextTime := time.Unix(next, 0).In(anchor.Location())
+	switch period {
+	case SubscriptionResetDaily:
+		return nextTime.AddDate(0, 0, -1).Unix()
+	case SubscriptionResetWeekly:
+		return nextTime.AddDate(0, 0, -7).Unix()
+	case SubscriptionResetMonthly:
+		months := (nextTime.Year()-anchor.Year())*12 + int(nextTime.Month()-anchor.Month()) - 1
+		monthStart := time.Date(anchor.Year(), anchor.Month()+time.Month(months), 1, anchor.Hour(), anchor.Minute(), anchor.Second(), anchor.Nanosecond(), anchor.Location())
+		lastDay := time.Date(monthStart.Year(), monthStart.Month()+1, 0, anchor.Hour(), anchor.Minute(), anchor.Second(), anchor.Nanosecond(), anchor.Location()).Day()
+		day := anchor.Day()
+		if day > lastDay {
+			day = lastDay
+		}
+		return time.Date(monthStart.Year(), monthStart.Month(), day, anchor.Hour(), anchor.Minute(), anchor.Second(), anchor.Nanosecond(), anchor.Location()).Unix()
+	default:
+		return anchor.Unix()
+	}
+}
+
+func addImportedSubscriptionUsage(current, amount int64) int64 {
+	if amount <= 0 {
+		return current
+	}
+	if current > math.MaxInt64-amount {
+		return math.MaxInt64
+	}
+	return current + amount
+}
+
+func aggregateSubscriptionWalletUsage(userId int, startTime, dailyStart, weeklyStart, monthlyStart int64, groups []string) (int64, int64, int64, int64, error) {
+	query := LOG_DB.Model(&Log{}).
+		Where("user_id = ? AND type = ? AND created_at >= ? AND created_at <= ?", userId, LogTypeConsume, startTime, GetDBTimestamp())
+	if len(groups) > 0 {
+		query = query.Where(map[string]interface{}{"group": groups})
+	}
+	rows, err := query.Select("created_at, quota, other").Rows()
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	defer rows.Close()
+	var amountUsed, dailyUsed, weeklyUsed, monthlyUsed int64
+	for rows.Next() {
+		var createdAt, quota int64
+		var other string
+		if err := rows.Scan(&createdAt, &quota, &other); err != nil {
+			return 0, 0, 0, 0, err
+		}
+		if quota <= 0 {
+			continue
+		}
+		if other != "" {
+			var metadata struct {
+				BillingSource string `json:"billing_source"`
+			}
+			if err := common.UnmarshalJsonStr(other, &metadata); err == nil && metadata.BillingSource == "subscription" {
+				continue
+			}
+		}
+		amountUsed = addImportedSubscriptionUsage(amountUsed, quota)
+		if createdAt >= dailyStart {
+			dailyUsed = addImportedSubscriptionUsage(dailyUsed, quota)
+		}
+		if createdAt >= weeklyStart {
+			weeklyUsed = addImportedSubscriptionUsage(weeklyUsed, quota)
+		}
+		if createdAt >= monthlyStart {
+			monthlyUsed = addImportedSubscriptionUsage(monthlyUsed, quota)
+		}
+	}
+	return amountUsed, dailyUsed, weeklyUsed, monthlyUsed, rows.Err()
+}
+
+func PreviewAdminSubscriptionUsage(userId, planId int, effectiveStartTime int64) (*AdminSubscriptionUsagePreview, error) {
+	return previewAdminSubscriptionUsage(userId, planId, effectiveStartTime, true)
+}
+
+func previewAdminSubscriptionUsage(userId, planId int, effectiveStartTime int64, includeUsage bool) (*AdminSubscriptionUsagePreview, error) {
 	if userId <= 0 || planId <= 0 {
-		return "", errors.New("invalid userId or planId")
+		return nil, errors.New("invalid userId or planId")
+	}
+	nowUnix := GetDBTimestamp()
+	if effectiveStartTime == 0 {
+		effectiveStartTime = nowUnix
+	}
+	if effectiveStartTime > nowUnix {
+		return nil, errors.New("effective start time cannot be in the future")
 	}
 	plan, err := GetSubscriptionPlanById(planId)
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	start := time.Unix(effectiveStartTime, 0)
+	endTime, err := calcPlanEndTime(start, plan)
+	if err != nil {
+		return nil, err
+	}
+	if endTime <= nowUnix {
+		return nil, errors.New("subscription would already be expired at the selected start time")
+	}
+	groups := normalizeSubscriptionGroups(plan.ApplicableGroups)
+	dailyStart := anchoredPeriodWindowStart(start, time.Unix(nowUnix, 0), SubscriptionResetDaily)
+	weeklyStart := anchoredPeriodWindowStart(start, time.Unix(nowUnix, 0), SubscriptionResetWeekly)
+	monthlyStart := anchoredPeriodWindowStart(start, time.Unix(nowUnix, 0), SubscriptionResetMonthly)
+	var amountUsed, dailyUsed, weeklyUsed, monthlyUsed int64
+	if includeUsage {
+		amountUsed, dailyUsed, weeklyUsed, monthlyUsed, err = aggregateSubscriptionWalletUsage(userId, effectiveStartTime, dailyStart, weeklyStart, monthlyStart, groups)
+		if err != nil {
+			return nil, err
+		}
+	}
+	walletQuota, err := GetUserQuota(userId, false)
+	if err != nil {
+		return nil, err
+	}
+	preview := &AdminSubscriptionUsagePreview{
+		UserId: userId, PlanId: planId, EffectiveStartTime: effectiveStartTime, EndTime: endTime,
+		ApplicableGroups: groups, AmountUsed: amountUsed, DailyUsed: dailyUsed, WeeklyUsed: weeklyUsed, MonthlyUsed: monthlyUsed,
+		DailyWindowStart: dailyStart, WeeklyWindowStart: weeklyStart, MonthlyWindowStart: monthlyStart,
+		AmountTotal: plan.TotalAmount, DailyAmount: plan.DailyAmount, WeeklyAmount: plan.WeeklyAmount, MonthlyAmount: plan.MonthlyAmount,
+		WalletQuota: walletQuota, ConsumeLogEnabled: common.LogConsumeEnabled,
+	}
+	preview.ExceedsAmountTotal = preview.AmountTotal > 0 && preview.AmountUsed > preview.AmountTotal
+	preview.ExceedsDailyAmount = preview.DailyAmount > 0 && preview.DailyUsed > preview.DailyAmount
+	preview.ExceedsWeeklyAmount = preview.WeeklyAmount > 0 && preview.WeeklyUsed > preview.WeeklyAmount
+	preview.ExceedsMonthlyAmount = preview.MonthlyAmount > 0 && preview.MonthlyUsed > preview.MonthlyAmount
+	preview.ExceedsAnyLimit = preview.ExceedsAmountTotal || preview.ExceedsDailyAmount || preview.ExceedsWeeklyAmount || preview.ExceedsMonthlyAmount
+	return preview, nil
+}
+
+// Admin bind (no payment). Creates a UserSubscription from a plan.
+func AdminBindSubscriptionWithOptions(userId int, planId int, options AdminSubscriptionBindOptions) (*UserSubscription, *AdminSubscriptionUsagePreview, string, error) {
+	if userId <= 0 || planId <= 0 {
+		return nil, nil, "", errors.New("invalid userId or planId")
+	}
+	plan, err := GetSubscriptionPlanById(planId)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	preview, err := previewAdminSubscriptionUsage(userId, planId, options.EffectiveStartTime, options.ImportUsage)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if options.ImportUsage && preview.ExceedsAnyLimit && !options.ConfirmOverLimit {
+		return nil, preview, "", ErrSubscriptionImportedUsageOverLimit
+	}
+	var subscription *UserSubscription
+	bindNow := time.Unix(GetDBTimestamp(), 0)
+	pendingWalletDelta := 0
+	hadPendingWalletDelta := false
+	if options.ClearWallet && common.BatchUpdateEnabled {
+		batchUpdateLocks[BatchUpdateTypeUserQuota].Lock()
+		pendingWalletDelta, hadPendingWalletDelta = batchUpdateStores[BatchUpdateTypeUserQuota][userId]
+		delete(batchUpdateStores[BatchUpdateTypeUserQuota], userId)
+		defer batchUpdateLocks[BatchUpdateTypeUserQuota].Unlock()
 	}
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		_, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
-		return err
+		subscription, err = CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
+		if err != nil {
+			return err
+		}
+		start := time.Unix(preview.EffectiveStartTime, 0)
+		subscription.StartTime = preview.EffectiveStartTime
+		subscription.EndTime = preview.EndTime
+		subscription.DailyResetTime = 0
+		if subscription.DailyAmount > 0 {
+			subscription.DailyResetTime = calcNextAnchoredPeriodReset(start, bindNow, SubscriptionResetDaily, preview.EndTime)
+		}
+		subscription.WeeklyResetTime = 0
+		if subscription.WeeklyAmount > 0 {
+			subscription.WeeklyResetTime = calcNextAnchoredPeriodReset(start, bindNow, SubscriptionResetWeekly, preview.EndTime)
+		}
+		subscription.MonthlyResetTime = 0
+		if subscription.MonthlyAmount > 0 {
+			subscription.MonthlyResetTime = calcNextAnchoredPeriodReset(start, bindNow, SubscriptionResetMonthly, preview.EndTime)
+		}
+		subscription.NextResetTime = calcNextResetTime(start, bindNow, plan, preview.EndTime)
+		if options.ImportUsage {
+			subscription.AmountUsed = preview.AmountUsed
+			subscription.DailyUsed = preview.DailyUsed
+			subscription.WeeklyUsed = preview.WeeklyUsed
+			subscription.MonthlyUsed = preview.MonthlyUsed
+		}
+		if err := tx.Save(subscription).Error; err != nil {
+			return err
+		}
+		if options.ClearWallet {
+			return tx.Model(&User{}).Where("id = ?", userId).Update("quota", 0).Error
+		}
+		return nil
 	})
 	if err != nil {
-		return "", err
+		if hadPendingWalletDelta {
+			batchUpdateStores[BatchUpdateTypeUserQuota][userId] += pendingWalletDelta
+		}
+		return nil, preview, "", err
+	}
+	if options.ClearWallet {
+		_ = InvalidateUserCache(userId)
 	}
 	if strings.TrimSpace(plan.UpgradeGroup) != "" {
 		_ = UpdateUserGroupCache(userId, plan.UpgradeGroup)
-		return fmt.Sprintf("用户分组将升级到 %s", plan.UpgradeGroup), nil
+		return subscription, preview, fmt.Sprintf("用户分组将升级到 %s", plan.UpgradeGroup), nil
 	}
-	return "", nil
+	return subscription, preview, "", nil
+}
+
+func AdminBindSubscription(userId int, planId int, sourceNote string) (string, error) {
+	_, _, message, err := AdminBindSubscriptionWithOptions(userId, planId, AdminSubscriptionBindOptions{})
+	return message, err
 }
 
 func calcSubscriptionBalanceQuota(priceAmount float64) (int, error) {
@@ -901,38 +1177,66 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	return buildSubscriptionSummaries(subs), nil
 }
 
+func AdminUpdateUserSubscriptionApplicableGroups(subscriptionId int, groups []string) error {
+	if subscriptionId <= 0 {
+		return errors.New("invalid subscription id")
+	}
+	var subscription UserSubscription
+	if err := DB.First(&subscription, subscriptionId).Error; err != nil {
+		return err
+	}
+	subscription.ApplicableGroups = normalizeSubscriptionGroups(groups)
+	return DB.Save(&subscription).Error
+}
+
 // HasActiveUserSubscription returns whether the user has any active subscription.
 // This is a lightweight existence check to avoid heavy pre-consume transactions.
-func HasActiveUserSubscription(userId int) (bool, error) {
+func HasActiveUserSubscription(userId int, effectiveGroups ...string) (bool, error) {
 	if userId <= 0 {
 		return false, errors.New("invalid userId")
 	}
 	now := common.GetTimestamp()
-	var count int64
-	if err := DB.Model(&UserSubscription{}).
+	var subs []UserSubscription
+	if err := DB.
 		Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
-		Count(&count).Error; err != nil {
+		Find(&subs).Error; err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	effectiveGroup := ""
+	if len(effectiveGroups) > 0 {
+		effectiveGroup = effectiveGroups[0]
+	}
+	for _, sub := range subs {
+		if subscriptionGroupMatches(sub.ApplicableGroups, effectiveGroup) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // UserActiveSubscriptionsAllowWalletOverflow returns whether wallet balance may be used
 // after the user's subscription quota is exhausted. A single active subscription that
 // disallows wallet overflow (allow_wallet_overflow = false) blocks the fallback.
-func UserActiveSubscriptionsAllowWalletOverflow(userId int) (bool, error) {
+func UserActiveSubscriptionsAllowWalletOverflow(userId int, effectiveGroups ...string) (bool, error) {
 	if userId <= 0 {
 		return false, errors.New("invalid userId")
 	}
 	now := common.GetTimestamp()
-	var strictCount int64
-	if err := DB.Model(&UserSubscription{}).
-		Where("user_id = ? AND status = ? AND end_time > ? AND allow_wallet_overflow = ?",
-			userId, "active", now, false).
-		Count(&strictCount).Error; err != nil {
+	var subs []UserSubscription
+	if err := DB.Where("user_id = ? AND status = ? AND end_time > ? AND allow_wallet_overflow = ?",
+		userId, "active", now, false).Find(&subs).Error; err != nil {
 		return false, err
 	}
-	return strictCount == 0, nil
+	effectiveGroup := ""
+	if len(effectiveGroups) > 0 {
+		effectiveGroup = effectiveGroups[0]
+	}
+	for _, sub := range subs {
+		if subscriptionGroupMatches(sub.ApplicableGroups, effectiveGroup) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // GetAllUserSubscriptions returns all subscriptions (active and expired) for a user.
@@ -1059,7 +1363,8 @@ func resetUserSubscriptionTx(tx *gorm.DB, sub *UserSubscription, plan *Subscript
 	sub.WeeklyUsed = 0
 	sub.MonthlyUsed = 0
 	if advanceResetTime {
-		nextReset := calcNextResetTime(time.Unix(now, 0), plan, sub.EndTime)
+		resetAnchor := time.Unix(now, 0)
+		nextReset := calcNextResetTime(resetAnchor, resetAnchor, plan, sub.EndTime)
 		sub.NextResetTime = nextReset
 		if nextReset > 0 {
 			sub.LastResetTime = now
@@ -1068,16 +1373,17 @@ func resetUserSubscriptionTx(tx *gorm.DB, sub *UserSubscription, plan *Subscript
 		}
 		sub.DailyResetTime = 0
 		if sub.DailyAmount > 0 {
-			sub.DailyResetTime = calcNextCalendarReset(time.Unix(now, 0), SubscriptionResetDaily, sub.EndTime)
+			sub.DailyResetTime = calcNextAnchoredPeriodReset(resetAnchor, resetAnchor, SubscriptionResetDaily, sub.EndTime)
 		}
 		sub.WeeklyResetTime = 0
 		if sub.WeeklyAmount > 0 {
-			sub.WeeklyResetTime = calcNextCalendarReset(time.Unix(now, 0), SubscriptionResetWeekly, sub.EndTime)
+			sub.WeeklyResetTime = calcNextAnchoredPeriodReset(resetAnchor, resetAnchor, SubscriptionResetWeekly, sub.EndTime)
 		}
 		sub.MonthlyResetTime = 0
 		if sub.MonthlyAmount > 0 {
-			sub.MonthlyResetTime = calcNextCalendarReset(time.Unix(now, 0), SubscriptionResetMonthly, sub.EndTime)
+			sub.MonthlyResetTime = calcNextAnchoredPeriodReset(resetAnchor, resetAnchor, SubscriptionResetMonthly, sub.EndTime)
 		}
+		sub.PeriodResetAnchorVersion = subscriptionPeriodResetAnchorVersion
 	}
 	return tx.Save(sub).Error
 }
@@ -1340,9 +1646,87 @@ func applySubscriptionUsageDelta(current int64, delta int64) (int64, error) {
 	return current + delta, nil
 }
 
+func migrateUserSubscriptionResetAnchorTx(tx *gorm.DB, sub *UserSubscription, plan *SubscriptionPlan, now int64) error {
+	if tx == nil || sub == nil {
+		return errors.New("invalid reset anchor migration args")
+	}
+	if sub.PeriodResetAnchorVersion >= subscriptionPeriodResetAnchorVersion {
+		return nil
+	}
+	anchor := time.Unix(sub.StartTime, 0)
+	after := time.Unix(now, 0)
+	if plan != nil && NormalizeResetPeriod(plan.QuotaResetPeriod) != SubscriptionResetNever {
+		sub.NextResetTime = calcNextResetTime(anchor, after, plan, sub.EndTime)
+	}
+	if sub.DailyAmount > 0 {
+		sub.DailyResetTime = calcNextAnchoredPeriodReset(anchor, after, SubscriptionResetDaily, sub.EndTime)
+	}
+	if sub.WeeklyAmount > 0 {
+		sub.WeeklyResetTime = calcNextAnchoredPeriodReset(anchor, after, SubscriptionResetWeekly, sub.EndTime)
+	}
+	if sub.MonthlyAmount > 0 {
+		sub.MonthlyResetTime = calcNextAnchoredPeriodReset(anchor, after, SubscriptionResetMonthly, sub.EndTime)
+	}
+	sub.PeriodResetAnchorVersion = subscriptionPeriodResetAnchorVersion
+	return tx.Save(sub).Error
+}
+
+// MigrateActiveSubscriptionPeriodResetAnchors moves legacy calendar-bound reset
+// timestamps to subscription-start anchors without clearing any usage counters.
+func MigrateActiveSubscriptionPeriodResetAnchors(limit int) (int, error) {
+	if limit <= 0 {
+		limit = 300
+	}
+	now := GetDBTimestamp()
+	var subs []UserSubscription
+	if err := DB.Where(
+		"status = ? AND end_time > ? AND COALESCE(period_reset_anchor_version, 0) < ?",
+		"active", now, subscriptionPeriodResetAnchorVersion,
+	).
+		Order("id asc").
+		Limit(limit).
+		Find(&subs).Error; err != nil {
+		return 0, err
+	}
+	migrated := 0
+	for _, candidate := range subs {
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			var sub UserSubscription
+			if err := lockForUpdate(tx).
+				Where("id = ? AND COALESCE(period_reset_anchor_version, 0) < ?", candidate.Id, subscriptionPeriodResetAnchorVersion).
+				First(&sub).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return err
+			}
+			var plan *SubscriptionPlan
+			if sub.PlanId > 0 {
+				loaded, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+				plan = loaded
+			}
+			if err := migrateUserSubscriptionResetAnchorTx(tx, &sub, plan, now); err != nil {
+				return err
+			}
+			migrated++
+			return nil
+		})
+		if err != nil {
+			return migrated, err
+		}
+	}
+	return migrated, nil
+}
+
 func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, plan *SubscriptionPlan, now int64) error {
 	if tx == nil || sub == nil || plan == nil {
 		return errors.New("invalid reset args")
+	}
+	if err := migrateUserSubscriptionResetAnchorTx(tx, sub, plan, now); err != nil {
+		return err
 	}
 	changed := false
 	if NormalizeResetPeriod(plan.QuotaResetPeriod) != SubscriptionResetNever &&
@@ -1351,13 +1735,14 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 		if baseUnix <= 0 {
 			baseUnix = sub.StartTime
 		}
+		anchor := time.Unix(sub.StartTime, 0)
 		base := time.Unix(baseUnix, 0)
-		next := calcNextResetTime(base, plan, sub.EndTime)
+		next := calcNextResetTime(anchor, base, plan, sub.EndTime)
 		advanced := false
 		for next > 0 && next <= now {
 			advanced = true
 			base = time.Unix(next, 0)
-			next = calcNextResetTime(base, plan, sub.EndTime)
+			next = calcNextResetTime(anchor, base, plan, sub.EndTime)
 		}
 		if advanced {
 			sub.AmountUsed = 0
@@ -1385,13 +1770,14 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 		if period.amount <= 0 {
 			continue
 		}
+		anchor := time.Unix(sub.StartTime, 0)
 		if *period.resetTime == 0 {
-			*period.resetTime = calcNextCalendarReset(time.Unix(sub.StartTime, 0), period.period, sub.EndTime)
+			*period.resetTime = calcNextAnchoredPeriodReset(anchor, anchor, period.period, sub.EndTime)
 			changed = *period.resetTime > 0 || changed
 		}
 		for *period.resetTime > 0 && *period.resetTime <= now {
 			*period.used = 0
-			*period.resetTime = calcNextCalendarReset(time.Unix(*period.resetTime, 0), period.period, sub.EndTime)
+			*period.resetTime = calcNextAnchoredPeriodReset(anchor, time.Unix(*period.resetTime, 0), period.period, sub.EndTime)
 			changed = true
 		}
 	}
@@ -1402,7 +1788,7 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 }
 
 // PreConsumeUserSubscription pre-consumes against every configured quota on an active subscription.
-func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64) (*SubscriptionPreConsumeResult, error) {
+func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64, effectiveGroups ...string) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
@@ -1413,6 +1799,10 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 		return nil, errors.New("amount must be > 0")
 	}
 	now := GetDBTimestamp()
+	effectiveGroup := ""
+	if len(effectiveGroups) > 0 {
+		effectiveGroup = effectiveGroups[0]
+	}
 
 	returnValue := &SubscriptionPreConsumeResult{}
 
@@ -1450,6 +1840,9 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 		}
 		for _, candidate := range subs {
 			sub := candidate
+			if !subscriptionGroupMatches(sub.ApplicableGroups, effectiveGroup) {
+				continue
+			}
 			plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
 			if err != nil {
 				return err
