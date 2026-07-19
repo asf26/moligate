@@ -45,7 +45,7 @@ export function SubscriptionPlansPage() {
         {t('Subscribe to a plan for model access')}
       </SectionPageLayout.Description>
       <SectionPageLayout.Content>
-        <div className='mx-auto w-full max-w-6xl'>
+        <div className='w-full'>
           <SubscriptionPlansCard
             topupInfo={topupInfo}
             userQuota={user?.quota}
