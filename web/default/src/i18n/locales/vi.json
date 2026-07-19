@@ -5840,6 +5840,14 @@
     "Windows assistant update signature": "Chữ ký cập nhật trợ lý cho Windows",
     "Windows installer download address returned by the version API.": "Địa chỉ tải trình cài đặt Windows được trả về bởi API phiên bản.",
     "Windows package": "Gói Windows",
-    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "Thanh toán của bạn đã được gửi. Chúng tôi đang chờ nhà cung cấp thanh toán hoàn tất xác nhận."
+    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "Thanh toán của bạn đã được gửi. Chúng tôi đang chờ nhà cung cấp thanh toán hoàn tất xác nhận.",
+    "Browse and purchase subscription plans.": "Duyệt và mua các gói đăng ký.",
+    "Daily Quota": "Hạn mức ngày",
+    "Monthly Quota": "Hạn mức tháng",
+    "Period Quotas": "Hạn mức theo kỳ",
+    "Weekly Quota": "Hạn mức tuần",
+    "Controls only the total quota above. Daily, weekly, and monthly quotas reset independently.": "Chỉ áp dụng cho tổng hạn mức phía trên. Hạn mức ngày, tuần và tháng được đặt lại độc lập.",
+    "Total Quota Reset": "Đặt lại tổng hạn mức",
+    "Total quota across the subscription lifetime. It only resets when the total quota reset below is configured. 0 means unlimited.": "Tổng hạn mức cho toàn bộ thời hạn đăng ký. Hạn mức này chỉ đặt lại khi cấu hình đặt lại tổng hạn mức bên dưới. 0 nghĩa là không giới hạn."
   }
 }

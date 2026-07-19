@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -90,14 +90,30 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
       },
       {
         id: 'reset',
-        header: t('Quota Reset'),
+        header: t('Period Quotas'),
         meta: { mobileHidden: true },
-        cell: ({ row }) => (
-          <span className='text-muted-foreground'>
-            {formatResetPeriod(row.original.plan, t)}
-          </span>
-        ),
-        size: 100,
+        cell: ({ row }) => {
+          const plan = row.original.plan
+          const limits = [
+            plan.daily_amount > 0
+              ? `${t('Daily')}: ${formatQuota(plan.daily_amount)}`
+              : null,
+            plan.weekly_amount > 0
+              ? `${t('Weekly')}: ${formatQuota(plan.weekly_amount)}`
+              : null,
+            plan.monthly_amount > 0
+              ? `${t('Monthly')}: ${formatQuota(plan.monthly_amount)}`
+              : null,
+          ].filter(Boolean)
+          return (
+            <span className='text-muted-foreground'>
+              {limits.length > 0
+                ? limits.join(' · ')
+                : formatResetPeriod(plan, t)}
+            </span>
+          )
+        },
+        size: 220,
       },
       {
         accessorFn: (row) => row.plan.sort_order,

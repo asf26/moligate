@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -183,6 +184,11 @@ type SubscriptionPlan struct {
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
+	// Independent calendar-period quotas (0 = unlimited)
+	DailyAmount   int64 `json:"daily_amount" gorm:"type:bigint;not null;default:0"`
+	WeeklyAmount  int64 `json:"weekly_amount" gorm:"type:bigint;not null;default:0"`
+	MonthlyAmount int64 `json:"monthly_amount" gorm:"type:bigint;not null;default:0"`
+
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
@@ -259,6 +265,18 @@ type UserSubscription struct {
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`
 	AmountUsed  int64 `json:"amount_used" gorm:"type:bigint;not null;default:0"`
+
+	DailyAmount    int64 `json:"daily_amount" gorm:"type:bigint;not null;default:0"`
+	DailyUsed      int64 `json:"daily_used" gorm:"type:bigint;not null;default:0"`
+	DailyResetTime int64 `json:"daily_reset_time" gorm:"type:bigint;default:0"`
+
+	WeeklyAmount    int64 `json:"weekly_amount" gorm:"type:bigint;not null;default:0"`
+	WeeklyUsed      int64 `json:"weekly_used" gorm:"type:bigint;not null;default:0"`
+	WeeklyResetTime int64 `json:"weekly_reset_time" gorm:"type:bigint;default:0"`
+
+	MonthlyAmount    int64 `json:"monthly_amount" gorm:"type:bigint;not null;default:0"`
+	MonthlyUsed      int64 `json:"monthly_used" gorm:"type:bigint;not null;default:0"`
+	MonthlyResetTime int64 `json:"monthly_reset_time" gorm:"type:bigint;default:0"`
 
 	StartTime int64  `json:"start_time" gorm:"bigint"`
 	EndTime   int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
@@ -375,6 +393,31 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64) in
 			return 0
 		}
 		next = base.Add(time.Duration(plan.QuotaResetCustomSeconds) * time.Second)
+	default:
+		return 0
+	}
+	if endUnix > 0 && next.Unix() > endUnix {
+		return 0
+	}
+	return next.Unix()
+}
+
+func calcNextCalendarReset(base time.Time, period string, endUnix int64) int64 {
+	var next time.Time
+	switch period {
+	case SubscriptionResetDaily:
+		next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
+			AddDate(0, 0, 1)
+	case SubscriptionResetWeekly:
+		weekday := int(base.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		next = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, base.Location()).
+			AddDate(0, 0, 8-weekday)
+	case SubscriptionResetMonthly:
+		next = time.Date(base.Year(), base.Month(), 1, 0, 0, 0, 0, base.Location()).
+			AddDate(0, 1, 0)
 	default:
 		return 0
 	}
@@ -504,7 +547,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			return nil, errors.New("已达到该套餐购买上限")
 		}
 	}
-	nowUnix := GetDBTimestamp()
+	nowUnix := getDBTimestampTx(tx)
 	now := time.Unix(nowUnix, 0)
 	endUnix, err := calcPlanEndTime(now, plan)
 	if err != nil {
@@ -515,6 +558,18 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	lastReset := int64(0)
 	if nextReset > 0 {
 		lastReset = now.Unix()
+	}
+	dailyReset := int64(0)
+	if plan.DailyAmount > 0 {
+		dailyReset = calcNextCalendarReset(now, SubscriptionResetDaily, endUnix)
+	}
+	weeklyReset := int64(0)
+	if plan.WeeklyAmount > 0 {
+		weeklyReset = calcNextCalendarReset(now, SubscriptionResetWeekly, endUnix)
+	}
+	monthlyReset := int64(0)
+	if plan.MonthlyAmount > 0 {
+		monthlyReset = calcNextCalendarReset(now, SubscriptionResetMonthly, endUnix)
 	}
 	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
 	prevGroup := ""
@@ -540,6 +595,15 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		PlanId:              plan.Id,
 		AmountTotal:         plan.TotalAmount,
 		AmountUsed:          0,
+		DailyAmount:         plan.DailyAmount,
+		DailyUsed:           0,
+		DailyResetTime:      dailyReset,
+		WeeklyAmount:        plan.WeeklyAmount,
+		WeeklyUsed:          0,
+		WeeklyResetTime:     weeklyReset,
+		MonthlyAmount:       plan.MonthlyAmount,
+		MonthlyUsed:         0,
+		MonthlyResetTime:    monthlyReset,
 		StartTime:           now.Unix(),
 		EndTime:             endUnix,
 		Status:              "active",
@@ -991,6 +1055,9 @@ func resetUserSubscriptionTx(tx *gorm.DB, sub *UserSubscription, plan *Subscript
 		return errors.New("invalid reset args")
 	}
 	sub.AmountUsed = 0
+	sub.DailyUsed = 0
+	sub.WeeklyUsed = 0
+	sub.MonthlyUsed = 0
 	if advanceResetTime {
 		nextReset := calcNextResetTime(time.Unix(now, 0), plan, sub.EndTime)
 		sub.NextResetTime = nextReset
@@ -998,6 +1065,18 @@ func resetUserSubscriptionTx(tx *gorm.DB, sub *UserSubscription, plan *Subscript
 			sub.LastResetTime = now
 		} else {
 			sub.LastResetTime = 0
+		}
+		sub.DailyResetTime = 0
+		if sub.DailyAmount > 0 {
+			sub.DailyResetTime = calcNextCalendarReset(time.Unix(now, 0), SubscriptionResetDaily, sub.EndTime)
+		}
+		sub.WeeklyResetTime = 0
+		if sub.WeeklyAmount > 0 {
+			sub.WeeklyResetTime = calcNextCalendarReset(time.Unix(now, 0), SubscriptionResetWeekly, sub.EndTime)
+		}
+		sub.MonthlyResetTime = 0
+		if sub.MonthlyAmount > 0 {
+			sub.MonthlyResetTime = calcNextCalendarReset(time.Unix(now, 0), SubscriptionResetMonthly, sub.EndTime)
 		}
 	}
 	return tx.Save(sub).Error
@@ -1235,43 +1314,94 @@ func (r *SubscriptionPreConsumeRecord) BeforeUpdate(tx *gorm.DB) error {
 	return nil
 }
 
+func subscriptionUsageHasCapacity(limit int64, used int64, amount int64) bool {
+	if amount <= 0 || used < 0 || used > math.MaxInt64-amount {
+		return false
+	}
+	if limit <= 0 {
+		return true
+	}
+	return used <= limit && amount <= limit-used
+}
+
+func applySubscriptionUsageDelta(current int64, delta int64) (int64, error) {
+	if current < 0 {
+		return 0, errors.New("subscription usage is negative")
+	}
+	if delta > 0 {
+		if current > math.MaxInt64-delta {
+			return 0, errors.New("subscription usage overflow")
+		}
+		return current + delta, nil
+	}
+	if delta == math.MinInt64 || -delta >= current {
+		return 0, nil
+	}
+	return current + delta, nil
+}
+
 func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, plan *SubscriptionPlan, now int64) error {
 	if tx == nil || sub == nil || plan == nil {
 		return errors.New("invalid reset args")
 	}
-	if sub.NextResetTime > 0 && sub.NextResetTime > now {
-		return nil
-	}
-	if NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetNever {
-		return nil
-	}
-	baseUnix := sub.LastResetTime
-	if baseUnix <= 0 {
-		baseUnix = sub.StartTime
-	}
-	base := time.Unix(baseUnix, 0)
-	next := calcNextResetTime(base, plan, sub.EndTime)
-	advanced := false
-	for next > 0 && next <= now {
-		advanced = true
-		base = time.Unix(next, 0)
-		next = calcNextResetTime(base, plan, sub.EndTime)
-	}
-	if !advanced {
-		if sub.NextResetTime == 0 && next > 0 {
+	changed := false
+	if NormalizeResetPeriod(plan.QuotaResetPeriod) != SubscriptionResetNever &&
+		(sub.NextResetTime == 0 || sub.NextResetTime <= now) {
+		baseUnix := sub.LastResetTime
+		if baseUnix <= 0 {
+			baseUnix = sub.StartTime
+		}
+		base := time.Unix(baseUnix, 0)
+		next := calcNextResetTime(base, plan, sub.EndTime)
+		advanced := false
+		for next > 0 && next <= now {
+			advanced = true
+			base = time.Unix(next, 0)
+			next = calcNextResetTime(base, plan, sub.EndTime)
+		}
+		if advanced {
+			sub.AmountUsed = 0
+			sub.LastResetTime = base.Unix()
+			sub.NextResetTime = next
+			changed = true
+		} else if sub.NextResetTime == 0 && next > 0 {
 			sub.NextResetTime = next
 			sub.LastResetTime = base.Unix()
-			return tx.Save(sub).Error
+			changed = true
 		}
+	}
+
+	periods := []struct {
+		amount    int64
+		used      *int64
+		resetTime *int64
+		period    string
+	}{
+		{amount: sub.DailyAmount, used: &sub.DailyUsed, resetTime: &sub.DailyResetTime, period: SubscriptionResetDaily},
+		{amount: sub.WeeklyAmount, used: &sub.WeeklyUsed, resetTime: &sub.WeeklyResetTime, period: SubscriptionResetWeekly},
+		{amount: sub.MonthlyAmount, used: &sub.MonthlyUsed, resetTime: &sub.MonthlyResetTime, period: SubscriptionResetMonthly},
+	}
+	for _, period := range periods {
+		if period.amount <= 0 {
+			continue
+		}
+		if *period.resetTime == 0 {
+			*period.resetTime = calcNextCalendarReset(time.Unix(sub.StartTime, 0), period.period, sub.EndTime)
+			changed = *period.resetTime > 0 || changed
+		}
+		for *period.resetTime > 0 && *period.resetTime <= now {
+			*period.used = 0
+			*period.resetTime = calcNextCalendarReset(time.Unix(*period.resetTime, 0), period.period, sub.EndTime)
+			changed = true
+		}
+	}
+	if !changed {
 		return nil
 	}
-	sub.AmountUsed = 0
-	sub.LastResetTime = base.Unix()
-	sub.NextResetTime = next
 	return tx.Save(sub).Error
 }
 
-// PreConsumeUserSubscription pre-consumes from any active subscription total quota.
+// PreConsumeUserSubscription pre-consumes against every configured quota on an active subscription.
 func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
@@ -1328,11 +1458,17 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				return err
 			}
 			usedBefore := sub.AmountUsed
-			if sub.AmountTotal > 0 {
-				remain := sub.AmountTotal - usedBefore
-				if remain < amount {
-					continue
-				}
+			if !subscriptionUsageHasCapacity(sub.AmountTotal, sub.AmountUsed, amount) {
+				continue
+			}
+			if sub.DailyAmount > 0 && !subscriptionUsageHasCapacity(sub.DailyAmount, sub.DailyUsed, amount) {
+				continue
+			}
+			if sub.WeeklyAmount > 0 && !subscriptionUsageHasCapacity(sub.WeeklyAmount, sub.WeeklyUsed, amount) {
+				continue
+			}
+			if sub.MonthlyAmount > 0 && !subscriptionUsageHasCapacity(sub.MonthlyAmount, sub.MonthlyUsed, amount) {
+				continue
 			}
 			record := &SubscriptionPreConsumeRecord{
 				RequestId:          requestId,
@@ -1356,7 +1492,28 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				}
 				return err
 			}
-			sub.AmountUsed += amount
+			sub.AmountUsed, err = applySubscriptionUsageDelta(sub.AmountUsed, amount)
+			if err != nil {
+				return err
+			}
+			if sub.DailyAmount > 0 {
+				sub.DailyUsed, err = applySubscriptionUsageDelta(sub.DailyUsed, amount)
+				if err != nil {
+					return err
+				}
+			}
+			if sub.WeeklyAmount > 0 {
+				sub.WeeklyUsed, err = applySubscriptionUsageDelta(sub.WeeklyUsed, amount)
+				if err != nil {
+					return err
+				}
+			}
+			if sub.MonthlyAmount > 0 {
+				sub.MonthlyUsed, err = applySubscriptionUsageDelta(sub.MonthlyUsed, amount)
+				if err != nil {
+					return err
+				}
+			}
 			if err := tx.Save(&sub).Error; err != nil {
 				return err
 			}
@@ -1393,7 +1550,7 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			record.Status = "refunded"
 			return tx.Save(&record).Error
 		}
-		if err := PostConsumeUserSubscriptionDelta(record.UserSubscriptionId, -record.PreConsumed); err != nil {
+		if err := postConsumeUserSubscriptionDeltaTx(tx, record.UserSubscriptionId, -record.PreConsumed); err != nil {
 			return err
 		}
 		record.Status = "refunded"
@@ -1401,15 +1558,18 @@ func RefundSubscriptionPreConsume(requestId string) error {
 	})
 }
 
-// ResetDueSubscriptions resets subscriptions whose next_reset_time has passed.
+// ResetDueSubscriptions resets subscriptions with any due quota period.
 func ResetDueSubscriptions(limit int) (int, error) {
 	if limit <= 0 {
 		limit = 200
 	}
 	now := GetDBTimestamp()
 	var subs []UserSubscription
-	if err := DB.Where("next_reset_time > 0 AND next_reset_time <= ? AND status = ?", now, "active").
-		Order("next_reset_time asc").
+	if err := DB.Where(
+		"status = ? AND ((next_reset_time > 0 AND next_reset_time <= ?) OR (daily_reset_time > 0 AND daily_reset_time <= ?) OR (weekly_reset_time > 0 AND weekly_reset_time <= ?) OR (monthly_reset_time > 0 AND monthly_reset_time <= ?))",
+		"active", now, now, now, now,
+	).
+		Order("id asc").
 		Limit(limit).
 		Find(&subs).Error; err != nil {
 		return 0, err
@@ -1427,7 +1587,10 @@ func ResetDueSubscriptions(limit int) (int, error) {
 		err = DB.Transaction(func(tx *gorm.DB) error {
 			var locked UserSubscription
 			if err := lockForUpdate(tx).
-				Where("id = ? AND next_reset_time > 0 AND next_reset_time <= ?", subCopy.Id, now).
+				Where(
+					"id = ? AND status = ? AND ((next_reset_time > 0 AND next_reset_time <= ?) OR (daily_reset_time > 0 AND daily_reset_time <= ?) OR (weekly_reset_time > 0 AND weekly_reset_time <= ?) OR (monthly_reset_time > 0 AND monthly_reset_time <= ?))",
+					subCopy.Id, "active", now, now, now, now,
+				).
 				First(&locked).Error; err != nil {
 				return nil
 			}
@@ -1483,7 +1646,7 @@ func GetSubscriptionPlanInfoByUserSubscriptionId(userSubscriptionId int) (*Subsc
 	return info, nil
 }
 
-// Update subscription used amount by delta (positive consume more, negative refund).
+// PostConsumeUserSubscriptionDelta updates every configured usage counter by delta.
 func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error {
 	if userSubscriptionId <= 0 {
 		return errors.New("invalid userSubscriptionId")
@@ -1492,20 +1655,70 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		return nil
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var sub UserSubscription
-		if err := lockForUpdate(tx).
-			Where("id = ?", userSubscriptionId).
-			First(&sub).Error; err != nil {
+		return postConsumeUserSubscriptionDeltaTx(tx, userSubscriptionId, delta)
+	})
+}
+
+func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, delta int64) error {
+	var sub UserSubscription
+	if err := lockForUpdate(tx).
+		Where("id = ?", userSubscriptionId).
+		First(&sub).Error; err != nil {
+		return err
+	}
+	if sub.PlanId > 0 {
+		plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		newUsed := sub.AmountUsed + delta
-		if newUsed < 0 {
-			newUsed = 0
+		if plan != nil {
+			if err := maybeResetUserSubscriptionWithPlanTx(tx, &sub, plan, getDBTimestampTx(tx)); err != nil {
+				return err
+			}
 		}
+	}
+	newUsed, err := applySubscriptionUsageDelta(sub.AmountUsed, delta)
+	if err != nil {
+		return fmt.Errorf("subscription total usage update failed: %w", err)
+	}
+	newDailyUsed := sub.DailyUsed
+	newWeeklyUsed := sub.WeeklyUsed
+	newMonthlyUsed := sub.MonthlyUsed
+	if sub.DailyAmount > 0 {
+		newDailyUsed, err = applySubscriptionUsageDelta(sub.DailyUsed, delta)
+		if err != nil {
+			return fmt.Errorf("subscription daily usage update failed: %w", err)
+		}
+	}
+	if sub.WeeklyAmount > 0 {
+		newWeeklyUsed, err = applySubscriptionUsageDelta(sub.WeeklyUsed, delta)
+		if err != nil {
+			return fmt.Errorf("subscription weekly usage update failed: %w", err)
+		}
+	}
+	if sub.MonthlyAmount > 0 {
+		newMonthlyUsed, err = applySubscriptionUsageDelta(sub.MonthlyUsed, delta)
+		if err != nil {
+			return fmt.Errorf("subscription monthly usage update failed: %w", err)
+		}
+	}
+	if delta > 0 {
 		if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
 			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
 		}
-		sub.AmountUsed = newUsed
-		return tx.Save(&sub).Error
-	})
+		if sub.DailyAmount > 0 && newDailyUsed > sub.DailyAmount {
+			return fmt.Errorf("subscription daily usage exceeds limit, used=%d total=%d", newDailyUsed, sub.DailyAmount)
+		}
+		if sub.WeeklyAmount > 0 && newWeeklyUsed > sub.WeeklyAmount {
+			return fmt.Errorf("subscription weekly usage exceeds limit, used=%d total=%d", newWeeklyUsed, sub.WeeklyAmount)
+		}
+		if sub.MonthlyAmount > 0 && newMonthlyUsed > sub.MonthlyAmount {
+			return fmt.Errorf("subscription monthly usage exceeds limit, used=%d total=%d", newMonthlyUsed, sub.MonthlyAmount)
+		}
+	}
+	sub.AmountUsed = newUsed
+	sub.DailyUsed = newDailyUsed
+	sub.WeeklyUsed = newWeeklyUsed
+	sub.MonthlyUsed = newMonthlyUsed
+	return tx.Save(&sub).Error
 }

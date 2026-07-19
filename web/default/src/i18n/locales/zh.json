@@ -5840,6 +5840,14 @@
     "Windows assistant update signature": "Windows 助手更新签名",
     "Windows installer download address returned by the version API.": "版本接口返回的 Windows 安装包下载地址。",
     "Windows package": "Windows 安装包",
-    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "你的支付已提交，我们正在等待支付平台完成确认。"
+    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "你的支付已提交，我们正在等待支付平台完成确认。",
+    "Browse and purchase subscription plans.": "浏览并购买订阅套餐。",
+    "Daily Quota": "每日额度",
+    "Monthly Quota": "每月额度",
+    "Period Quotas": "周期额度",
+    "Weekly Quota": "每周额度",
+    "Controls only the total quota above. Daily, weekly, and monthly quotas reset independently.": "仅控制上方总额度；每日、每周和每月额度会独立重置。",
+    "Total Quota Reset": "总额度重置",
+    "Total quota across the subscription lifetime. It only resets when the total quota reset below is configured. 0 means unlimited.": "订阅有效期内累计可用的总额度；仅在下方配置总额度重置时才会重置。0 表示不限。"
   }
 }

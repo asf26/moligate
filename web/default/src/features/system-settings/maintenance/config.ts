@@ -71,6 +71,7 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
   personal: {
     enabled: true,
     topup: true,
+    subscription: true,
     affiliate: true,
     affiliate_cdk: true,
     personal: true,
@@ -142,16 +143,23 @@ const migrateSidebarModulesAdmin = (
   config: SidebarModulesAdminConfig
 ): SidebarModulesAdminConfig => {
   const personalChannelStatus = config.personal?.channel_status
-  if (personalChannelStatus === undefined) {
-    return config
+  if (personalChannelStatus !== undefined) {
+    const consoleSection = config.console ?? { enabled: true }
+    config.console = {
+      ...consoleSection,
+      channel_status: consoleSection.channel_status ?? personalChannelStatus,
+    }
+    delete config.personal.channel_status
   }
 
-  const consoleSection = config.console ?? { enabled: true }
-  config.console = {
-    ...consoleSection,
-    channel_status: consoleSection.channel_status ?? personalChannelStatus,
+  const personalSection = config.personal ?? {
+    enabled: true,
+    topup: true,
   }
-  delete config.personal.channel_status
+  if (personalSection.subscription === undefined) {
+    personalSection.subscription = personalSection.topup !== false
+  }
+  config.personal = personalSection
 
   return config
 }

@@ -5840,6 +5840,14 @@
     "Windows assistant update signature": "Windows 版アシスタント更新署名",
     "Windows installer download address returned by the version API.": "バージョン API から返される Windows インストーラーのダウンロード先です。",
     "Windows package": "Windows パッケージ",
-    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "支払いは送信されました。決済事業者の確認完了を待っています。"
+    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "支払いは送信されました。決済事業者の確認完了を待っています。",
+    "Browse and purchase subscription plans.": "サブスクリプションプランを閲覧・購入します。",
+    "Daily Quota": "1日のクォータ",
+    "Monthly Quota": "月間クォータ",
+    "Period Quotas": "期間別クォータ",
+    "Weekly Quota": "週間クォータ",
+    "Controls only the total quota above. Daily, weekly, and monthly quotas reset independently.": "上の合計クォータのみを制御します。日次・週次・月次クォータは個別にリセットされます。",
+    "Total Quota Reset": "合計クォータのリセット",
+    "Total quota across the subscription lifetime. It only resets when the total quota reset below is configured. 0 means unlimited.": "契約期間全体で利用できる合計クォータです。下の合計クォータのリセットを設定した場合のみリセットされます。0 は無制限です。"
   }
 }

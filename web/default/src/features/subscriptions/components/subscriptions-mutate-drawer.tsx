@@ -377,13 +377,51 @@ export function SubscriptionsMutateDrawer({
                       </FormControl>
                       <FormDescription>
                         {t(
-                          'Total quota included in the plan, usable per billing period. 0 means unlimited.'
+                          'Total quota across the subscription lifetime. It only resets when the total quota reset below is configured. 0 means unlimited.'
                         )}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+              </div>
+
+              <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
+                {(
+                  [
+                    ['daily_amount', 'Daily Quota'],
+                    ['weekly_amount', 'Weekly Quota'],
+                    ['monthly_amount', 'Monthly Quota'],
+                  ] as const
+                ).map(([name, label]) => (
+                  <FormField
+                    key={name}
+                    control={form.control}
+                    name={name}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t(label)}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type='number'
+                            min={0}
+                            step={tokensOnly ? 1 : 0.01}
+                            onChange={(event) =>
+                              field.onChange(
+                                Number.parseFloat(event.target.value) || 0
+                              )
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t('0 means unlimited')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ))}
               </div>
 
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
@@ -675,14 +713,19 @@ export function SubscriptionsMutateDrawer({
               </div>
             </SideDrawerSection>
 
-            {/* Quota Reset */}
+            {/* Total Quota Reset */}
             <SideDrawerSection>
               <h3 className='flex items-center gap-2 text-sm font-medium'>
                 <IconBadge tone='success' size='xs'>
                   <RefreshCw />
                 </IconBadge>
-                {t('Quota Reset')}
+                {t('Total Quota Reset')}
               </h3>
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'Controls only the total quota above. Daily, weekly, and monthly quotas reset independently.'
+                )}
+              </p>
 
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <FormField

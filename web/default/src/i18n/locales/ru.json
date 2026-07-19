@@ -5840,6 +5840,14 @@
     "Windows assistant update signature": "Подпись обновления ассистента для Windows",
     "Windows installer download address returned by the version API.": "Адрес скачивания установщика Windows, возвращаемый API версии.",
     "Windows package": "Пакет Windows",
-    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "Ваш платеж отправлен. Мы ожидаем завершения подтверждения платежным провайдером."
+    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "Ваш платеж отправлен. Мы ожидаем завершения подтверждения платежным провайдером.",
+    "Browse and purchase subscription plans.": "Просматривайте и покупайте планы подписки.",
+    "Daily Quota": "Дневная квота",
+    "Monthly Quota": "Месячная квота",
+    "Period Quotas": "Периодические квоты",
+    "Weekly Quota": "Недельная квота",
+    "Controls only the total quota above. Daily, weekly, and monthly quotas reset independently.": "Управляет только общей квотой выше. Дневная, недельная и месячная квоты сбрасываются независимо.",
+    "Total Quota Reset": "Сброс общей квоты",
+    "Total quota across the subscription lifetime. It only resets when the total quota reset below is configured. 0 means unlimited.": "Общая квота на весь срок подписки. Она сбрасывается только при настройке сброса общей квоты ниже. 0 означает без ограничений."
   }
 }

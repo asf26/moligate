@@ -54,6 +54,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
   personal: {
     enabled: true,
     topup: true,
+    subscription: true,
     affiliate: true,
     affiliate_cdk: true,
     personal: true,
@@ -100,16 +101,23 @@ const migrateSidebarModulesConfig = (
   config: SidebarModulesAdminConfig
 ): SidebarModulesAdminConfig => {
   const personalChannelStatus = config.personal?.channel_status
-  if (personalChannelStatus === undefined) {
-    return config
+  if (personalChannelStatus !== undefined) {
+    const consoleSection = config.console ?? { enabled: true }
+    config.console = {
+      ...consoleSection,
+      channel_status: consoleSection.channel_status ?? personalChannelStatus,
+    }
+    delete config.personal.channel_status
   }
 
-  const consoleSection = config.console ?? { enabled: true }
-  config.console = {
-    ...consoleSection,
-    channel_status: consoleSection.channel_status ?? personalChannelStatus,
+  const personalSection = config.personal ?? {
+    enabled: true,
+    topup: true,
   }
-  delete config.personal.channel_status
+  if (personalSection.subscription === undefined) {
+    personalSection.subscription = personalSection.topup !== false
+  }
+  config.personal = personalSection
 
   return config
 }
@@ -130,6 +138,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/usage-logs/task': { section: 'console', module: 'task' },
   '/channel-status': { section: 'console', module: 'channel_status' },
   '/wallet': { section: 'personal', module: 'topup' },
+  '/subscription-plans': { section: 'personal', module: 'subscription' },
   '/affiliate': { section: 'personal', module: 'affiliate' },
   '/affiliate-cdk': { section: 'personal', module: 'affiliate_cdk' },
   '/profile': { section: 'personal', module: 'personal' },

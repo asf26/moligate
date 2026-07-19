@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -59,6 +60,9 @@ func subscriptionPlanPayload(t *testing.T, currency string) []byte {
 			"sort_order":            0,
 			"max_purchase_per_user": 0,
 			"total_amount":          1000,
+			"daily_amount":          100,
+			"weekly_amount":         500,
+			"monthly_amount":        2000,
 			"quota_reset_period":    model.SubscriptionResetNever,
 		},
 	})
@@ -76,7 +80,10 @@ func TestAdminCreateSubscriptionPlanForcesCNY(t *testing.T) {
 
 	var plan model.SubscriptionPlan
 	require.NoError(t, model.DB.First(&plan).Error)
-	require.Equal(t, model.SubscriptionCurrencyCNY, plan.Currency)
+	assert.Equal(t, model.SubscriptionCurrencyCNY, plan.Currency)
+	assert.EqualValues(t, 100, plan.DailyAmount)
+	assert.EqualValues(t, 500, plan.WeeklyAmount)
+	assert.EqualValues(t, 2000, plan.MonthlyAmount)
 }
 
 func TestAdminUpdateSubscriptionPlanForcesCNY(t *testing.T) {
@@ -101,5 +108,39 @@ func TestAdminUpdateSubscriptionPlanForcesCNY(t *testing.T) {
 
 	var updated model.SubscriptionPlan
 	require.NoError(t, model.DB.First(&updated, plan.Id).Error)
-	require.Equal(t, model.SubscriptionCurrencyCNY, updated.Currency)
+	assert.Equal(t, model.SubscriptionCurrencyCNY, updated.Currency)
+	assert.EqualValues(t, 100, updated.DailyAmount)
+	assert.EqualValues(t, 500, updated.WeeklyAmount)
+	assert.EqualValues(t, 2000, updated.MonthlyAmount)
+}
+
+func TestAdminCreateSubscriptionPlanRejectsNegativePeriodQuota(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	confirmPaymentComplianceForTest(t)
+
+	body, err := common.Marshal(map[string]any{
+		"plan": map[string]any{
+			"title":              "Invalid Plan",
+			"price_amount":       10,
+			"duration_unit":      model.SubscriptionDurationDay,
+			"duration_value":     1,
+			"daily_amount":       -1,
+			"weekly_amount":      500,
+			"monthly_amount":     2000,
+			"quota_reset_period": model.SubscriptionResetNever,
+		},
+	})
+	require.NoError(t, err)
+
+	c, w := subscriptionControllerTestContext(http.MethodPost, "/api/subscription/admin/plans", body)
+	AdminCreateSubscriptionPlan(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var response map[string]any
+	require.NoError(t, common.Unmarshal(w.Body.Bytes(), &response))
+	assert.Equal(t, false, response["success"])
+
+	var count int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Count(&count).Error)
+	assert.Zero(t, count)
 }

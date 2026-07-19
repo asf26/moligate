@@ -5840,6 +5840,14 @@
     "Windows assistant update signature": "Signature de mise à jour Windows de l'assistant",
     "Windows installer download address returned by the version API.": "Adresse de téléchargement de l'installateur Windows renvoyée par l'API de version.",
     "Windows package": "Paquet Windows",
-    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "Votre paiement a été soumis. Nous attendons que le fournisseur de paiement termine la confirmation."
+    "Your payment has been submitted. We are waiting for the payment provider to finish confirmation.": "Votre paiement a été soumis. Nous attendons que le fournisseur de paiement termine la confirmation.",
+    "Browse and purchase subscription plans.": "Parcourir et acheter des offres d'abonnement.",
+    "Daily Quota": "Quota quotidien",
+    "Monthly Quota": "Quota mensuel",
+    "Period Quotas": "Quotas périodiques",
+    "Weekly Quota": "Quota hebdomadaire",
+    "Controls only the total quota above. Daily, weekly, and monthly quotas reset independently.": "Contrôle uniquement le quota total ci-dessus. Les quotas quotidien, hebdomadaire et mensuel se réinitialisent indépendamment.",
+    "Total Quota Reset": "Réinitialisation du quota total",
+    "Total quota across the subscription lifetime. It only resets when the total quota reset below is configured. 0 means unlimited.": "Quota total sur toute la durée de l'abonnement. Il n'est réinitialisé que si la réinitialisation ci-dessous est configurée. 0 signifie illimité."
   }
 }
