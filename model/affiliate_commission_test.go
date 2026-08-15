@@ -11,6 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func quotaFromAmountForTest(t *testing.T, amount int64) int {
+	t.Helper()
+	quota, err := calculateQuotaFromAmount(amount)
+	require.NoError(t, err)
+	return quota
+}
+
 func setDistributionTestConfig(t *testing.T, enabled bool, level1RateBps int, level2RateBps int) {
 	t.Helper()
 	oldDistribution := *operation_setting.GetDistributionSetting()
@@ -125,7 +132,7 @@ func TestCompleteEpayTopUp_CreatesTwoLevelCommissions(t *testing.T) {
 	assert.Equal(t, 1002, commissions[0].PromoterId)
 	assert.EqualValues(t, 1000000000, commissions[0].BaseAmountMicros)
 	assert.EqualValues(t, 100000000, commissions[0].CommissionAmountMicros)
-	assert.EqualValues(t, calculateQuotaFromAmount(1000), commissions[0].BaseQuota)
+	assert.EqualValues(t, quotaFromAmountForTest(t, 1000), commissions[0].BaseQuota)
 	assert.EqualValues(t, 100, commissions[0].RewardPoints)
 	assert.Equal(t, "wechat", commissions[0].PaymentMethod)
 	assert.Equal(t, AffiliateCommissionLevel2, commissions[1].Level)
@@ -155,7 +162,7 @@ func TestManualCompleteTopUp_CreatesRewardPointsFromPaymentAmount(t *testing.T) 
 	commissions := getAffiliateTestCommissions(t)
 	require.Len(t, commissions, 1)
 	assert.Equal(t, 1002, commissions[0].PromoterId)
-	assert.EqualValues(t, calculateQuotaFromAmount(100), commissions[0].BaseQuota)
+	assert.EqualValues(t, quotaFromAmountForTest(t, 100), commissions[0].BaseQuota)
 	assert.EqualValues(t, 2, commissions[0].RewardPoints)
 }
 
@@ -208,7 +215,7 @@ func TestCompleteEpayTopUp_IsIdempotentForDistributionCommissions(t *testing.T) 
 
 	commissions := getAffiliateTestCommissions(t)
 	require.Len(t, commissions, 2)
-	assert.Equal(t, calculateQuotaFromAmount(1000), getUserQuotaForPaymentGuardTest(t, 1003))
+	assert.Equal(t, quotaFromAmountForTest(t, 1000), getUserQuotaForPaymentGuardTest(t, 1003))
 }
 
 func TestListAffiliateCommissionsIncludesBuyerUplineDetails(t *testing.T) {
@@ -773,12 +780,12 @@ func TestMigrateAffiliateCommissionRewardPointsOnlyFillsMissingValues(t *testing
 	var preserved AffiliateCommission
 	require.NoError(t, DB.Where("trade_no = ?", "points-preserve").First(&preserved).Error)
 	assert.Equal(t, 40, preserved.RewardPoints)
-	assert.Equal(t, calculateQuotaFromAmount(100), preserved.BaseQuota)
+	assert.Equal(t, quotaFromAmountForTest(t, 100), preserved.BaseQuota)
 
 	var filled AffiliateCommission
 	require.NoError(t, DB.Where("trade_no = ?", "points-fill").First(&filled).Error)
-	assert.Equal(t, affiliateRewardPointsFromQuota(calculateQuotaFromAmount(100), 200), filled.RewardPoints)
-	assert.Equal(t, calculateQuotaFromAmount(100), filled.BaseQuota)
+	assert.Equal(t, affiliateRewardPointsFromQuota(quotaFromAmountForTest(t, 100), 200), filled.RewardPoints)
+	assert.Equal(t, quotaFromAmountForTest(t, 100), filled.BaseQuota)
 }
 
 func TestMigrateDisableExistingUserDistributionRunsOnce(t *testing.T) {
@@ -894,8 +901,8 @@ func TestQuoteAffiliateCdkOrderAppliesDiscountOnWalletPayAmount(t *testing.T) {
 	assert.EqualValues(t, 100, quote.Amount)
 	assert.Equal(t, 2, quote.Quantity)
 	assert.EqualValues(t, 200, quote.TotalAmount)
-	assert.Equal(t, calculateQuotaFromAmount(100), quote.CodeQuota)
-	assert.Equal(t, calculateQuotaFromAmount(100)*2, quote.TotalQuota)
+	assert.Equal(t, quotaFromAmountForTest(t, 100), quote.CodeQuota)
+	assert.Equal(t, quotaFromAmountForTest(t, 100)*2, quote.TotalQuota)
 	assert.Equal(t, 90.0, quote.UnitWalletPayAmount)
 	assert.Equal(t, 72.0, quote.UnitPayAmount)
 	assert.Equal(t, 180.0, quote.WalletPayAmount)
@@ -966,17 +973,17 @@ func TestCompleteAffiliateCdkOrderCreatesCodesIdempotentlyAndRedeemable(t *testi
 	for _, code := range codes {
 		assert.Equal(t, 9101, code.UserId)
 		assert.Equal(t, common.RedemptionCodeStatusEnabled, code.Status)
-		assert.Equal(t, calculateQuotaFromAmount(100), code.Quota)
+		assert.Equal(t, quotaFromAmountForTest(t, 100), code.Quota)
 		assert.Equal(t, AffiliateCdkSourceType, code.SourceType)
 		assert.Equal(t, order.Id, code.SourceOrderId)
 	}
 
 	quota, err := Redeem(codes[0].Key, 9102)
 	require.NoError(t, err)
-	assert.Equal(t, calculateQuotaFromAmount(100), quota)
+	assert.Equal(t, quotaFromAmountForTest(t, 100), quota)
 	var buyer User
 	require.NoError(t, DB.First(&buyer, 9102).Error)
-	assert.Equal(t, calculateQuotaFromAmount(100), buyer.Quota)
+	assert.Equal(t, quotaFromAmountForTest(t, 100), buyer.Quota)
 }
 
 func TestListAffiliateCdkCodesShowsOnlyGeneratedOwnCodes(t *testing.T) {

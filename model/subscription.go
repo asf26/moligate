@@ -77,6 +77,12 @@ type AdminSubscriptionBindOptions struct {
 	ConfirmOverLimit   bool
 }
 
+func refreshSubscriptionUserGroupCache(userId int, operation string) {
+	if err := RefreshUserGroupCache(userId); err != nil {
+		common.SysError(fmt.Sprintf("failed to refresh user group cache after %s for user %d: %v", operation, userId, err))
+	}
+}
+
 const (
 	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v1"
 	subscriptionPlanInfoCacheNamespace = "new-api:subscription_plan_info:v1"
@@ -1002,11 +1008,17 @@ func AdminBindSubscriptionWithOptions(userId int, planId int, options AdminSubsc
 		delete(batchUpdateStores[BatchUpdateTypeUserQuota], userId)
 		defer batchUpdateLocks[BatchUpdateTypeUserQuota].Unlock()
 	}
+	groupChanged := false
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		var userRow User
+		if err := lockForUpdate(tx).Select("id").Where("id = ?", userId).First(&userRow).Error; err != nil {
+			return err
+		}
 		subscription, err = CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
 		if err != nil {
 			return err
 		}
+		groupChanged = subscription.PrevUserGroup != ""
 		start := time.Unix(preview.EffectiveStartTime, 0)
 		subscription.StartTime = preview.EffectiveStartTime
 		subscription.EndTime = preview.EndTime
@@ -1045,6 +1057,9 @@ func AdminBindSubscriptionWithOptions(userId int, planId int, options AdminSubsc
 	}
 	if options.ClearWallet {
 		_ = InvalidateUserCache(userId)
+	}
+	if groupChanged {
+		refreshSubscriptionUserGroupCache(userId, "admin subscription creation")
 	}
 	if strings.TrimSpace(plan.UpgradeGroup) != "" {
 		_ = UpdateUserGroupCache(userId, plan.UpgradeGroup)

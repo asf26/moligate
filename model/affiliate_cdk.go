@@ -168,7 +168,10 @@ func calculateAffiliateCdkQuote(userId int, amount int64, quantity int) (Affilia
 		return AffiliateCdkQuoteResult{}, fmt.Errorf("购买总额不能小于 %d", MinTopUpAmountForDisplay())
 	}
 	storageAmount := NormalizeTopUpAmountForStorage(amount)
-	codeQuota := calculateQuotaFromAmount(storageAmount)
+	codeQuota, err := calculateQuotaFromAmount(storageAmount)
+	if err != nil {
+		return AffiliateCdkQuoteResult{}, errors.New("CDK 兑换额度无效")
+	}
 	if codeQuota <= 0 {
 		return AffiliateCdkQuoteResult{}, errors.New("CDK 兑换额度过低")
 	}

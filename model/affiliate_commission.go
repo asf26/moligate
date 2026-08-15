@@ -1093,7 +1093,10 @@ func migrateAffiliateCommissionRewardPoints() error {
 			}
 			return err
 		}
-		baseQuota := creditedQuotaFromTopUp(&topUp)
+		baseQuota, err := creditedQuotaFromTopUp(&topUp)
+		if err != nil {
+			return err
+		}
 		baseAmountMicros := commission.BaseAmountMicros
 		if baseAmountMicros <= 0 {
 			baseAmountMicros = quotaToWalletAmountMicros(baseQuota)

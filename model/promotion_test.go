@@ -31,7 +31,9 @@ func TestCreditedQuotaFromTopUpAddsActiveRechargeBonus(t *testing.T) {
 		PaymentProvider: PaymentProviderEpay,
 	}
 
-	assert.Equal(t, 55_000_000, creditedQuotaFromTopUp(topUp))
+	quota, err := creditedQuotaFromTopUp(topUp)
+	require.NoError(t, err)
+	assert.Equal(t, 55_000_000, quota)
 }
 
 func TestGetInviteRankingUsesInviteeCreatedWindow(t *testing.T) {
