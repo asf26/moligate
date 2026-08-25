@@ -103,6 +103,9 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
 	}
+	if !requireTopUpEnabled(c) {
+		return
+	}
 
 	userId := c.GetInt("id")
 	var req SubscriptionBalancePayRequest

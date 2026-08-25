@@ -41,8 +41,8 @@ export const userFormSchema = z.object({
   quota_dollars: z.number().min(0).optional(),
   group: z.string().optional(),
   remark: z.string().optional(),
-  distribution_enabled: z.boolean().optional(),
   affiliate_cdk_enabled: z.boolean().optional(),
+  top_up_enabled: z.boolean().optional(),
   admin_permissions: z
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
@@ -62,8 +62,8 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   quota_dollars: 0,
   group: DEFAULT_GROUP,
   remark: '',
-  distribution_enabled: false,
   affiliate_cdk_enabled: false,
+  top_up_enabled: true,
   // Filled against the backend catalog at render time; see UsersMutateDrawer.
   admin_permissions: {},
 }
@@ -105,8 +105,8 @@ export function transformFormDataToPayload(
     // For update: quota is adjusted atomically via /api/user/manage, not sent here
     payload.group = data.group
     payload.remark = data.remark || undefined
-    payload.distribution_enabled = data.distribution_enabled ?? false
     payload.affiliate_cdk_enabled = data.affiliate_cdk_enabled ?? false
+    payload.top_up_enabled = data.top_up_enabled ?? true
     payload.id = userId
   }
 
@@ -127,8 +127,8 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     quota_dollars: quotaUnitsToDollars(user.quota),
     group: user.group || DEFAULT_GROUP,
     remark: user.remark || '',
-    distribution_enabled: user.distribution_enabled ?? false,
     affiliate_cdk_enabled: user.affiliate_cdk_enabled ?? false,
+    top_up_enabled: user.top_up_enabled ?? true,
     admin_permissions: user.admin_permissions ?? {},
   }
 }

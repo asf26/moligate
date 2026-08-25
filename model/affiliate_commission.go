@@ -492,7 +492,9 @@ func createTopUpCommissionForPromoter(tx *gorm.DB, topUp *TopUp, buyer *User, pr
 	if promoter.Id == 0 || promoter.Id == buyer.Id || promoter.Id == excludedPromoterId {
 		return nil
 	}
-	if promoter.Status != common.UserStatusEnabled || !promoter.DistributionEnabled {
+	// The legacy distribution qualification flag is intentionally not checked;
+	// every enabled inviter can earn rewards.
+	if promoter.Status != common.UserStatusEnabled {
 		return nil
 	}
 	amountMicros := commissionMicros(baseAmountMicros, rateBps)

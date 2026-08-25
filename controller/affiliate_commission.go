@@ -116,21 +116,16 @@ func parseAffiliateRewardPointSettlementQuery(c *gin.Context) (model.AffiliateRe
 	return query, nil
 }
 
-func requireSelfAffiliatePermission(c *gin.Context) bool {
-	user, err := model.GetUserById(c.GetInt("id"), false)
-	if err != nil {
+func requireSelfAffiliateUser(c *gin.Context) bool {
+	if _, err := model.GetUserById(c.GetInt("id"), false); err != nil {
 		common.ApiError(c, err)
-		return false
-	}
-	if !user.DistributionEnabled {
-		common.ApiErrorMsg(c, "未开通代理分销权限")
 		return false
 	}
 	return true
 }
 
 func GetSelfAffiliateSummary(c *gin.Context) {
-	if !requireSelfAffiliatePermission(c) {
+	if !requireSelfAffiliateUser(c) {
 		return
 	}
 	query, err := parseAffiliateCommissionQuery(c)
@@ -148,7 +143,7 @@ func GetSelfAffiliateSummary(c *gin.Context) {
 }
 
 func GetSelfAffiliateCommissions(c *gin.Context) {
-	if !requireSelfAffiliatePermission(c) {
+	if !requireSelfAffiliateUser(c) {
 		return
 	}
 	query, err := parseAffiliateCommissionQuery(c)
@@ -169,7 +164,7 @@ func GetSelfAffiliateCommissions(c *gin.Context) {
 }
 
 func GetSelfAffiliateRewardPointSettlements(c *gin.Context) {
-	if !requireSelfAffiliatePermission(c) {
+	if !requireSelfAffiliateUser(c) {
 		return
 	}
 	query, err := parseAffiliateRewardPointSettlementQuery(c)
@@ -190,7 +185,7 @@ func GetSelfAffiliateRewardPointSettlements(c *gin.Context) {
 }
 
 func GetSelfAffiliatePayoutProfile(c *gin.Context) {
-	if !requireSelfAffiliatePermission(c) {
+	if !requireSelfAffiliateUser(c) {
 		return
 	}
 	profile, err := model.GetAffiliatePayoutProfile(c.GetInt("id"))
@@ -202,7 +197,7 @@ func GetSelfAffiliatePayoutProfile(c *gin.Context) {
 }
 
 func UpdateSelfAffiliatePayoutProfile(c *gin.Context) {
-	if !requireSelfAffiliatePermission(c) {
+	if !requireSelfAffiliateUser(c) {
 		return
 	}
 	var req affiliatePayoutProfileRequest
@@ -219,7 +214,7 @@ func UpdateSelfAffiliatePayoutProfile(c *gin.Context) {
 }
 
 func RedeemSelfAffiliateRewardPoints(c *gin.Context) {
-	if !requireSelfAffiliatePermission(c) {
+	if !requireSelfAffiliateUser(c) {
 		return
 	}
 	var req redeemAffiliateRewardPointsRequest
@@ -242,7 +237,7 @@ func RedeemSelfAffiliateRewardPoints(c *gin.Context) {
 }
 
 func QuoteSelfAffiliateRewardPoints(c *gin.Context) {
-	if !requireSelfAffiliatePermission(c) {
+	if !requireSelfAffiliateUser(c) {
 		return
 	}
 	var req redeemAffiliateRewardPointsRequest

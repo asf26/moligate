@@ -88,6 +88,40 @@ func TestManageUserDisableAdvancesAuthVersionOnceAndRevokesSession(t *testing.T)
 	assert.Equal(t, model.UserSessionStatusRevoked, session.Status)
 }
 
+func TestUpdateUserCanGrantTopUpPermission(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	previousMaster := common.IsMasterNode
+	common.IsMasterNode = false
+	t.Cleanup(func() { common.IsMasterNode = previousMaster })
+	require.NoError(t, authz.Init(db))
+	user := model.User{
+		Username:     "managed-top-up-user",
+		Password:     "password",
+		Role:         common.RoleCommonUser,
+		Status:       common.UserStatusEnabled,
+		Group:        "default",
+		AuthVersion:  1,
+		TopUpEnabled: false,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPut, "/api/user/", strings.NewReader(fmt.Sprintf(`{"id":%d,"username":%q,"role":%d,"top_up_enabled":true}`, user.Id, user.Username, user.Role)))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Set("id", 9999)
+	context.Set("role", common.RoleRootUser)
+	context.Set("username", "root-operator")
+	UpdateUser(context)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"success":true`)
+	var updated model.User
+	require.NoError(t, db.First(&updated, user.Id).Error)
+	assert.True(t, updated.TopUpEnabled)
+}
+
 func TestManageUserDemoteAdvancesAuthVersionAndRevokesSessionsOnce(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	previousMaster := common.IsMasterNode

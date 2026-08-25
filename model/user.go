@@ -19,6 +19,7 @@ import (
 
 const UserNameMaxLength = 20
 const disableExistingUserDistributionMigrationKey = "migration:disable_existing_user_distribution:v1"
+const enableExistingUserTopUpMigrationKey = "migration:enable_existing_user_top_up:v1"
 
 var userSortColumns = map[string]string{
 	"id":            "id",
@@ -78,41 +79,42 @@ func resolveUserSortOptions(sortOptions []UserSortOptions) UserSortOptions {
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
-	Id               int                        `json:"id"`
-	Username         string                     `json:"username" gorm:"unique;index" validate:"max=20"`
-	Password         string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
-	OriginalPassword string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
-	DisplayName      string                     `json:"display_name" gorm:"index" validate:"max=20"`
-	Role             int                        `json:"role" gorm:"type:int;default:1"`   // admin, common
-	Status           int                        `json:"status" gorm:"type:int;default:1"` // enabled, disabled
-	Email            string                     `json:"email" gorm:"index" validate:"max=50"`
-	GitHubId         string                     `json:"github_id" gorm:"column:github_id;index"`
-	DiscordId        string                     `json:"discord_id" gorm:"column:discord_id;index"`
-	OidcId           string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
-	WeChatId         string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
-	TelegramId       string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
-	VerificationCode string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
-	AccessToken      *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
-	Quota            int                        `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota        int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
-	RequestCount     int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
-	Group            string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
-	AffCode          string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
-	AffCount         int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
-	AffQuota         int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
-	AffHistoryQuota  int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
-	InviterId        int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
-	DistributionEnabled bool                    `json:"distribution_enabled" gorm:"default:false;column:distribution_enabled"`
-	AffiliateCdkEnabled bool                   `json:"affiliate_cdk_enabled" gorm:"default:false;column:affiliate_cdk_enabled"`
-	DeletedAt        gorm.DeletedAt             `gorm:"index"`
-	LinuxDOId        string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
-	Setting          string                     `json:"setting" gorm:"type:text;column:setting"`
-	Remark           string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	StripeCustomer   string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
-	CreatedAt        int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
-	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
-	AuthVersion      int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
-	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	Id                  int                        `json:"id"`
+	Username            string                     `json:"username" gorm:"unique;index" validate:"max=20"`
+	Password            string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
+	OriginalPassword    string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
+	DisplayName         string                     `json:"display_name" gorm:"index" validate:"max=20"`
+	Role                int                        `json:"role" gorm:"type:int;default:1"`   // admin, common
+	Status              int                        `json:"status" gorm:"type:int;default:1"` // enabled, disabled
+	Email               string                     `json:"email" gorm:"index" validate:"max=50"`
+	GitHubId            string                     `json:"github_id" gorm:"column:github_id;index"`
+	DiscordId           string                     `json:"discord_id" gorm:"column:discord_id;index"`
+	OidcId              string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
+	WeChatId            string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
+	TelegramId          string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
+	VerificationCode    string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	AccessToken         *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
+	Quota               int                        `json:"quota" gorm:"type:int;default:0"`
+	UsedQuota           int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
+	RequestCount        int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	Group               string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
+	AffCode             string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
+	AffCount            int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
+	AffQuota            int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
+	AffHistoryQuota     int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
+	InviterId           int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	DistributionEnabled bool                       `json:"distribution_enabled" gorm:"default:false;column:distribution_enabled"`
+	AffiliateCdkEnabled bool                       `json:"affiliate_cdk_enabled" gorm:"default:false;column:affiliate_cdk_enabled"`
+	TopUpEnabled        bool                       `json:"top_up_enabled" gorm:"column:top_up_enabled"`
+	DeletedAt           gorm.DeletedAt             `gorm:"index"`
+	LinuxDOId           string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
+	Setting             string                     `json:"setting" gorm:"type:text;column:setting"`
+	Remark              string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
+	StripeCustomer      string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	CreatedAt           int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	LastLoginAt         int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	AuthVersion         int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
+	AdminPermissions    map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -565,6 +567,21 @@ func GetUserById(id int, selectAll bool) (*User, error) {
 	return &user, err
 }
 
+// IsUserTopUpEnabled reports whether a user may initiate wallet top-ups or
+// subscription purchases. Keep this lookup database-backed so a newly granted
+// or revoked permission takes effect immediately and cannot be bypassed by a
+// stale authentication/cache snapshot.
+func IsUserTopUpEnabled(id int) (bool, error) {
+	if id <= 0 {
+		return false, errors.New("id 为空！")
+	}
+	var user User
+	if err := DB.Select("id", "top_up_enabled").First(&user, "id = ?", id).Error; err != nil {
+		return false, err
+	}
+	return user.TopUpEnabled, nil
+}
+
 func GetUserIdByAffCode(affCode string) (int, error) {
 	if affCode == "" {
 		return 0, errors.New("affCode 为空！")
@@ -701,6 +718,10 @@ func (user *User) Insert(inviterId int) error {
 			}
 			user.Quota = common.QuotaForNewUser
 			user.AffCode = common.GetRandomString(4)
+			// New accounts must be explicitly approved by an administrator before
+			// they can add funds. Existing accounts are enabled by the one-time
+			// migration below.
+			user.TopUpEnabled = false
 
 			// 初始化用户设置，包括默认的边栏配置
 			if user.Setting == "" {
@@ -719,6 +740,7 @@ func (user *User) Insert(inviterId int) error {
 		Updates(map[string]interface{}{
 			"distribution_enabled":  user.DistributionEnabled,
 			"affiliate_cdk_enabled": user.AffiliateCdkEnabled,
+			"top_up_enabled":        false,
 		}).Error; err != nil {
 		return err
 	}
@@ -773,6 +795,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		}
 		user.Quota = common.QuotaForNewUser
 		user.AffCode = common.GetRandomString(4)
+		user.TopUpEnabled = false
 
 		// 初始化用户设置
 		if user.Setting == "" {
@@ -789,6 +812,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 			Updates(map[string]interface{}{
 				"distribution_enabled":  user.DistributionEnabled,
 				"affiliate_cdk_enabled": user.AffiliateCdkEnabled,
+				"top_up_enabled":        false,
 			}).Error
 	})
 }
@@ -818,6 +842,33 @@ func migrateDisableExistingUserDistribution() error {
 			Key:   disableExistingUserDistributionMigrationKey,
 			Value: "done",
 		}).Error
+	})
+}
+
+// migrateEnableExistingUserTopUp grants the new permission to all accounts
+// that predate the feature. The marker makes the migration safe to rerun on
+// every supported database and prevents a later restart from re-enabling an
+// account an administrator intentionally disabled.
+func migrateEnableExistingUserTopUp() error {
+	if !DB.Migrator().HasTable(&User{}) ||
+		!DB.Migrator().HasTable(&Option{}) ||
+		!DB.Migrator().HasColumn(&User{}, "top_up_enabled") {
+		return nil
+	}
+
+	var marker Option
+	if err := DB.Where("key = ?", enableExistingUserTopUpMigrationKey).First(&marker).Error; err == nil {
+		return nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Unscoped().Model(&User{}).Where("id > ?", 0).
+			Updates(map[string]interface{}{"top_up_enabled": true}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&Option{Key: enableExistingUserTopUpMigrationKey, Value: "done"}).Error
 	})
 }
 
@@ -950,6 +1001,7 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 		"remark":                newUser.Remark,
 		"distribution_enabled":  newUser.DistributionEnabled,
 		"affiliate_cdk_enabled": newUser.AffiliateCdkEnabled,
+		"top_up_enabled":        newUser.TopUpEnabled,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password

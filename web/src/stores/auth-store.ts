@@ -43,6 +43,8 @@ export interface AuthUser {
   aff_history_quota?: number
   distribution_enabled?: boolean
   affiliate_cdk_enabled?: boolean
+  /** Whether this user may add funds or purchase subscriptions. */
+  top_up_enabled?: boolean
   inviter_id?: number
   github_id?: string
   discord_id?: string

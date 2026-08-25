@@ -235,6 +235,9 @@ export function useTopupInfo() {
 
       const processedData: TopupInfo = {
         ...response.data,
+        // Treat an omitted field as enabled for compatibility with accounts
+        // created before per-user recharge permission was introduced.
+        top_up_enabled: response.data.top_up_enabled !== false,
         pay_methods: parsePaymentMethods(
           response.data.pay_methods,
           response.data.stripe_min_topup

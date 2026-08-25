@@ -422,20 +422,20 @@ export function UsersMutateDrawer({
 
                   <FormField
                     control={form.control}
-                    name='distribution_enabled'
+                    name='top_up_enabled'
                     render={({ field }) => (
                       <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
                         <div className='space-y-0.5'>
-                          <FormLabel>{t('Affiliate eligibility')}</FormLabel>
+                          <FormLabel>{t('Recharge permission')}</FormLabel>
                           <FormDescription>
                             {t(
-                              'Controls whether this user can earn affiliate commissions as a promoter.'
+                              'Allow this user to add funds and purchase subscriptions. New users must join the official group before an administrator enables this permission.'
                             )}
                           </FormDescription>
                         </div>
                         <FormControl>
                           <Switch
-                            checked={field.value ?? false}
+                            checked={field.value ?? true}
                             onCheckedChange={field.onChange}
                           />
                         </FormControl>

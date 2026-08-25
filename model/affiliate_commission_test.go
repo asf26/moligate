@@ -166,14 +166,36 @@ func TestManualCompleteTopUp_CreatesRewardPointsFromPaymentAmount(t *testing.T) 
 	assert.EqualValues(t, 2, commissions[0].RewardPoints)
 }
 
-func TestCompleteEpayTopUp_DisabledLevelPromoterIsSkippedIndependently(t *testing.T) {
+func TestCompleteEpayTopUp_UnqualifiedPromotersStillEarnRewards(t *testing.T) {
 	truncateTables(t)
 	setDistributionTestConfig(t, true, 1000, 300)
 	prepareTwoLevelAffiliateChain(t)
 	setAffiliateTestDistributionEnabled(t, 1002, false)
-	insertAffiliateTestTopUp(t, "aff-disabled-level1", 1003, 50)
+	setAffiliateTestDistributionEnabled(t, 1001, false)
+	insertAffiliateTestTopUp(t, "aff-unqualified-promoters", 1003, 50)
 
-	completed, err := CompleteEpayTopUp("aff-disabled-level1", "alipay", "127.0.0.1")
+	completed, err := CompleteEpayTopUp("aff-unqualified-promoters", "alipay", "127.0.0.1")
+	require.NoError(t, err)
+	require.True(t, completed)
+
+	commissions := getAffiliateTestCommissions(t)
+	require.Len(t, commissions, 2)
+	assert.Equal(t, AffiliateCommissionLevel1, commissions[0].Level)
+	assert.Equal(t, 1002, commissions[0].PromoterId)
+	assert.Equal(t, AffiliateCommissionLevel2, commissions[1].Level)
+	assert.Equal(t, 1001, commissions[1].PromoterId)
+}
+
+func TestCompleteEpayTopUp_DisabledPromoterStatusIsSkippedIndependently(t *testing.T) {
+	truncateTables(t)
+	setDistributionTestConfig(t, true, 1000, 300)
+	prepareTwoLevelAffiliateChain(t)
+	require.NoError(t, DB.Model(&User{}).
+		Where("id = ?", 1002).
+		Update("status", common.UserStatusDisabled).Error)
+	insertAffiliateTestTopUp(t, "aff-disabled-promoter", 1003, 50)
+
+	completed, err := CompleteEpayTopUp("aff-disabled-promoter", "alipay", "127.0.0.1")
 	require.NoError(t, err)
 	require.True(t, completed)
 
@@ -183,7 +205,7 @@ func TestCompleteEpayTopUp_DisabledLevelPromoterIsSkippedIndependently(t *testin
 	assert.Equal(t, 1001, commissions[0].PromoterId)
 }
 
-func TestCompleteEpayTopUp_BuyerDistributionDisabledStillRewardsQualifiedUplines(t *testing.T) {
+func TestCompleteEpayTopUp_BuyerDistributionDisabledStillRewardsUplines(t *testing.T) {
 	truncateTables(t)
 	setDistributionTestConfig(t, true, 1000, 300)
 	prepareTwoLevelAffiliateChain(t)

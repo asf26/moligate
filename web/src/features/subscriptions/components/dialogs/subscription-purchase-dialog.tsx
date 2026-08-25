@@ -65,6 +65,7 @@ interface Props {
   enableCreem?: boolean
   enableWaffoPancake?: boolean
   enableOnlineTopUp?: boolean
+  topUpEnabled?: boolean
   epayMethods?: PaymentMethod[]
   purchaseLimit?: number
   purchaseCount?: number
@@ -88,6 +89,8 @@ export function SubscriptionPurchaseDialog(props: Props) {
 
   const plan = props.plan?.plan
   if (!plan) return null
+
+  const rechargeEnabled = props.topUpEnabled !== false
 
   const hasStripe = props.enableStripe && !!plan.stripe_price_id
   const hasCreem = props.enableCreem && !!plan.creem_product_id
@@ -119,6 +122,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
     (props.purchaseCount || 0) >= (props.purchaseLimit || 0)
 
   const handlePayStripe = async () => {
+    if (!rechargeEnabled) return
     setPaying(true)
     try {
       const res = await paySubscriptionStripe({ plan_id: plan.id })
@@ -141,6 +145,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
   }
 
   const handlePayCreem = async () => {
+    if (!rechargeEnabled) return
     setPaying(true)
     try {
       const res = await paySubscriptionCreem({ plan_id: plan.id })
@@ -165,6 +170,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
   // In-tab redirect (not window.open) — user-gesture context is lost
   // across the await, so a popup would be blocked. Same as the wallet hook.
   const handlePayWaffoPancake = async () => {
+    if (!rechargeEnabled) return
     setPaying(true)
     try {
       const res = await paySubscriptionWaffoPancake({ plan_id: plan.id })
@@ -190,6 +196,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
     /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
 
   const handlePayEpay = async () => {
+    if (!rechargeEnabled) return
     if (!selectedEpayMethod) {
       toast.error(t('Please select a payment method'))
       return
@@ -234,6 +241,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
   }
 
   const handlePayBalance = async () => {
+    if (!rechargeEnabled) return
     if (!allowBalancePay) {
       toast.error(t('This plan does not allow balance redemption'))
       return
@@ -334,6 +342,16 @@ export function SubscriptionPurchaseDialog(props: Props) {
           </Alert>
         )}
 
+        {!rechargeEnabled && (
+          <Alert variant='destructive'>
+            <AlertDescription>
+              {t(
+                'Recharge is locked for this account. Please join the official group and contact an administrator to enable recharge access.'
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className='flex flex-col gap-2 rounded-md border p-3'>
           <div className='flex items-center justify-between gap-2 text-xs'>
             <span className='text-muted-foreground'>{t('Required')}</span>
@@ -360,7 +378,11 @@ export function SubscriptionPurchaseDialog(props: Props) {
             variant='outline'
             onClick={handlePayBalance}
             disabled={
-              paying || limitReached || !allowBalancePay || insufficientBalance
+              !rechargeEnabled ||
+              paying ||
+              limitReached ||
+              !allowBalancePay ||
+              insufficientBalance
             }
           >
             {t('Pay with Balance')}
@@ -379,7 +401,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
                     variant='outline'
                     className='flex-1'
                     onClick={handlePayStripe}
-                    disabled={paying || limitReached}
+                    disabled={!rechargeEnabled || paying || limitReached}
                   >
                     Stripe
                   </Button>
@@ -389,7 +411,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
                     variant='outline'
                     className='flex-1'
                     onClick={handlePayCreem}
-                    disabled={paying || limitReached}
+                    disabled={!rechargeEnabled || paying || limitReached}
                   >
                     Creem
                   </Button>
@@ -399,7 +421,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
                     variant='outline'
                     className='flex-1'
                     onClick={handlePayWaffoPancake}
-                    disabled={paying || limitReached}
+                    disabled={!rechargeEnabled || paying || limitReached}
                   >
                     Waffo Pancake
                   </Button>
@@ -417,7 +439,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
                   ]}
                   value={selectedEpayMethod}
                   onValueChange={(v) => v !== null && setSelectedEpayMethod(v)}
-                  disabled={limitReached}
+                  disabled={!rechargeEnabled || limitReached}
                 >
                   <SelectTrigger className='flex-1'>
                     <SelectValue>{selectedEpayMethodLabel}</SelectValue>
@@ -434,7 +456,12 @@ export function SubscriptionPurchaseDialog(props: Props) {
                 </Select>
                 <Button
                   onClick={handlePayEpay}
-                  disabled={paying || !selectedEpayMethod || limitReached}
+                  disabled={
+                    !rechargeEnabled ||
+                    paying ||
+                    !selectedEpayMethod ||
+                    limitReached
+                  }
                 >
                   {t('Pay')}
                 </Button>

@@ -120,6 +120,8 @@ export interface WaffoPayMethod {
  * Topup configuration information
  */
 export interface TopupInfo {
+  /** Whether the current user may add funds or purchase subscriptions. */
+  top_up_enabled?: boolean
   /** Whether online topup is enabled */
   enable_online_topup: boolean
   /** Whether Stripe topup is enabled */
@@ -278,6 +280,8 @@ export interface UserWalletData {
   aff_count: number
   /** User group */
   group: string
+  /** Whether this user may add funds or purchase subscriptions. */
+  top_up_enabled?: boolean
 }
 
 /**

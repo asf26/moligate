@@ -81,6 +81,7 @@ const paymentSkeletonKeys = [
 
 interface RechargeFormCardProps {
   topupInfo: TopupInfo | null
+  topUpEnabled?: boolean
   presetAmounts: PresetAmount[]
   selectedPreset: number | null
   onSelectPreset: (preset: PresetAmount) => void
@@ -111,6 +112,7 @@ interface RechargeFormCardProps {
 
 export function RechargeFormCard({
   topupInfo,
+  topUpEnabled,
   presetAmounts,
   selectedPreset,
   onSelectPreset,
@@ -140,6 +142,7 @@ export function RechargeFormCard({
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
+  const rechargeEnabled = topUpEnabled ?? topupInfo?.top_up_enabled !== false
 
   useEffect(() => {
     // Empty string must survive, otherwise the field can never be cleared
@@ -297,6 +300,42 @@ export function RechargeFormCard({
           </div>
         </CardContent>
       </Card>
+    )
+  }
+
+  if (!rechargeEnabled) {
+    return (
+      <TitledCard
+        title={t('Add Funds')}
+        description={t('Choose an amount and payment method')}
+        icon={<WalletCards className='h-4 w-4' />}
+        disableHoverEffect
+        action={
+          <div className='flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center'>
+            <WalletContactSupportButton />
+            {onOpenBilling ? (
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={onOpenBilling}
+                className='w-full gap-2 sm:w-auto'
+              >
+                <Receipt className='h-4 w-4' />
+                {t('Order History')}
+              </Button>
+            ) : null}
+          </div>
+        }
+        contentClassName='space-y-4 sm:space-y-6'
+      >
+        <Alert variant='destructive'>
+          <AlertDescription>
+            {t(
+              'Recharge is locked for this account. Please join the official group and contact an administrator to enable recharge access.'
+            )}
+          </AlertDescription>
+        </Alert>
+      </TitledCard>
     )
   }
 

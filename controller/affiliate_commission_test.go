@@ -58,7 +58,7 @@ func affiliateControllerTestContext(method string, path string, body []byte) (*g
 	return c, w
 }
 
-func TestSelfAffiliateAPIsRequireDistributionPermission(t *testing.T) {
+func TestSelfAffiliateReadAPIsDoNotRequireDistributionQualification(t *testing.T) {
 	setupAffiliateCommissionControllerTestDB(t)
 	require.NoError(t, model.DB.Create(&model.User{
 		Id:                  1001,
@@ -70,19 +70,10 @@ func TestSelfAffiliateAPIsRequireDistributionPermission(t *testing.T) {
 		DistributionEnabled: false,
 	}).Error)
 
-	body, err := common.Marshal(map[string]any{
-		"method":       "paypal",
-		"account":      "disabled@example.com",
-		"account_name": "Disabled Agent",
-		"ids":          []int{2001},
-	})
-	require.NoError(t, err)
-
 	tests := []struct {
 		name   string
 		method string
 		path   string
-		body   []byte
 		call   func(*gin.Context)
 	}{
 		{
@@ -103,23 +94,19 @@ func TestSelfAffiliateAPIsRequireDistributionPermission(t *testing.T) {
 			path:   "/api/affiliate/self/redemptions",
 			call:   GetSelfAffiliateRewardPointSettlements,
 		},
-		{
-			name:   "redeem rewards",
-			method: http.MethodPost,
-			path:   "/api/affiliate/self/rewards/redeem",
-			body:   body,
-			call:   RedeemSelfAffiliateRewardPoints,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, w := affiliateControllerTestContext(tt.method, tt.path, tt.body)
+			c, w := affiliateControllerTestContext(tt.method, tt.path, nil)
 			c.Set("id", 1001)
 			tt.call(c)
 			require.Equal(t, http.StatusOK, w.Code)
-			require.Contains(t, w.Body.String(), `"success":false`)
-			require.Contains(t, w.Body.String(), "未开通代理分销权限")
+			var response struct {
+				Success bool `json:"success"`
+			}
+			require.NoError(t, common.Unmarshal(w.Body.Bytes(), &response))
+			require.True(t, response.Success)
 		})
 	}
 }
@@ -491,7 +478,7 @@ func TestSelfRedeemAffiliateRewardPointsAPI(t *testing.T) {
 	require.Equal(t, 20000000, user.Quota)
 }
 
-func TestSelfQuoteAndPartialRedeemAffiliateRewardPointsAPI(t *testing.T) {
+func TestSelfQuoteAndPartialRedeemAffiliateRewardPointsAPIWithoutDistributionQualification(t *testing.T) {
 	setupAffiliateCommissionControllerTestDB(t)
 	oldPrice := operation_setting.Price
 	oldDistribution := *operation_setting.GetDistributionSetting()
@@ -510,7 +497,7 @@ func TestSelfQuoteAndPartialRedeemAffiliateRewardPointsAPI(t *testing.T) {
 		Status:              common.UserStatusEnabled,
 		Role:                common.RoleCommonUser,
 		AffCode:             "agent_code",
-		DistributionEnabled: true,
+		DistributionEnabled: false,
 	}).Error)
 	require.NoError(t, model.DB.Create(&model.AffiliateCommission{
 		Id:                     2001,

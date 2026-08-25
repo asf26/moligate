@@ -64,13 +64,14 @@ func createRootAccountIfNeed() error {
 			return err
 		}
 		rootUser := User{
-			Username:    "root",
-			Password:    hashedPassword,
-			Role:        common.RoleRootUser,
-			Status:      common.UserStatusEnabled,
-			DisplayName: "Root User",
-			AccessToken: nil,
-			Quota:       100000000,
+			Username:     "root",
+			Password:     hashedPassword,
+			Role:         common.RoleRootUser,
+			Status:       common.UserStatusEnabled,
+			DisplayName:  "Root User",
+			AccessToken:  nil,
+			Quota:        100000000,
+			TopUpEnabled: true,
 		}
 		DB.Create(&rootUser)
 	}
@@ -326,6 +327,9 @@ func migrateDB() error {
 	if err := migrateDisableExistingUserDistribution(); err != nil {
 		return err
 	}
+	if err := migrateEnableExistingUserTopUp(); err != nil {
+		return err
+	}
 	if err := migrateAffiliateCommissionRewardPoints(); err != nil {
 		return err
 	}
@@ -429,6 +433,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := migrateDisableExistingUserDistribution(); err != nil {
+		return err
+	}
+	if err := migrateEnableExistingUserTopUp(); err != nil {
 		return err
 	}
 	if err := migrateAffiliateCommissionRewardPoints(); err != nil {

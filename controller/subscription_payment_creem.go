@@ -24,6 +24,9 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
 	}
+	if !requireTopUpEnabled(c) {
+		return
+	}
 
 	var req SubscriptionCreemPayRequest
 

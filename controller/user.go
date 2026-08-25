@@ -535,6 +535,7 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
 		"inviter_id":            user.InviterId,
 		"distribution_enabled":  user.DistributionEnabled,
 		"affiliate_cdk_enabled": user.AffiliateCdkEnabled,
+		"top_up_enabled":        user.TopUpEnabled,
 		"linux_do_id":           user.LinuxDOId,
 		"setting":               user.Setting,
 		"stripe_customer":       user.StripeCustomer,
@@ -720,6 +721,9 @@ func UpdateUser(c *gin.Context) {
 	}
 	if _, ok := requestData["affiliate_cdk_enabled"]; !ok {
 		updatedUser.AffiliateCdkEnabled = originUser.AffiliateCdkEnabled
+	}
+	if _, ok := requestData["top_up_enabled"]; !ok {
+		updatedUser.TopUpEnabled = originUser.TopUpEnabled
 	}
 	if updatedUser.Password == "$I_LOVE_U" {
 		updatedUser.Password = "" // rollback to what it should be
@@ -1385,6 +1389,9 @@ func getTopUpLock(userID int) *topUpTryLock {
 func TopUp(c *gin.Context) {
 	if !operation_setting.IsPaymentComplianceConfirmed() {
 		common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+		return
+	}
+	if !requireTopUpEnabled(c) {
 		return
 	}
 

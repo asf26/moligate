@@ -161,6 +161,23 @@ export function useUsersColumns(): ColumnDef<User>[] {
       meta: { mobileBadge: true },
     },
     {
+      id: 'top_up_enabled',
+      header: t('Recharge permission'),
+      cell: ({ row }) => {
+        const enabled = row.original.top_up_enabled !== false
+        return (
+          <StatusBadge
+            label={enabled ? t('Recharge enabled') : t('Recharge disabled')}
+            variant={enabled ? 'success' : 'neutral'}
+            copyable={false}
+          />
+        )
+      },
+      enableSorting: false,
+      size: 150,
+      meta: { mobileBadge: true },
+    },
+    {
       id: 'quota',
       accessorKey: 'quota',
       header: t('Quota'),
@@ -226,17 +243,9 @@ export function useUsersColumns(): ColumnDef<User>[] {
         const affCount = user.aff_count || 0
         const affHistoryQuota = user.aff_history_quota || 0
         const inviterId = user.inviter_id || 0
-        const distributionEnabled = user.distribution_enabled === true
 
         return (
           <div className='flex max-w-full min-w-0 flex-wrap items-center gap-1 overflow-hidden'>
-            <StatusBadge
-              label={
-                distributionEnabled ? t('Agent enabled') : t('Agent disabled')
-              }
-              variant={distributionEnabled ? 'success' : 'neutral'}
-              copyable={false}
-            />
             <Tooltip>
               <TooltipTrigger
                 render={

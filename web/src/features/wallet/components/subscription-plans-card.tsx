@@ -26,6 +26,7 @@ import {
   dotColorMap,
   textColorMap,
 } from '@/components/status-badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -186,6 +187,7 @@ export function SubscriptionPlansCard({
   const enableCreem = !!topupInfo?.enable_creem_topup
   const enableWaffoPancake = !!topupInfo?.enable_waffo_pancake_topup
   const enableOnlineTopUp = !!topupInfo?.enable_online_topup
+  const rechargeEnabled = topupInfo?.top_up_enabled !== false
   const epayMethods = useMemo(
     () => getEpayMethods(topupInfo?.pay_methods),
     [topupInfo?.pay_methods]
@@ -256,7 +258,6 @@ export function SubscriptionPlansCard({
 
   const hasActive = activeSubscriptions.length > 0
   const hasAny = allSubscriptions.length > 0
-  const isAvailable = loading || plans.length > 0 || hasAny
   const disablePref = !hasActive
   const isSubPref =
     billingPreference === 'subscription_first' ||
@@ -265,8 +266,8 @@ export function SubscriptionPlansCard({
     disablePref && isSubPref ? 'wallet_first' : billingPreference
 
   useEffect(() => {
-    onAvailabilityChange?.(isAvailable)
-  }, [isAvailable, onAvailabilityChange])
+    onAvailabilityChange?.(true)
+  }, [onAvailabilityChange])
 
   const planPurchaseCountMap = useMemo(() => {
     const map = new Map<number, number>()
@@ -293,10 +294,6 @@ export function SubscriptionPlansCard({
     if (!endTime) return 0
     const now = Date.now() / 1000
     return Math.max(0, Math.ceil((endTime - now) / 86400))
-  }
-
-  if (!isAvailable) {
-    return null
   }
 
   if (loading) {
@@ -632,6 +629,15 @@ export function SubscriptionPlansCard({
                 </p>
               </div>
             </div>
+            {!rechargeEnabled && (
+              <Alert variant='destructive' className='mb-3 max-w-3xl'>
+                <AlertDescription>
+                  {t(
+                    'Subscription is locked for this account. Please join the official group and contact an administrator to enable subscription access.'
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
             <div className='grid grid-cols-[repeat(auto-fill,minmax(260px,300px))] gap-3'>
               {plans.map((p, index) => {
                 const plan = p?.plan
@@ -737,11 +743,15 @@ export function SubscriptionPlansCard({
                             size='sm'
                             className='h-8 w-full text-xs'
                             onClick={() => {
+                              if (!rechargeEnabled) return
                               setSelectedPlan(p)
                               setPurchaseOpen(true)
                             }}
+                            disabled={!rechargeEnabled}
                           >
-                            {t('Subscribe Now')}
+                            {rechargeEnabled
+                              ? t('Subscribe Now')
+                              : t('Recharge permission required')}
                           </Button>
                         )}
                       </div>
@@ -751,6 +761,14 @@ export function SubscriptionPlansCard({
               })}
             </div>
           </section>
+        ) : !rechargeEnabled ? (
+          <Alert variant='destructive'>
+            <AlertDescription>
+              {t(
+                'Subscription is locked for this account. Please join the official group and contact an administrator to enable subscription access.'
+              )}
+            </AlertDescription>
+          </Alert>
         ) : (
           <p className='text-muted-foreground py-4 text-center text-sm'>
             {t('No plans available')}
@@ -771,6 +789,7 @@ export function SubscriptionPlansCard({
         enableCreem={enableCreem}
         enableWaffoPancake={enableWaffoPancake}
         enableOnlineTopUp={enableOnlineTopUp}
+        topUpEnabled={rechargeEnabled}
         epayMethods={epayMethods}
         userQuota={userQuota}
         onPurchaseSuccess={onPurchaseSuccess}
