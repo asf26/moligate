@@ -27,34 +27,34 @@ import {
 
 const faqDefinitions = [
   {
-    question: 'How can I use Claude in China?',
+    question: 'What is Moligate?',
     answer:
-      'Create an account, generate an API key, and point Claude Code or the Anthropic SDK at the gateway base URL. The request is routed through an available domestic-compatible provider.',
+      'Moligate is a unified AI gateway for developers and teams. One account connects multiple model providers with shared API access, usage tracking, and billing.',
   },
   {
-    question: 'What is a Claude proxy or relay?',
+    question: 'How do I start using Moligate?',
     answer:
-      'A relay exposes a compatible API endpoint between your application and the upstream model provider. Your integration keeps its existing SDK while the gateway handles routing and billing.',
+      'Register or sign in, create an API key in the console, choose a supported model, and follow the integration guide. You can also open AI Creation to start without writing code.',
   },
   {
-    question: 'How is a relay different from the official API?',
+    question: 'Which models can I use with Moligate?',
     answer:
-      'The gateway keeps the request and response shape compatible, while adding unified provider access, usage accounting, and payment options for this deployment.',
+      'Moligate brings together supported OpenAI, Claude, Gemini, and other provider models. The model catalog shows the models currently available to your account.',
   },
   {
-    question: 'Can Claude Code be used domestically?',
+    question: 'How do I create and use an API key?',
     answer:
-      'Yes. Set ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY, then run Claude Code normally. No source-code changes are required.',
+      'Open API Keys in the console, create a key with the required group and permissions, then add it to your SDK or Authorization header. Keep your key private and rotate it when needed.',
   },
   {
-    question: 'How is gateway pricing calculated?',
+    question: 'How are usage and prices calculated?',
     answer:
-      'Choose a monthly plan for a predictable limit or use balance billing by token. The console records model, usage, latency, and charge for each request.',
+      "Charges follow the selected model and actual usage. Subscription limits and balance billing are shown in the console, where each request's model, usage, and charge can be reviewed.",
   },
   {
-    question: 'How do I call GPT or OpenAI models?',
+    question: 'How do I call Moligate from my application?',
     answer:
-      'Use the OpenAI-compatible base URL with the same SDK and API key. Select the model name in your request; the gateway handles provider routing.',
+      'Use the API base URL and key shown in the console with an OpenAI-compatible SDK, then select the model in your request. Moligate handles provider routing, usage records, and billing.',
   },
 ]
 

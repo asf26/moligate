@@ -9,12 +9,12 @@ describe('FAQ', () => {
     render(<FAQ />)
 
     const question = screen.getByRole('button', {
-      name: 'How can I use Claude in China?',
+      name: 'What is Moligate?',
     })
     expect(question).toHaveAttribute('aria-expanded', 'true')
     expect(
       screen.getByText(
-        'Create an account, generate an API key, and point Claude Code or the Anthropic SDK at the gateway base URL. The request is routed through an available domestic-compatible provider.'
+        'Moligate is a unified AI gateway for developers and teams. One account connects multiple model providers with shared API access, usage tracking, and billing.'
       )
     ).toBeVisible()
   })
@@ -24,10 +24,10 @@ describe('FAQ', () => {
     render(<FAQ />)
 
     const firstQuestion = screen.getByRole('button', {
-      name: 'How can I use Claude in China?',
+      name: 'What is Moligate?',
     })
     const secondQuestion = screen.getByRole('button', {
-      name: 'What is a Claude proxy or relay?',
+      name: 'How do I start using Moligate?',
     })
 
     await user.click(secondQuestion)
@@ -36,12 +36,12 @@ describe('FAQ', () => {
     expect(secondQuestion).toHaveAttribute('aria-expanded', 'true')
     expect(
       screen.getByText(
-        'Create an account, generate an API key, and point Claude Code or the Anthropic SDK at the gateway base URL. The request is routed through an available domestic-compatible provider.'
+        'Moligate is a unified AI gateway for developers and teams. One account connects multiple model providers with shared API access, usage tracking, and billing.'
       )
     ).toBeVisible()
     expect(
       screen.getByText(
-        'A relay exposes a compatible API endpoint between your application and the upstream model provider. Your integration keeps its existing SDK while the gateway handles routing and billing.'
+        'Register or sign in, create an API key in the console, choose a supported model, and follow the integration guide. You can also open AI Creation to start without writing code.'
       )
     ).toBeVisible()
   })
