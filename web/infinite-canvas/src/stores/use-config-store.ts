@@ -9,10 +9,23 @@ export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
+export type VideoModelMetadata = {
+    group?: string;
+    durationsSeconds?: number[];
+    ratios?: string[];
+    sizes?: string[];
+    maxImages?: number;
+    maxVideos?: number;
+    maxAudios?: number;
+    supportsFirstLastFrame?: boolean;
+    pricingMode?: string;
+};
+
 export type ChannelModel = {
     name: string;
     capability: ModelCapability;
     script?: string;
+    video?: VideoModelMetadata;
 };
 
 export type ModelChannel = {
@@ -22,6 +35,7 @@ export type ModelChannel = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     models: ChannelModel[];
+    videoAccountTokenId?: string;
 };
 
 export type AiConfig = {
@@ -361,7 +375,8 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         seen.add(name);
         const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
-        result.push({ name, capability, script });
+        const video = typeof item === "string" ? undefined : item.video;
+        result.push({ name, capability, script, video });
     }
     return result;
 }
@@ -375,6 +390,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiKey: channel?.apiKey || "",
         apiFormat,
         models: normalizeChannelModels(channel?.models),
+        videoAccountTokenId: channel?.videoAccountTokenId?.trim() || undefined,
     };
 }
 
@@ -449,6 +465,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
+        videoAccountTokenId: channel.videoAccountTokenId,
     };
 }
 

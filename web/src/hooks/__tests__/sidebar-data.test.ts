@@ -52,5 +52,17 @@ describe('useSidebarData', () => {
         (item) => 'url' in item && item.url?.toString().startsWith('/canvas')
       )
     ).toBe(false)
+
+    const adminGroup = result.current.navGroups.find(
+      (group) => group.id === 'admin'
+    )
+    expect(
+      adminGroup?.items.find(
+        (item) => 'title' in item && item.title === 'Video Accounts'
+      )
+    ).toMatchObject({
+      title: 'Video Accounts',
+      url: '/video-accounts',
+    })
   })
 })

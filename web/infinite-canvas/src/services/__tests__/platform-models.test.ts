@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { loadPlatformModelChannels } from "../platform-models";
+import { loadPlatformModelChannels, loadVideoAccountChannels } from "../platform-models";
 
 describe("loadPlatformModelChannels", () => {
     afterEach(() => vi.unstubAllGlobals());
@@ -76,5 +76,51 @@ describe("loadPlatformModelChannels", () => {
             { name: "gpt-image-2", capability: "image" },
             { name: "seedance2.0-stable-full-720p", capability: "video" },
         ]);
+    });
+
+    it("loads dedicated video accounts with opaque selectors and catalog constraints", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    data: [
+                        {
+                            id: "minimax-h3-01",
+                            display_name: "MiniMax H3",
+                            private_group_key: "vca_account",
+                            group: "minimax-h3",
+                            available: true,
+                            durations_seconds: [6, 10],
+                            ratios: ["16:9"],
+                            max_images: -1,
+                            pricing: { mode: "per_second" },
+                        },
+                    ],
+                    private_groups: [{ key: "vca_account", name: "CTMOAI 主账号" }],
+                }),
+                { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+        );
+        vi.stubGlobal("fetch", fetchMock);
+
+        const channels = await loadVideoAccountChannels("dashboard-token", new AbortController().signal);
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            "/api/video-creation/catalog",
+            expect.objectContaining({
+                credentials: "include",
+                headers: expect.objectContaining({ Authorization: "Bearer dashboard-token" }),
+            }),
+        );
+        expect(channels).toHaveLength(1);
+        expect(channels[0]).toMatchObject({
+            id: "video-account-vca_account",
+            name: "CTMOAI 主账号",
+            videoAccountTokenId: "vca_account",
+        });
+        expect(channels[0].models[0]).toMatchObject({
+            name: "minimax-h3-01",
+            capability: "video",
+            video: { durationsSeconds: [6, 10], maxImages: -1, pricingMode: "per_second" },
+        });
     });
 });

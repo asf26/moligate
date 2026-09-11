@@ -4,8 +4,8 @@ import { useTranslation } from "react-i18next";
 
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
-import { loadPlatformModelChannels, type PlatformCanvasGroup } from "@/services/platform-models";
-import { useConfigStore } from "@/stores/use-config-store";
+import { loadPlatformModelChannels, loadVideoAccountChannels, type PlatformCanvasGroup } from "@/services/platform-models";
+import { useConfigStore, type ModelChannel } from "@/stores/use-config-store";
 
 const CANVAS_TOKEN_STORAGE_KEY = "new-api:canvas-dashboard-access-token";
 
@@ -100,8 +100,25 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
             if (result.status < 200 || result.status >= 300 || !result.payload?.success || !result.payload.data) {
                 throw new Error(result.payload?.message || t("apiErrors.requestFailed"));
             }
-            const { channels, warning } = await loadPlatformModelChannels(result.payload.data.groups || [], controller.signal);
-            if (!disposed) applyPlatformChannels(channels, warning);
+            let platformChannels: ModelChannel[] = [];
+            let platformWarning = "";
+            try {
+                const platformResult = await loadPlatformModelChannels(result.payload.data.groups || [], controller.signal);
+                platformChannels = platformResult.channels;
+                platformWarning = platformResult.warning;
+            } catch (error) {
+                platformWarning = error instanceof Error ? error.message : "";
+            }
+            let videoChannels: ModelChannel[] = [];
+            let videoWarning = "";
+            try {
+                videoChannels = await loadVideoAccountChannels(token, controller.signal);
+            } catch (error) {
+                videoWarning = error instanceof Error ? error.message : "";
+            }
+            const warning = [platformWarning, videoWarning].filter(Boolean).join("; ");
+            if (!platformChannels.length && !videoChannels.length && warning) throw new Error(warning);
+            if (!disposed) applyPlatformChannels([...platformChannels, ...videoChannels], warning);
         };
 
         void load().catch((error) => {

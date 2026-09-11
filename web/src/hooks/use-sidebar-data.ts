@@ -164,8 +164,7 @@ export function useSidebarData(): SidebarData {
           },
           {
             title: t('Video Accounts'),
-            url: '/channels?capability=video',
-            configUrls: ['/channels'],
+            url: '/video-accounts',
             icon: Video,
           },
           {

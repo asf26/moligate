@@ -75,6 +75,42 @@ type ChannelMeta struct {
 	SupportStreamOptions bool // 是否支持流式选项
 }
 
+// VideoAccountModelMeta is the account/key-scoped capability and pricing
+// snapshot returned by CTMOAI's /v1/models endpoint.
+type VideoAccountModelMeta struct {
+	ID                     string
+	DisplayName            string
+	Group                  string
+	Available              bool
+	SupportedEndpointTypes []string
+	Resolution             string
+	DurationsSeconds       []int
+	Ratios                 []string
+	Sizes                  []string
+	MaxImages              int
+	MaxVideos              int
+	MaxAudios              int
+	AudioRequiresImage     bool
+	SupportsFirstLastFrame bool
+	PricingMode            string
+	PricingAmount          float64
+	PricingCurrency        string
+	GroupRatio             float64
+}
+
+// VideoAccountMeta carries a selected dedicated video account through the
+// relay/task lifecycle without importing model.VideoAccount into relay/common
+// (which would create an import cycle).
+type VideoAccountMeta struct {
+	ID      int
+	Name    string
+	Token   string
+	BaseURL string
+	APIKey  string
+	Proxy   string
+	Models  map[string]VideoAccountModelMeta
+}
+
 type TokenCountMeta struct {
 	//promptTokens int
 	estimatePromptTokens int
@@ -182,6 +218,7 @@ type RelayInfo struct {
 	*RerankerInfo
 	*ResponsesUsageInfo
 	*ChannelMeta
+	VideoAccount *VideoAccountMeta
 	*TaskRelayInfo
 }
 

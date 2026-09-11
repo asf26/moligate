@@ -58,6 +58,10 @@ func VideoProxy(c *gin.Context) {
 			fmt.Sprintf("Task is not completed yet, current status: %s", task.Status))
 		return
 	}
+	if task.VideoAccountId > 0 {
+		proxyVideoAccountContent(c, task)
+		return
+	}
 
 	channel, err := model.CacheGetChannel(task.ChannelId)
 	if err != nil {

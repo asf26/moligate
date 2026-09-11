@@ -548,6 +548,10 @@ func RelayTask(c *gin.Context) {
 		})
 		return
 	}
+	if common.GetContextKeyInt(c, constant.ContextKeyVideoAccountId) > 0 {
+		RelayVideoAccountTask(c, relayInfo)
+		return
+	}
 
 	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
 		respondTaskError(c, taskErr)

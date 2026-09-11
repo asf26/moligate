@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -250,6 +251,57 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 		GroupRatioInfo: groupRatioInfo,
 	}
 	return priceData, nil
+}
+
+// VideoAccountPriceHelper builds a task price from the selected CTMOAI
+// account's key-scoped catalog. Unlike ModelPriceHelperPerCall it never reads
+// the global ratio/model settings, because two video accounts may expose the
+// same model at different prices. CTMOAI documents prices in CNY by default,
+// while gateway quota is stored in internal USD units, so the currency is
+// normalized before converting to quota.
+func VideoAccountPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, amount float64, currency string, accountGroupRatio float64) (hosttypes.PriceData, error) {
+	if amount < 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
+		return hosttypes.PriceData{}, fmt.Errorf("invalid video account model price")
+	}
+	amount, err := normalizeVideoAccountPriceToUSD(amount, currency)
+	if err != nil {
+		return hosttypes.PriceData{}, err
+	}
+	if accountGroupRatio <= 0 || math.IsNaN(accountGroupRatio) || math.IsInf(accountGroupRatio, 0) {
+		accountGroupRatio = 1
+	}
+	groupRatioInfo := HandleGroupRatio(c, info)
+	effectiveGroupRatio := groupRatioInfo.GroupRatio * accountGroupRatio
+	if effectiveGroupRatio < 0 || math.IsNaN(effectiveGroupRatio) || math.IsInf(effectiveGroupRatio, 0) {
+		return hosttypes.PriceData{}, fmt.Errorf("invalid video account group ratio")
+	}
+	quota, err := common.QuotaFromFloatStrict(amount * common.QuotaPerUnit * effectiveGroupRatio)
+	if err != nil {
+		return hosttypes.PriceData{}, err
+	}
+	freeModel := !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && (effectiveGroupRatio == 0 || amount == 0)
+	return hosttypes.PriceData{
+		FreeModel:      freeModel,
+		ModelPrice:     amount,
+		UsePrice:       true,
+		Quota:          quota,
+		GroupRatioInfo: groupRatioInfo,
+	}, nil
+}
+
+func normalizeVideoAccountPriceToUSD(amount float64, currency string) (float64, error) {
+	switch strings.ToUpper(strings.TrimSpace(currency)) {
+	case "", "CNY", "RMB", "CN¥", "¥":
+		rate := operation_setting.USDExchangeRate
+		if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+			return 0, fmt.Errorf("invalid USD/CNY exchange rate")
+		}
+		return amount / rate, nil
+	case "USD", "$", "US$":
+		return amount, nil
+	default:
+		return 0, fmt.Errorf("unsupported video account pricing currency: %s", currency)
+	}
 }
 
 func HasModelBillingConfig(modelName string) bool {

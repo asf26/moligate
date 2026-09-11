@@ -1,4 +1,4 @@
-import { createModelChannel, guessCapability, type ChannelModel, type ModelChannel } from "@/stores/use-config-store";
+import { createModelChannel, guessCapability, type ChannelModel, type ModelChannel, type VideoModelMetadata } from "@/stores/use-config-store";
 
 export type PlatformCanvasGroup = {
     id: string;
@@ -10,6 +10,24 @@ export type PlatformCanvasGroup = {
     group_name?: string;
     models?: Array<{ name?: string; capability?: ChannelModel["capability"] }>;
 };
+
+type VideoCatalogModel = {
+    id?: string;
+    display_name?: string;
+    group?: string;
+    private_group_key?: string;
+    available?: boolean;
+    durations_seconds?: number[];
+    ratios?: string[];
+    sizes?: string[];
+    max_images?: number;
+    max_videos?: number;
+    max_audios?: number;
+    supports_first_last_frame?: boolean;
+    pricing?: { mode?: string };
+};
+
+type VideoCatalogGroup = { key?: string; name?: string };
 
 type GatewayModel = {
     id?: string;
@@ -49,6 +67,57 @@ export async function loadPlatformModelChannels(groups: PlatformCanvasGroup[], s
 
     if (!channels.length && failures.length) throw new Error(failures.join("; "));
     return { channels, warning: failures.join("; ") };
+}
+
+/** Load the dedicated server-side CTMOAI accounts without exposing upstream keys. */
+export async function loadVideoAccountChannels(token: string, signal: AbortSignal): Promise<ModelChannel[]> {
+    const response = await fetch("/api/video-creation/catalog", {
+        credentials: "include",
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+        signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = (await response.json()) as {
+        data?: VideoCatalogModel[];
+        models?: VideoCatalogModel[];
+        private_groups?: VideoCatalogGroup[];
+    };
+    const models = Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : [];
+    const groups = Array.isArray(payload.private_groups) ? payload.private_groups : [];
+    const byKey = new Map<string, VideoCatalogModel[]>();
+    for (const item of models) {
+        const key = item.private_group_key?.trim() || groups[0]?.key?.trim() || "";
+        if (!key || !item.id || item.available === false) continue;
+        const list = byKey.get(key) || [];
+        list.push(item);
+        byKey.set(key, list);
+    }
+    return Array.from(byKey.entries()).map(([key, items]) => {
+        const group = groups.find((entry) => entry.key === key);
+        const channelModels: ChannelModel[] = items.map((item) => {
+            const video: VideoModelMetadata = {
+                group: item.group,
+                durationsSeconds: item.durations_seconds,
+                ratios: item.ratios,
+                sizes: item.sizes,
+                maxImages: item.max_images,
+                maxVideos: item.max_videos,
+                maxAudios: item.max_audios,
+                supportsFirstLastFrame: item.supports_first_last_frame,
+                pricingMode: item.pricing?.mode,
+            };
+            return { name: item.id!.trim(), capability: "video", video };
+        });
+        return createModelChannel({
+            id: `video-account-${encodeURIComponent(key)}`,
+            name: group?.name?.trim() || `Video account · ${key}`,
+            baseUrl: platformApiBaseUrl,
+            apiKey: token,
+            apiFormat: "openai",
+            models: channelModels,
+            videoAccountTokenId: key,
+        });
+    });
 }
 
 async function loadPlatformGroup(group: PlatformCanvasGroup, signal: AbortSignal) {

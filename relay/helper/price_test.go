@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -271,4 +272,28 @@ func TestModelPriceHelperRequestBillingRatiosOnlyApplyToFixedPrice(t *testing.T)
 	require.Equal(t, "QuotaFromFloat", clamp.Op)
 	require.Equal(t, common.QuotaClampOverflow, clamp.Kind)
 	require.Nil(t, info.Billing)
+}
+
+func TestVideoAccountPriceHelperConvertsCatalogCurrencyToSystemUSD(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	previousRate := operation_setting.USDExchangeRate
+	operation_setting.USDExchangeRate = 10
+	t.Cleanup(func() { operation_setting.USDExchangeRate = previousRate })
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("group", "default")
+	info := &relaycommon.RelayInfo{UserGroup: "default", UsingGroup: "default"}
+
+	priceData, err := VideoAccountPriceHelper(ctx, info, 2, "CNY", 1)
+	require.NoError(t, err)
+	require.InDelta(t, 0.2, priceData.ModelPrice, 0.000001)
+	require.Equal(t, 100000, priceData.Quota)
+
+	priceData, err = VideoAccountPriceHelper(ctx, info, 2, "USD", 1)
+	require.NoError(t, err)
+	require.InDelta(t, 2, priceData.ModelPrice, 0.000001)
+	require.Equal(t, 1000000, priceData.Quota)
+
+	_, err = VideoAccountPriceHelper(ctx, info, 2, "EUR", 1)
+	require.ErrorContains(t, err, "unsupported video account pricing currency")
 }

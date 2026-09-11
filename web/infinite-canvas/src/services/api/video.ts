@@ -5,7 +5,7 @@ import i18n from "@/i18n";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, buildApiUrl, modelOptionName, resolveModelChannel, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 
@@ -27,10 +27,11 @@ function aiApiUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path);
 }
 
-function aiHeaders(config: AiConfig, contentType?: string) {
+function aiHeaders(config: AiConfig, contentType?: string, videoAccountTokenId?: string) {
     return {
         Authorization: `Bearer ${config.apiKey}`,
         ...(contentType ? { "Content-Type": contentType } : {}),
+        ...(videoAccountTokenId ? { "X-Video-Creation-Token-Id": videoAccountTokenId } : {}),
     };
 }
 
@@ -119,6 +120,8 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
     const modelName = modelOptionName(model);
+    const videoAccountTokenId = resolveModelChannel(config, model).videoAccountTokenId;
+    if (videoAccountTokenId) return createVideoAccountTask(config, model, modelName, prompt, references, videoAccountTokenId, options);
     if (isStableVideoModel(modelName)) return createStableVideoTask(config, model, modelName, prompt, references, options);
 
     const body = new FormData();
@@ -138,6 +141,53 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     files.forEach((file) => body.append(isMiniMaxH3 ? "images" : "input_reference[]", file));
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal })).data);
+        if (!created.id) throw new Error(apiText("noVideoTaskId"));
+        return { id: created.id, provider: "openai", model };
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
+    }
+}
+
+async function createVideoAccountTask(config: AiConfig, model: string, modelName: string, prompt: string, references: ReferenceImage[], tokenId: string, options?: RequestOptions): Promise<VideoGenerationTask> {
+    const channel = resolveModelChannel(config, model);
+    const metadata = channel.models.find((item) => item.name === modelName)?.video;
+    try {
+        const images = await Promise.all(
+            references.slice(0, metadata?.maxImages && metadata.maxImages > 0 ? metadata.maxImages : 10).map(async (image) => {
+                const file = await dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) });
+                const form = new FormData();
+                form.append("type", "images");
+                form.append("file", file);
+                const response = await axios.post<{ images?: string[]; url?: string }>(`${window.location.origin}/api/sd-media/upload`, form, {
+                    headers: aiHeaders(config, undefined, tokenId),
+                    signal: options?.signal,
+                    timeout: 90_000,
+                });
+                const url = response.data?.images?.[0]?.trim() || response.data?.url?.trim() || "";
+                if (!url) throw new Error(apiText("referenceImageReadFailed"));
+                return url;
+            }),
+        );
+        const seconds = normalizeCatalogSeconds(config.videoSeconds, metadata?.durationsSeconds);
+        const ratio = normalizeCatalogRatio(config.size, metadata?.ratios);
+        const size = normalizeCatalogSize(config.size, metadata?.sizes, ratio);
+        const body = {
+            model: modelName,
+            prompt,
+            seconds,
+            ...(ratio ? { aspect_ratio: ratio } : {}),
+            ...(size ? { size } : {}),
+            ...(images.length ? { images } : {}),
+        };
+        const created = unwrapVideoResponse(
+            (
+                await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, {
+                    headers: aiHeaders(config, "application/json", tokenId),
+                    signal: options?.signal,
+                    timeout: 90_000,
+                })
+            ).data,
+        );
         if (!created.id) throw new Error(apiText("noVideoTaskId"));
         return { id: created.id, provider: "openai", model };
     } catch (error) {
@@ -188,11 +238,12 @@ async function createStableVideoTask(config: AiConfig, model: string, modelName:
 
 async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     try {
-        const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(aiApiUrl(config, `/videos/${task.id}`), { headers: aiHeaders(config), signal: options?.signal })).data);
+        const tokenId = resolveModelChannel(config, task.model).videoAccountTokenId;
+        const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(aiApiUrl(config, `/videos/${task.id}`), { headers: aiHeaders(config, undefined, tokenId), signal: options?.signal })).data);
         const url = videoResultUrl(video);
         if (url) return { status: "completed", result: await videoResultFromUrl(url, options) };
         if (video.status === "completed") {
-            const content = await axios.get<Blob>(aiApiUrl(config, `/videos/${task.id}/content`), { headers: aiHeaders(config), responseType: "blob", signal: options?.signal });
+            const content = await axios.get<Blob>(aiApiUrl(config, `/videos/${task.id}/content`), { headers: aiHeaders(config, undefined, tokenId), responseType: "blob", signal: options?.signal });
             await assertVideoBlob(content.data);
             return { status: "completed", result: { blob: content.data } };
         }
@@ -224,6 +275,14 @@ function assertVideoConfig(config: AiConfig, model: string) {
 function normalizeVideoSeconds(value: string) {
     const seconds = Math.floor(Number(value) || 6);
     return String(Math.max(1, Math.min(20, seconds)));
+}
+
+function normalizeCatalogSeconds(value: string, supported?: number[]) {
+    const requested = Math.floor(Number(value) || 4);
+    const values = (supported || []).filter((item) => Number.isInteger(item) && item > 0 && item <= 3600);
+    if (!values.length) return Math.max(1, Math.min(3600, requested));
+    if (values.includes(requested)) return requested;
+    return values.reduce((closest, item) => (Math.abs(item - requested) < Math.abs(closest - requested) ? item : closest), values[0]);
 }
 
 function normalizeMiniMaxH3Seconds(value: string) {
@@ -273,6 +332,27 @@ function normalizeMiniMaxH3AspectRatio(value: string) {
         return "9:16";
     }
     return "16:9";
+}
+
+function normalizeCatalogRatio(value: string, supported?: string[]) {
+    const ratio = normalizeMiniMaxH3AspectRatio(value);
+    if (!supported?.length) return ratio;
+    return supported.includes(ratio) ? ratio : supported[0];
+}
+
+function normalizeCatalogSize(value: string, supported: string[] | undefined, ratio: string) {
+    if (!supported?.length) return "";
+    if (supported.includes(value)) return value;
+    const ratioParts = ratio.split(":").map(Number);
+    const target = ratioParts.length === 2 && ratioParts[1] ? ratioParts[0] / ratioParts[1] : 0;
+    if (!target) return supported[0];
+    return supported.reduce((best, candidate) => {
+        const parts = candidate.match(/^(\d+)x(\d+)$/i);
+        const current = parts ? Number(parts[1]) / Number(parts[2]) : 0;
+        const previous = best.match(/^(\d+)x(\d+)$/i);
+        const previousRatio = previous ? Number(previous[1]) / Number(previous[2]) : 0;
+        return Math.abs(current - target) < Math.abs(previousRatio - target) ? candidate : best;
+    }, supported[0]);
 }
 
 function normalizeVideoSize(value: string) {

@@ -20,6 +20,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -190,8 +191,13 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	// 2.5 应用渠道的模型映射（与同步任务对齐）
 	info.OriginModelName = modelName
 	info.UpstreamModelName = modelName
-	if err := helper.ModelMappedHelper(c, info, nil); err != nil {
-		return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
+	// Dedicated CTMOAI accounts own a key-scoped model catalog. Applying the
+	// generic Channel model mapping here could silently replace a validated
+	// account model with a different global model that this key does not expose.
+	if info.VideoAccount == nil {
+		if err := helper.ModelMappedHelper(c, info, nil); err != nil {
+			return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
+		}
 	}
 
 	// 3. 预生成公开 task ID（仅首次）
@@ -201,7 +207,30 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 4. 价格计算：基础模型价格
 	info.OriginModelName = modelName
-	priceData, err := helper.ModelPriceHelperPerCall(c, info)
+	var priceData hosttypes.PriceData
+	var err error
+	if info.VideoAccount != nil {
+		catalogModel, ok := info.VideoAccount.Models[modelName]
+		if !ok {
+			for name, candidate := range info.VideoAccount.Models {
+				if strings.EqualFold(name, modelName) {
+					catalogModel, ok = candidate, true
+					break
+				}
+			}
+		}
+		if !ok {
+			return nil, service.TaskErrorWrapperLocal(fmt.Errorf("video model %s is not available for this account", modelName), "invalid_model", http.StatusBadRequest)
+		}
+		// Use the catalog's canonical ID for the upstream request. Selection is
+		// case-insensitive for callers, but provider model IDs need not be.
+		modelName = catalogModel.ID
+		info.OriginModelName = modelName
+		info.UpstreamModelName = modelName
+		priceData, err = helper.VideoAccountPriceHelper(c, info, catalogModel.PricingAmount, catalogModel.PricingCurrency, catalogModel.GroupRatio)
+	} else {
+		priceData, err = helper.ModelPriceHelperPerCall(c, info)
+	}
 	if err != nil {
 		return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
 	}

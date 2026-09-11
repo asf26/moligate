@@ -150,6 +150,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/affiliate-cdk': { section: 'personal', module: 'affiliate_cdk' },
   '/profile': { section: 'personal', module: 'personal' },
   '/channels': { section: 'admin', module: 'channel' },
+  '/video-accounts': { section: 'admin', module: 'channel' },
   '/channel-monitors': { section: 'admin', module: 'channel_monitor' },
   '/models': { section: 'admin', module: 'models' },
   '/models/metadata': { section: 'admin', module: 'models' },

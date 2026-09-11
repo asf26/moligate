@@ -64,6 +64,9 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/waffo-pancake/webhook/:env", anonymousRequestBodyLimit, controller.WaffoPancakeWebhook)
 		apiRouter.POST("/cdk/redeem", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.RedeemCdkToolCode)
 		apiRouter.GET("/canvas/config", middleware.UserAuth(), middleware.DisableCache(), controller.GetCanvasConfig)
+		// Dedicated CTMOAI video-account media upload. The upstream API key is
+		// resolved on the server from X-Video-Creation-Token-Id.
+		apiRouter.POST("/sd-media/upload", middleware.TokenOrUserAuth(), controller.UploadVideoAccountMedia)
 
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UniversalVerify)
@@ -322,6 +325,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 		registerChannelRoutes(apiRouter)
+		registerVideoAccountRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())

@@ -9,6 +9,10 @@ const (
 	// platform so the polling worker can select the OpenAI-compatible H3 API
 	// without changing the channel type (35) used for key and billing lookup.
 	TaskPlatformMiniMaxH3 TaskPlatform = "minimax-h3"
+	// TaskPlatformVideoCTMoai identifies the dedicated CTMOAI video-account
+	// integration. It intentionally is not a channel type: credentials and
+	// model capabilities live in the video_accounts table.
+	TaskPlatformVideoCTMoai TaskPlatform = "ctmoai-video"
 )
 
 const (

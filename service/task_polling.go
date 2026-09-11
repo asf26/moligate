@@ -34,6 +34,30 @@ type TaskPollingAdaptor interface {
 	AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int
 }
 
+func videoAccountRelayMeta(account *model.VideoAccount) *relaycommon.VideoAccountMeta {
+	if account == nil {
+		return nil
+	}
+	models := make(map[string]relaycommon.VideoAccountModelMeta)
+	for _, item := range account.ModelCatalog() {
+		models[item.ID] = relaycommon.VideoAccountModelMeta{
+			ID: item.ID, DisplayName: item.DisplayName, Group: item.Group, Available: item.Available,
+			SupportedEndpointTypes: item.SupportedEndpointTypes,
+			Resolution:             item.Resolution, DurationsSeconds: item.DurationsSeconds,
+			Ratios: item.Ratios, Sizes: item.Sizes,
+			MaxImages: item.MaxImages, MaxVideos: item.MaxVideos, MaxAudios: item.MaxAudios,
+			AudioRequiresImage:     item.AudioRequiresImage,
+			SupportsFirstLastFrame: item.SupportsFirstLastFrame,
+			PricingMode:            item.Pricing.Mode, PricingAmount: item.Pricing.Amount,
+			PricingCurrency: item.Pricing.Currency, GroupRatio: item.GroupRatio,
+		}
+	}
+	return &relaycommon.VideoAccountMeta{
+		ID: account.Id, Name: account.Name, Token: account.OpaqueKey(),
+		BaseURL: account.BaseURL(), APIKey: account.ApiKey, Proxy: account.Proxy, Models: models,
+	}
+}
+
 // GetTaskAdaptorFunc 由 main 包注入，用于获取指定平台的任务适配器。
 // 打破 service -> relay -> relay/channel -> service 的循环依赖。
 var GetTaskAdaptorFunc func(platform constant.TaskPlatform) TaskPollingAdaptor
@@ -148,7 +172,11 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 				continue
 			}
 			taskM[upstreamID] = task
-			taskChannelM[task.ChannelId] = append(taskChannelM[task.ChannelId], upstreamID)
+			groupID := task.ChannelId
+			if platform == constant.TaskPlatformVideoCTMoai {
+				groupID = task.VideoAccountId
+			}
+			taskChannelM[groupID] = append(taskChannelM[groupID], upstreamID)
 		}
 		if len(nullTaskIds) > 0 {
 			summary.NullTasksFailed += len(nullTaskIds)
@@ -380,14 +408,24 @@ func UpdateVideoTasks(ctx context.Context, platform constant.TaskPlatform, taskC
 }
 
 func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, channelId int, taskIds []string, taskM map[string]*model.Task) error {
-	logger.LogInfo(ctx, fmt.Sprintf("Channel #%d pending video tasks: %d", channelId, len(taskIds)))
+	logger.LogInfo(ctx, fmt.Sprintf("Video provider #%d pending video tasks: %d", channelId, len(taskIds)))
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if len(taskIds) == 0 {
 		return nil
 	}
-	cacheGetChannel, err := model.CacheGetChannel(channelId)
+	var cacheGetChannel *model.Channel
+	var videoAccount *model.VideoAccount
+	var err error
+	if platform == constant.TaskPlatformVideoCTMoai {
+		videoAccount, err = model.GetVideoAccountById(channelId)
+		if err == nil && (videoAccount == nil || !videoAccount.IsEnabled()) {
+			err = fmt.Errorf("video account is disabled")
+		}
+	} else {
+		cacheGetChannel, err = model.CacheGetChannel(channelId)
+	}
 	if err != nil {
 		// Collect DB primary key IDs for bulk update (taskIds are upstream IDs, not task_id column values)
 		var failedIDs []int64
@@ -397,7 +435,7 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 			}
 		}
 		errUpdate := model.TaskBulkUpdateByID(failedIDs, map[string]any{
-			"fail_reason": fmt.Sprintf("Failed to get channel info, channel ID: %d", channelId),
+			"fail_reason": fmt.Sprintf("Failed to get video provider info, ID: %d", channelId),
 			"status":      "FAILURE",
 			"progress":    "100%",
 		})
@@ -411,17 +449,24 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 		return fmt.Errorf("video adaptor not found")
 	}
 	info := &relaycommon.RelayInfo{}
-	info.ChannelMeta = &relaycommon.ChannelMeta{
-		ChannelBaseUrl: cacheGetChannel.GetBaseURL(),
+	if platform == constant.TaskPlatformVideoCTMoai {
+		info.VideoAccount = videoAccountRelayMeta(videoAccount)
+		info.ChannelMeta = &relaycommon.ChannelMeta{ChannelBaseUrl: videoAccount.BaseURL()}
+		info.ApiKey = videoAccount.ApiKey
+	} else {
+		info.ChannelMeta = &relaycommon.ChannelMeta{ChannelBaseUrl: cacheGetChannel.GetBaseURL()}
+		info.ApiKey = cacheGetChannel.Key
 	}
-	info.ApiKey = cacheGetChannel.Key
 	adaptor.Init(info)
-	disablePollingSleep := cacheGetChannel.GetOtherSettings().DisableTaskPollingSleep
+	disablePollingSleep := false
+	if cacheGetChannel != nil {
+		disablePollingSleep = cacheGetChannel.GetOtherSettings().DisableTaskPollingSleep
+	}
 	for i, taskId := range taskIds {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := updateVideoSingleTask(ctx, adaptor, cacheGetChannel, taskId, taskM); err != nil {
+		if err := updateVideoSingleTask(ctx, adaptor, cacheGetChannel, videoAccount, taskId, taskM); err != nil {
 			logger.LogError(ctx, fmt.Sprintf("Failed to update video task %s: %s", taskId, err.Error()))
 		}
 		if disablePollingSleep || i == len(taskIds)-1 {
@@ -438,23 +483,31 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 	return nil
 }
 
-func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *model.Channel, taskId string, taskM map[string]*model.Task) error {
+func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *model.Channel, account *model.VideoAccount, taskId string, taskM map[string]*model.Task) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	baseURL := constant.ChannelBaseURLs[ch.Type]
-	if ch.GetBaseURL() != "" {
-		baseURL = ch.GetBaseURL()
+	baseURL := ""
+	proxy := ""
+	key := ""
+	if account != nil {
+		baseURL = account.BaseURL()
+		proxy = account.Proxy
+		key = account.ApiKey
+	} else if ch != nil {
+		baseURL = constant.ChannelBaseURLs[ch.Type]
+		if ch.GetBaseURL() != "" {
+			baseURL = ch.GetBaseURL()
+		}
+		proxy = ch.GetSetting().Proxy
+		key = ch.Key
 	}
-	proxy := ch.GetSetting().Proxy
 
 	task := taskM[taskId]
 	if task == nil {
 		logger.LogError(ctx, fmt.Sprintf("Task %s not found in taskM", taskId))
 		return fmt.Errorf("task %s not found", taskId)
 	}
-	key := ch.Key
-
 	privateData := task.PrivateData
 	if privateData.Key != "" {
 		key = privateData.Key
