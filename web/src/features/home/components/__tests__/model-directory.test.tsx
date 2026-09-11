@@ -36,6 +36,8 @@ describe('ModelDirectory', () => {
         { model_name: 'gpt-live', vendor_name: 'OpenAI' },
         { model_name: 'claude-live', vendor_name: 'Anthropic' },
         { model_name: 'gemini-live', vendor_name: 'Google' },
+        { model_name: 'grok-live', vendor_name: 'xAI' },
+        { model_name: 'qwen-live', vendor_name: '阿里巴巴' },
       ],
     } as unknown as ReturnType<typeof usePricingData>)
     vi.stubGlobal(
@@ -54,11 +56,13 @@ describe('ModelDirectory', () => {
     expect(
       screen.getByRole('heading', { name: 'Models directory' })
     ).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'OpenAI' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Claude' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'GPT' })).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: 'Anthropic' })
+      screen.getByRole('heading', { name: 'Chinese models' })
     ).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Google' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Gemini' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Grok' })).toBeInTheDocument()
     expect(screen.getByText('gpt-live')).toBeInTheDocument()
     expect(screen.getByText('claude-live')).toBeInTheDocument()
     expect(screen.getByText('gemini-live')).toBeInTheDocument()

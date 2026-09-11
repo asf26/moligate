@@ -29,16 +29,60 @@ interface ModelFamily {
   tone: ModelTone
 }
 
-type ModelTone = 'coral' | 'teal' | 'gold' | 'green'
+type ModelTone = 'orange' | 'green' | 'amber' | 'blue' | 'slate'
 
-const MODEL_TONES: ModelTone[] = ['coral', 'teal', 'gold', 'green']
-const MAX_MODEL_FAMILIES = 6
 const MAX_MODELS_PER_FAMILY = 8
+
+interface ModelCategory {
+  name: string
+  tone: ModelTone
+  matches: (model: PricingModel) => boolean
+}
+
+const CHINESE_MODEL_PATTERN =
+  /deepseek|qwen|glm|kimi|doubao|ernie|wenxin|hunyuan|internlm|yi-|mimo|stepfun|moonshot|aliyun|alibaba|zhipu|智谱|阿里|通义|字节|百度|腾讯|讯飞|月之暗面|百川|零一万物|混元|minimax/i
+
+function matchesModel(model: PricingModel, pattern: RegExp): boolean {
+  return pattern.test(`${model.model_name} ${model.vendor_name ?? ''}`)
+}
+
+const MODEL_CATEGORIES: ModelCategory[] = [
+  {
+    name: 'Claude',
+    tone: 'orange',
+    matches: (model) => matchesModel(model, /claude|anthropic/),
+  },
+  {
+    name: 'GPT',
+    tone: 'blue',
+    matches: (model) => matchesModel(model, /gpt|openai|codex/),
+  },
+  {
+    name: 'Chinese models',
+    tone: 'green',
+    matches: (model) => matchesModel(model, CHINESE_MODEL_PATTERN),
+  },
+  {
+    name: 'Gemini',
+    tone: 'amber',
+    matches: (model) => matchesModel(model, /gemini|google|gemma/),
+  },
+  {
+    name: 'Grok',
+    tone: 'slate',
+    matches: (model) => matchesModel(model, /grok|xai/),
+  },
+  {
+    name: 'Other models',
+    tone: 'slate',
+    matches: () => true,
+  },
+]
 
 const fallbackModelFamilies: ModelFamily[] = [
   {
     name: 'Claude',
-    tone: 'coral',
+    tone: 'orange',
     models: [
       'claude-opus-5',
       'claude-opus-4-8',
@@ -51,7 +95,7 @@ const fallbackModelFamilies: ModelFamily[] = [
   },
   {
     name: 'GPT',
-    tone: 'teal',
+    tone: 'blue',
     models: [
       'gpt-5.6-sol',
       'gpt-5.6-terra',
@@ -60,19 +104,6 @@ const fallbackModelFamilies: ModelFamily[] = [
       'gpt-5.4',
       'gpt-5.4-mini',
       'gpt-image-2',
-    ],
-  },
-  {
-    name: 'Gemini',
-    tone: 'gold',
-    models: [
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-3-pro-preview',
-      'gemini-3-flash-preview',
-      'gemini-3.1-pro-preview',
     ],
   },
   {
@@ -97,6 +128,19 @@ const fallbackModelFamilies: ModelFamily[] = [
       'minimax-m3',
     ],
   },
+  {
+    name: 'Gemini',
+    tone: 'amber',
+    models: [
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+      'gemini-3-pro-preview',
+      'gemini-3-flash-preview',
+      'gemini-3.1-pro-preview',
+    ],
+  },
 ]
 
 function buildModelFamilies(models: PricingModel[]): ModelFamily[] {
@@ -109,7 +153,8 @@ function buildModelFamilies(models: PricingModel[]): ModelFamily[] {
 
     seenModels.add(modelName)
     const familyName =
-      model.vendor_name?.trim() || modelName.split(/[-_/]/)[0] || 'Other models'
+      MODEL_CATEGORIES.find((category) => category.matches(model))?.name ??
+      'Other models'
     const modelsInFamily = familyModels.get(familyName) ?? []
 
     if (modelsInFamily.length < MAX_MODELS_PER_FAMILY) {
@@ -118,11 +163,12 @@ function buildModelFamilies(models: PricingModel[]): ModelFamily[] {
     }
   }
 
-  return Array.from(familyModels, ([name, familyModels], index) => ({
-    name,
-    models: familyModels,
-    tone: MODEL_TONES[index % MODEL_TONES.length],
-  })).slice(0, MAX_MODEL_FAMILIES)
+  return MODEL_CATEGORIES.flatMap((category) => {
+    const modelsInCategory = familyModels.get(category.name)
+    return modelsInCategory
+      ? [{ name: category.name, models: modelsInCategory, tone: category.tone }]
+      : []
+  })
 }
 
 export function ModelDirectory() {
@@ -134,7 +180,6 @@ export function ModelDirectory() {
   )
   const modelFamilies =
     remoteModelFamilies.length > 0 ? remoteModelFamilies : fallbackModelFamilies
-  const usesRemoteModels = remoteModelFamilies.length > 0
 
   return (
     <section id='models' className='home-reference-models px-4 pb-16'>
@@ -153,7 +198,7 @@ export function ModelDirectory() {
                 )}
                 aria-hidden='true'
               />
-              {usesRemoteModels ? family.name : t(family.name)}
+              {t(family.name)}
             </h3>
             <div className='flex flex-wrap gap-2'>
               {family.models.map((model) => (
