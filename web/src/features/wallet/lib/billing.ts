@@ -73,7 +73,10 @@ export function getPaymentMethodName(
   t?: (key: string) => string
 ): string {
   const name = PAYMENT_METHOD_NAMES[method] || method
-  return t ? t(name) : name
+  // Backend may add payment methods that are not part of the local label map
+  // (for example, balance billing). Keep those labels verbatim instead of
+  // sending an arbitrary provider value through i18next as a translation key.
+  return t && PAYMENT_METHOD_NAMES[method] ? t(name) : name
 }
 
 /**

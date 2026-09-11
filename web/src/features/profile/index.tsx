@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useTranslation } from 'react-i18next'
+
 import { Main } from '@/components/layout'
 import {
   CardStaggerContainer,
@@ -38,6 +40,7 @@ import { TwoFACard } from './components/two-fa-card'
 import { useProfile } from './hooks'
 
 export function Profile() {
+  const { t } = useTranslation()
   const { profile, loading, refreshProfile } = useProfile()
   const { status } = useStatus()
   const currentUser = useAuthStore((s) => s.auth.user)
@@ -53,8 +56,16 @@ export function Profile() {
   const showSideRail = true
 
   return (
-    <Main>
-      <div className='min-h-0 flex-1 overflow-auto px-3 py-3 sm:px-4 sm:py-6'>
+    <Main className='workspace-profile-page'>
+      <div className='workspace-page-header shrink-0 px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4 lg:px-8'>
+        <h2 className='workspace-page-title text-xl font-semibold tracking-tight sm:text-2xl'>
+          {t('Personal Settings')}
+        </h2>
+        <p className='workspace-page-description text-muted-foreground mt-1.5 text-sm'>
+          {t('Personal settings and profile management.')}
+        </p>
+      </div>
+      <div className='min-h-0 flex-1 overflow-auto px-4 pt-4 pb-5 sm:px-6 sm:pt-5 sm:pb-6 lg:px-8'>
         <CardStaggerContainer className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-6'>
           <CardStaggerItem>
             <ProfileHeader profile={profile} loading={loading} />

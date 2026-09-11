@@ -21,6 +21,7 @@ import z from 'zod'
 
 import { AffiliateCdk } from '@/features/affiliate-cdk'
 import { REDEMPTION_STATUS_VALUES } from '@/features/redemption-codes/constants'
+import { getStatus } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
 const affiliateCdkSearchSchema = z.object({
@@ -30,9 +31,11 @@ const affiliateCdkSearchSchema = z.object({
 })
 
 export const Route = createFileRoute('/_authenticated/affiliate-cdk/')({
-  beforeLoad: () => {
+  beforeLoad: async () => {
     const user = useAuthStore.getState().auth.user
-    if (user?.affiliate_cdk_enabled !== true) {
+    if (user?.affiliate_cdk_enabled === true) return
+    const status = await getStatus().catch(() => null)
+    if (status?.affiliate_cdk_open_to_all !== true) {
       throw redirect({ to: '/wallet' })
     }
   },

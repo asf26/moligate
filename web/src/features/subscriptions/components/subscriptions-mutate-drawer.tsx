@@ -17,9 +17,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CalendarClock, CreditCard, RefreshCw, Settings2 } from 'lucide-react'
+import {
+  CalendarClock,
+  CreditCard,
+  Gift,
+  ListChecks,
+  Plus,
+  RefreshCw,
+  Settings2,
+  Sparkles,
+  Tag,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useForm, type Resolver } from 'react-hook-form'
+import { useFieldArray, useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -62,6 +73,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 
 import {
@@ -77,6 +89,7 @@ import {
   PLAN_FORM_DEFAULTS,
   planToFormValues,
   formValuesToPlanPayload,
+  emptyBonusResource,
   type PlanFormValues,
 } from '../lib'
 import type { PlanRecord } from '../types'
@@ -111,6 +124,15 @@ export function SubscriptionsMutateDrawer({
     resolver: zodResolver(schema) as unknown as Resolver<PlanFormValues>,
     defaultValues: PLAN_FORM_DEFAULTS,
   })
+  const bonusResources = useFieldArray({
+    control: form.control,
+    name: 'bonus_resources',
+  })
+  const imagePackConfigured = bonusResources.fields.some(
+    (resource) =>
+      resource.resource_type === 'image_count' &&
+      resource.resource_key?.trim().toLowerCase() === 'gpt-image-2'
+  )
 
   useEffect(() => {
     if (open) {
@@ -651,6 +673,408 @@ export function SubscriptionsMutateDrawer({
                   )}
                 />
               </div>
+            </SideDrawerSection>
+
+            {/* Model Package Settings */}
+            <SideDrawerSection>
+              <h3 className='flex items-center gap-2 text-sm font-medium'>
+                <IconBadge tone='chart-2' size='xs'>
+                  <Sparkles />
+                </IconBadge>
+                {t('Model package settings')}
+              </h3>
+
+              <FormField
+                control={form.control}
+                name='model_family'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Model family')}</FormLabel>
+                    <Select
+                      items={[
+                        {
+                          value: '__auto__',
+                          label: t('Automatically infer from plan metadata'),
+                        },
+                        { value: 'ccmax', label: t('CC Max') },
+                        { value: 'gpt', label: 'GPT' },
+                        { value: 'gemini', label: 'Gemini' },
+                        { value: 'chinese', label: t('Chinese models') },
+                        { value: 'all', label: t('All supported models') },
+                      ]}
+                      value={field.value || '__auto__'}
+                      onValueChange={(value) =>
+                        field.onChange(value === '__auto__' ? '' : value)
+                      }
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='__auto__'>
+                            {t('Automatically infer from plan metadata')}
+                          </SelectItem>
+                          <SelectItem value='ccmax'>{t('CC Max')}</SelectItem>
+                          <SelectItem value='gpt'>GPT</SelectItem>
+                          <SelectItem value='gemini'>Gemini</SelectItem>
+                          <SelectItem value='chinese'>
+                            {t('Chinese models')}
+                          </SelectItem>
+                          <SelectItem value='all'>
+                            {t('All supported models')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t(
+                        'Choose the model series shown on the subscription page.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='included_models'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Included models')}</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        value={(field.value || []).join('\n')}
+                        onChange={(event) =>
+                          field.onChange([
+                            ...new Set(
+                              event.target.value
+                                .split(/[\n,]+/)
+                                .map((model) => model.trim())
+                                .filter(Boolean)
+                            ),
+                          ])
+                        }
+                        placeholder={t(
+                          'One model per line. Leave empty to use the family catalog.'
+                        )}
+                        rows={4}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Only these model names are included in this tier. Leave empty to use the selected family catalog.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </SideDrawerSection>
+
+            {/* Bonus resources */}
+            <SideDrawerSection>
+              <div className='flex items-start justify-between gap-3'>
+                <div>
+                  <h3 className='flex items-center gap-2 text-sm font-medium'>
+                    <IconBadge tone='success' size='xs'>
+                      <Gift />
+                    </IconBadge>
+                    {t('Bonus resources')}
+                  </h3>
+                  <p className='text-muted-foreground mt-1 text-xs leading-5'>
+                    {t(
+                      'Gift model quota or a fixed number of gpt-image-2 generations with this plan.'
+                    )}
+                  </p>
+                </div>
+                <div className='flex shrink-0 gap-2'>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={() => bonusResources.append(emptyBonusResource())}
+                  >
+                    <Plus data-icon='inline-start' />
+                    {t('Add resource')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    disabled={imagePackConfigured}
+                    onClick={() =>
+                      bonusResources.append({
+                        resource_key: 'gpt-image-2',
+                        resource_type: 'image_count',
+                        model_name: 'gpt-image-2',
+                        display_name: '',
+                        amount: 10,
+                      })
+                    }
+                  >
+                    <Sparkles data-icon='inline-start' />
+                    {t('Add image pack')}
+                  </Button>
+                </div>
+              </div>
+
+              {bonusResources.fields.length === 0 ? (
+                <p className='text-muted-foreground rounded-md border border-dashed p-3 text-xs'>
+                  {t('No bonus resources configured')}
+                </p>
+              ) : (
+                <div className='space-y-3'>
+                  {bonusResources.fields.map((resource, index) => (
+                    <div
+                      key={resource.id}
+                      className='bg-muted/20 rounded-md border p-3'
+                    >
+                      <div className='mb-3 flex items-center justify-between gap-2'>
+                        <span className='text-xs font-medium'>
+                          {t('Bonus resource {{number}}', {
+                            number: index + 1,
+                          })}
+                        </span>
+                        <Button
+                          type='button'
+                          variant='ghost'
+                          size='icon'
+                          className='size-7'
+                          aria-label={t('Remove resource')}
+                          onClick={() => bonusResources.remove(index)}
+                        >
+                          <Trash2 className='size-3.5' />
+                        </Button>
+                      </div>
+                      <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+                        <FormField
+                          control={form.control}
+                          name={`bonus_resources.${index}.model_name`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('Model name')}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  placeholder='gpt-image-2 / grok-4'
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`bonus_resources.${index}.resource_key`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('Resource key')}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  placeholder='gpt-image-2 / grok'
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`bonus_resources.${index}.resource_type`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('Resource type')}</FormLabel>
+                              <Select
+                                items={[
+                                  {
+                                    value: 'quota',
+                                    label: t('Quota units'),
+                                  },
+                                  {
+                                    value: 'image_count',
+                                    label: t('Image generations'),
+                                  },
+                                ]}
+                                value={field.value}
+                                onValueChange={field.onChange}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent alignItemWithTrigger={false}>
+                                  <SelectGroup>
+                                    <SelectItem value='quota'>
+                                      {t('Quota units')}
+                                    </SelectItem>
+                                    <SelectItem value='image_count'>
+                                      {t('Image generations')}
+                                    </SelectItem>
+                                  </SelectGroup>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`bonus_resources.${index}.amount`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('Amount')}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  type='number'
+                                  min={1}
+                                  onChange={(event) =>
+                                    field.onChange(
+                                      Number.parseInt(event.target.value, 10) ||
+                                        0
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name={`bonus_resources.${index}.display_name`}
+                        render={({ field }) => (
+                          <FormItem className='mt-3'>
+                            <FormLabel>{t('Display name')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder={t(
+                                  'Optional label shown to customers'
+                                )}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SideDrawerSection>
+
+            {/* Public Card Presentation */}
+            <SideDrawerSection>
+              <h3 className='flex items-center gap-2 text-sm font-medium'>
+                <IconBadge tone='warning' size='xs'>
+                  <Tag />
+                </IconBadge>
+                {t('Public card presentation')}
+              </h3>
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'Configure the badge and benefit copy shown on the public subscription card. Leave benefits empty to use the default model-package copy.'
+                )}
+              </p>
+
+              <FormField
+                control={form.control}
+                name='badge_text'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Card badge')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        maxLength={64}
+                        placeholder={t('e.g. New or Limited offer')}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Optional short label displayed above this plan. The purchase limit badge is generated separately.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='is_recommended'
+                render={({ field }) => (
+                  <FormItem className={sideDrawerSwitchItemClassName()}>
+                    <div>
+                      <FormLabel className='!mt-0'>
+                        {t('Mark as recommended')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Shows the recommendation badge and emphasis on this plan.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='benefits'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className='flex items-center gap-1.5'>
+                      <ListChecks className='size-3.5' aria-hidden='true' />
+                      {t('Plan benefits')}
+                    </FormLabel>
+                    <FormControl>
+                      <Textarea
+                        value={(field.value || []).join('\n')}
+                        maxLength={3000}
+                        onChange={(event) =>
+                          field.onChange(
+                            event.target.value
+                              .split('\n')
+                              .map((benefit) => benefit.trim())
+                              .filter(Boolean)
+                          )
+                        }
+                        placeholder={t(
+                          'One benefit per line. Leave empty to use the default copy.'
+                        )}
+                        rows={6}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Use short customer-facing sentences. Up to 12 benefits are shown in the order entered.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <p className='text-muted-foreground text-xs leading-5'>
+                {t(
+                  'Price, estimated credit, bonus percentage, model count, and availability are calculated from the price, quota, model, and purchase-limit settings above.'
+                )}
+              </p>
             </SideDrawerSection>
 
             {/* Duration Settings */}

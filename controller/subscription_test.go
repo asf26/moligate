@@ -65,6 +65,11 @@ func subscriptionPlanPayload(t *testing.T, currency string) []byte {
 			"monthly_amount":        2000,
 			"quota_reset_period":    model.SubscriptionResetNever,
 			"applicable_groups":     []string{"default"},
+			"model_family":          "gpt",
+			"included_models":       []string{"gpt-5.5", "gpt-image-2"},
+			"badge_text":            "Popular",
+			"is_recommended":        true,
+			"benefits":              []string{"Priority capacity", "Extended context"},
 		},
 	})
 	require.NoError(t, err)
@@ -86,6 +91,11 @@ func TestAdminCreateSubscriptionPlanForcesCNY(t *testing.T) {
 	assert.EqualValues(t, 500, plan.WeeklyAmount)
 	assert.EqualValues(t, 2000, plan.MonthlyAmount)
 	assert.Equal(t, []string{"default"}, plan.ApplicableGroups)
+	assert.Equal(t, "gpt", plan.ModelFamily)
+	assert.Equal(t, []string{"gpt-5.5", "gpt-image-2"}, plan.IncludedModels)
+	assert.Equal(t, "Popular", plan.BadgeText)
+	assert.True(t, plan.IsRecommended)
+	assert.Equal(t, []string{"Priority capacity", "Extended context"}, plan.Benefits)
 }
 
 func TestAdminUpdateSubscriptionPlanForcesCNY(t *testing.T) {
@@ -115,6 +125,11 @@ func TestAdminUpdateSubscriptionPlanForcesCNY(t *testing.T) {
 	assert.EqualValues(t, 500, updated.WeeklyAmount)
 	assert.EqualValues(t, 2000, updated.MonthlyAmount)
 	assert.Equal(t, []string{"default"}, updated.ApplicableGroups)
+	assert.Equal(t, "gpt", updated.ModelFamily)
+	assert.Equal(t, []string{"gpt-5.5", "gpt-image-2"}, updated.IncludedModels)
+	assert.Equal(t, "Popular", updated.BadgeText)
+	assert.True(t, updated.IsRecommended)
+	assert.Equal(t, []string{"Priority capacity", "Extended context"}, updated.Benefits)
 }
 
 func TestAdminCreateSubscriptionPlanRejectsNegativePeriodQuota(t *testing.T) {

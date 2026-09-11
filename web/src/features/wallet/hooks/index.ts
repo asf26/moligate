@@ -21,6 +21,7 @@ For commercial licensing, please contact support@quantumnous.com
 // ============================================================================
 
 export * from './use-topup-info'
+export * from './use-billing-history'
 export * from './use-payment'
 export * from './use-affiliate'
 export * from './use-redemption'

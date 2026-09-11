@@ -22,6 +22,18 @@ import { z } from 'zod'
 // Subscription Plan Schema & Types
 // ============================================================================
 
+export const subscriptionBonusResourceSchema = z.object({
+  resource_key: z.string(),
+  resource_type: z.enum(['quota', 'image_count']),
+  model_name: z.string(),
+  display_name: z.string().optional(),
+  amount: z.number(),
+})
+
+export type SubscriptionBonusResource = z.infer<
+  typeof subscriptionBonusResourceSchema
+>
+
 export const subscriptionPlanSchema = z.object({
   id: z.number(),
   title: z.string(),
@@ -45,6 +57,12 @@ export const subscriptionPlanSchema = z.object({
   upgrade_group: z.string().optional(),
   downgrade_group: z.string().optional(),
   applicable_groups: z.array(z.string()).default([]),
+  model_family: z.string().optional(),
+  included_models: z.array(z.string()).optional(),
+  badge_text: z.string().optional(),
+  is_recommended: z.boolean().optional(),
+  benefits: z.array(z.string()).optional(),
+  bonus_resources: z.array(subscriptionBonusResourceSchema).optional(),
   stripe_price_id: z.string().optional(),
   creem_product_id: z.string().optional(),
   waffo_pancake_product_id: z.string().optional(),
@@ -81,6 +99,15 @@ export const userSubscriptionSchema = z.object({
   monthly_reset_time: z.number().optional(),
   applicable_groups: z.array(z.string()).optional(),
   next_reset_time: z.number().optional(),
+  model_family: z.string().optional(),
+  included_models: z.array(z.string()).optional(),
+  resource_grants: z
+    .array(
+      subscriptionBonusResourceSchema.extend({
+        used: z.number(),
+      })
+    )
+    .optional(),
 })
 
 export type UserSubscription = z.infer<typeof userSubscriptionSchema>

@@ -13,7 +13,10 @@ var PayAddress = ""
 var CustomCallbackAddress = ""
 var EpayId = ""
 var EpayKey = ""
-var Price = 7.3
+
+// Top-up credits are denominated in USD while the checkout amount is charged
+// in CNY at a 1:1 rate (one dollar of credit costs one yuan).
+var Price = 1.0
 var MinTopUp = 1
 var USDExchangeRate = 7.3
 

@@ -100,6 +100,37 @@ export interface AffiliateCommissionSummary {
   pending_wallet_amount_micros?: number
   price_per_wallet_unit_micros?: number
   currency: string
+  level1_rate_bps: number
+  level2_rate_bps: number
+  points_per_amount_unit: number
+  invite_count: number
+}
+
+export interface AffiliateInvitee {
+  user_id: number
+  username: string
+  display_name?: string
+  created_at: number
+  top_up_count: number
+  base_quota: number
+  reward_points: number
+  pending_points: number
+  settled_points: number
+  last_contribution_at: number
+}
+
+export interface AffiliateInviteeListResponse {
+  page: number
+  page_size: number
+  total: number
+  items: AffiliateInvitee[]
+}
+
+export interface AffiliateInviteeQuery {
+  promoter_id?: number
+  promoter_username?: string
+  p?: number
+  page_size?: number
 }
 
 export interface AffiliateCommissionListResponse {
@@ -229,6 +260,7 @@ export interface AffiliateCdkInfo {
   min_topup: number
   max_quantity: number
   cdk_purchase_discount_bps: number
+  cdk_purchase_open_to_all?: boolean
   discount_configured: boolean
   enable_cdk_purchase: boolean
   payment_compliance_confirmed: boolean

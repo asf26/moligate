@@ -9,6 +9,7 @@ build
 *.db-journal
 logs
 web/dist
+web/canvas-public
 web/node_modules
 .env
 one-api

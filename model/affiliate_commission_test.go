@@ -628,6 +628,62 @@ func TestAffiliateCommissionSummaryUsesRewardPoints(t *testing.T) {
 	assert.EqualValues(t, 0, summary.PendingPoints)
 }
 
+func TestListAffiliateInviteesIncludesUsersWithoutTopUpsAndAggregatesPoints(t *testing.T) {
+	truncateTables(t)
+	setDistributionTestConfig(t, true, 1000, 300)
+	insertAffiliateTestUser(t, 9301, "invite-promoter", 0)
+	insertAffiliateTestUser(t, 9302, "invitee-alice", 9301)
+	insertAffiliateTestUser(t, 9303, "invitee-bob", 9301)
+
+	require.NoError(t, DB.Create(&AffiliateCommission{
+		TradeNo:                "invitee-alice-topup-1",
+		BuyerId:                9302,
+		PromoterId:             9301,
+		Level:                  AffiliateCommissionLevel1,
+		BaseQuota:              1000,
+		RewardPoints:           100,
+		SettledPoints:          25,
+		Status:                 AffiliateCommissionStatusPending,
+		CommissionRateBps:      1000,
+		BaseAmountMicros:       2000000,
+		CommissionAmountMicros: 200000,
+	}).Error)
+	require.NoError(t, DB.Create(&AffiliateCommission{
+		TradeNo:                "invitee-alice-topup-2",
+		BuyerId:                9302,
+		PromoterId:             9301,
+		Level:                  AffiliateCommissionLevel1,
+		BaseQuota:              2000,
+		RewardPoints:           200,
+		SettledPoints:          200,
+		Status:                 AffiliateCommissionStatusSettled,
+		CommissionRateBps:      1000,
+		BaseAmountMicros:       4000000,
+		CommissionAmountMicros: 400000,
+	}).Error)
+
+	records, total, err := ListAffiliateInvitees(AffiliateInviteeQuery{PromoterId: 9301}, &common.PageInfo{Page: 1, PageSize: 50})
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, total)
+	require.Len(t, records, 2)
+
+	byUsername := make(map[string]*AffiliateInviteeRecord, len(records))
+	for _, record := range records {
+		byUsername[record.Username] = record
+	}
+	alice := byUsername["invitee-alice"]
+	require.NotNil(t, alice)
+	assert.EqualValues(t, 2, alice.TopUpCount)
+	assert.EqualValues(t, 300, alice.RewardPoints)
+	assert.EqualValues(t, 75, alice.PendingPoints)
+	assert.EqualValues(t, 225, alice.SettledPoints)
+
+	bob := byUsername["invitee-bob"]
+	require.NotNil(t, bob)
+	assert.EqualValues(t, 0, bob.TopUpCount)
+	assert.EqualValues(t, 0, bob.RewardPoints)
+}
+
 func TestOfflineCashbackAffiliateRewardPointsStoresPointSnapshot(t *testing.T) {
 	truncateTables(t)
 	setDistributionTestConfig(t, true, 200, 0)
@@ -876,6 +932,11 @@ func TestValidateDistributionOptionUpdate(t *testing.T) {
 	distribution.Level2RateBps = 0
 	require.Error(t, operation_setting.ValidateDistributionOptionUpdate("distribution_setting.enabled", "true"))
 	require.Error(t, operation_setting.ValidateDistributionOptionUpdate("distribution_setting.cdk_purchase_discount_bps", "9000"))
+	require.Error(t, operation_setting.ValidateDistributionOptionUpdate("distribution_setting.cdk_purchase_open_to_all", "true"))
+
+	payment.ComplianceConfirmed = true
+	payment.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+	require.NoError(t, operation_setting.ValidateDistributionOptionUpdate("distribution_setting.cdk_purchase_open_to_all", "true"))
 }
 
 func setupAffiliateCdkPricingTest(t *testing.T, discountBps int) {

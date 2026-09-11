@@ -62,6 +62,8 @@ type ChannelsContextType = {
   setIdSort: (enabled: boolean) => void
   batchMode: boolean
   setBatchMode: (enabled: boolean) => void
+  newChannelType: number | null
+  setNewChannelType: (type: number | null) => void
   sensitiveVisible: boolean
   setSensitiveVisible: (visible: boolean) => void
   upstream: UpstreamUpdateState
@@ -90,6 +92,7 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
     return localStorage.getItem('channels-id-sort') === 'true'
   })
   const [batchMode, setBatchMode] = useState(false)
+  const [newChannelType, setNewChannelType] = useState<number | null>(null)
   const [sensitiveVisible, setSensitiveVisible] = useState(true)
 
   const queryClient = useQueryClient()
@@ -115,6 +118,8 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
       setIdSort,
       batchMode,
       setBatchMode,
+      newChannelType,
+      setNewChannelType,
       sensitiveVisible,
       setSensitiveVisible,
       upstream,
@@ -126,6 +131,7 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
       enableTagMode,
       idSort,
       batchMode,
+      newChannelType,
       sensitiveVisible,
       upstream,
     ]

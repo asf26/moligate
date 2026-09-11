@@ -35,7 +35,10 @@ import type {
 } from '@/features/dashboard/types'
 import { useThemeRadiusPx } from '@/lib/theme-radius'
 import type { TimeGranularity } from '@/lib/time'
+import { cn } from '@/lib/utils'
 import { VCHART_OPTION } from '@/lib/vchart'
+
+import { ChartEmptyState } from './chart-empty-state'
 
 let themeManagerPromise: Promise<
   (typeof import('@visactor/vchart'))['ThemeManager']
@@ -154,17 +157,29 @@ export function ConsumptionDistributionChart(
         </div>
       </div>
 
-      <div className='h-[300px] p-1.5 sm:h-96 sm:p-2'>
-        {themeReady && spec && (
-          <VChart
-            key={chartKey}
-            spec={{
-              ...spec,
-              theme: resolvedTheme === 'dark' ? 'dark' : 'light',
-              background: 'transparent',
-            }}
-            option={VCHART_OPTION}
-          />
+      <div
+        className={cn(
+          'p-1.5 sm:p-2',
+          !props.loading && props.data.length === 0
+            ? 'h-52 sm:h-56'
+            : 'h-[300px] sm:h-96'
+        )}
+      >
+        {!props.loading && props.data.length === 0 ? (
+          <ChartEmptyState />
+        ) : (
+          themeReady &&
+          spec && (
+            <VChart
+              key={chartKey}
+              spec={{
+                ...spec,
+                theme: resolvedTheme === 'dark' ? 'dark' : 'light',
+                background: 'transparent',
+              }}
+              option={VCHART_OPTION}
+            />
+          )
         )}
       </div>
     </div>

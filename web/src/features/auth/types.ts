@@ -143,6 +143,7 @@ export interface SystemStatus {
     custom_currency_symbol?: string
     custom_currency_exchange_rate?: number
     demo_site_enabled?: boolean
+    affiliate_cdk_open_to_all?: boolean
     user_agreement_enabled?: boolean
     privacy_policy_enabled?: boolean
     oauth_register_enabled?: boolean
@@ -205,6 +206,7 @@ export interface SystemStatus {
   custom_currency_symbol?: string
   custom_currency_exchange_rate?: number
   demo_site_enabled?: boolean
+  affiliate_cdk_open_to_all?: boolean
   user_agreement_enabled?: boolean
   privacy_policy_enabled?: boolean
   oauth_register_enabled?: boolean

@@ -82,13 +82,41 @@ func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 }
 
 func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm.DB {
+	return buildChannelListQueryWithCapability(group, statusFilter, typeFilter, "")
+}
+
+func buildChannelListQueryWithCapability(group string, statusFilter int, typeFilter int, capability string) *gorm.DB {
 	query := model.DB.Model(&model.Channel{})
 	query = model.ApplyChannelGroupFilter(query, group)
 	query = applyChannelStatusFilter(query, statusFilter)
 	if typeFilter >= 0 {
 		query = query.Where("type = ?", typeFilter)
 	}
+	if strings.EqualFold(strings.TrimSpace(capability), "video") {
+		args := []any{videoChannelTypes()}
+		args = append(args, videoModelSQLArguments()...)
+		query = query.Where("type IN ? OR "+videoModelSQLPredicate(), args...)
+	}
 	return query
+}
+
+func videoChannelTypes() []int {
+	return []int{
+		constant.ChannelTypeKling,
+		constant.ChannelTypeJimeng,
+		constant.ChannelTypeVidu,
+		constant.ChannelTypeDoubaoVideo,
+		constant.ChannelTypeSora,
+		constant.ChannelTypeReplicate,
+	}
+}
+
+func videoModelSQLPredicate() string {
+	return "LOWER(models) LIKE ? OR LOWER(models) LIKE ? OR LOWER(models) LIKE ? OR LOWER(models) LIKE ? OR LOWER(models) LIKE ? OR LOWER(models) LIKE ? OR LOWER(models) LIKE ? OR LOWER(models) LIKE ?"
+}
+
+func videoModelSQLArguments() []any {
+	return []any{"%sora%", "%seedance%", "%kling%", "%vidu%", "%veo%", "%wan-%", "%hailuo%", "%minimax-h3%"}
 }
 
 func GetChannelOps(c *gin.Context) {
@@ -103,6 +131,7 @@ func GetAllChannels(c *gin.Context) {
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
 	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
+	capability := c.Query("capability")
 	groupFilter := model.NormalizeChannelGroupFilter(c.Query("group"))
 	statusParam := c.Query("status")
 	// statusFilter: -1 all, 1 enabled, 0 disabled (include auto & manual)
@@ -119,13 +148,13 @@ func GetAllChannels(c *gin.Context) {
 	var total int64
 
 	if enableTagMode {
-		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+		tags, err := model.GetPaginatedChannelTags(buildChannelListQueryWithCapability(groupFilter, statusFilter, typeFilter, capability), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 		if err != nil {
 			common.SysError("failed to get paginated tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签失败，请稍后重试"})
 			return
 		}
-		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter))
+		total, err = model.CountChannelTags(buildChannelListQueryWithCapability(groupFilter, statusFilter, typeFilter, capability))
 		if err != nil {
 			common.SysError("failed to count tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签数量失败，请稍后重试"})
@@ -136,7 +165,7 @@ func GetAllChannels(c *gin.Context) {
 				continue
 			}
 			var tagChannels []*model.Channel
-			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter).Where("tag = ?", *tag)).
+			err := sortOptions.Apply(buildChannelListQueryWithCapability(groupFilter, statusFilter, typeFilter, capability).Where("tag = ?", *tag)).
 				Omit("key").
 				Find(&tagChannels).Error
 			if err != nil {
@@ -147,13 +176,13 @@ func GetAllChannels(c *gin.Context) {
 			channelData = append(channelData, tagChannels...)
 		}
 	} else {
-		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter).Count(&total).Error; err != nil {
+		if err := buildChannelListQueryWithCapability(groupFilter, statusFilter, typeFilter, capability).Count(&total).Error; err != nil {
 			common.SysError("failed to count channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道数量失败，请稍后重试"})
 			return
 		}
 
-		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).
+		err := sortOptions.Apply(buildChannelListQueryWithCapability(groupFilter, statusFilter, typeFilter, capability)).
 			Limit(pageInfo.GetPageSize()).
 			Offset(pageInfo.GetStartIdx()).
 			Omit("key").
@@ -169,7 +198,7 @@ func GetAllChannels(c *gin.Context) {
 		clearChannelInfo(datum)
 	}
 
-	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)
+	countQuery := buildChannelListQueryWithCapability(groupFilter, statusFilter, -1, capability)
 	var results []struct {
 		Type  int64
 		Count int64
@@ -281,6 +310,7 @@ func SearchChannels(c *gin.Context) {
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
 	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
+	capability := c.Query("capability")
 	channelData := make([]*model.Channel, 0)
 	if enableTagMode {
 		tags, err := model.SearchTags(keyword, group, modelKeyword, idSort)
@@ -294,7 +324,7 @@ func SearchChannels(c *gin.Context) {
 		for _, tag := range tags {
 			if tag != nil && *tag != "" {
 				var tagChannels []*model.Channel
-				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1).Where("tag = ?", *tag)).
+				err := sortOptions.Apply(buildChannelListQueryWithCapability(group, -1, -1, capability).Where("tag = ?", *tag)).
 					Omit("key").
 					Find(&tagChannels).Error
 				if err != nil {
@@ -317,6 +347,23 @@ func SearchChannels(c *gin.Context) {
 			return
 		}
 		channelData = channels
+	}
+
+	// SearchChannels predates capability filtering and performs its own query;
+	// apply the same video capability predicate here so the dedicated video
+	// account view cannot leak non-video channels when a search is active.
+	if strings.EqualFold(strings.TrimSpace(capability), "video") {
+		videoTypes := make(map[int]struct{}, len(videoChannelTypes()))
+		for _, channelType := range videoChannelTypes() {
+			videoTypes[channelType] = struct{}{}
+		}
+		filtered := make([]*model.Channel, 0, len(channelData))
+		for _, channel := range channelData {
+			if _, ok := videoTypes[channel.Type]; ok || isVideoModelList(channel.Models) {
+				filtered = append(filtered, channel)
+			}
+		}
+		channelData = filtered
 	}
 
 	if statusFilter == common.ChannelStatusEnabled || statusFilter == 0 {
@@ -392,6 +439,16 @@ func SearchChannels(c *gin.Context) {
 		},
 	})
 	return
+}
+
+func isVideoModelList(models string) bool {
+	normalized := strings.ToLower(models)
+	for _, marker := range []string{"sora", "seedance", "kling", "vidu", "veo", "wan-", "hailuo", "minimax-h3"} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func GetChannel(c *gin.Context) {

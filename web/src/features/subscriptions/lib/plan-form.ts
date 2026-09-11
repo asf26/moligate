@@ -21,7 +21,11 @@ import { z } from 'zod'
 
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 
-import type { SubscriptionPlan, PlanPayload } from '../types'
+import type {
+  SubscriptionBonusResource,
+  SubscriptionPlan,
+  PlanPayload,
+} from '../types'
 
 export function getPlanFormSchema(t: TFunction) {
   return z.object({
@@ -51,6 +55,20 @@ export function getPlanFormSchema(t: TFunction) {
     upgrade_group: z.string().optional(),
     downgrade_group: z.string().optional(),
     applicable_groups: z.array(z.string()),
+    model_family: z.string().optional(),
+    included_models: z.array(z.string()),
+    badge_text: z.string().optional(),
+    is_recommended: z.boolean(),
+    benefits: z.array(z.string()),
+    bonus_resources: z.array(
+      z.object({
+        resource_key: z.string().min(1),
+        resource_type: z.enum(['quota', 'image_count']),
+        model_name: z.string().min(1),
+        display_name: z.string().optional(),
+        amount: z.coerce.number().int().min(1),
+      })
+    ),
     stripe_price_id: z.string().optional(),
     creem_product_id: z.string().optional(),
     waffo_pancake_product_id: z.string().optional(),
@@ -80,6 +98,12 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   upgrade_group: '',
   downgrade_group: '',
   applicable_groups: [],
+  model_family: '',
+  included_models: [],
+  badge_text: '',
+  is_recommended: false,
+  benefits: [],
+  bonus_resources: [],
   stripe_price_id: '',
   creem_product_id: '',
   waffo_pancake_product_id: '',
@@ -107,6 +131,12 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     upgrade_group: plan.upgrade_group || '',
     downgrade_group: plan.downgrade_group || '',
     applicable_groups: plan.applicable_groups || [],
+    model_family: plan.model_family || '',
+    included_models: plan.included_models || [],
+    badge_text: plan.badge_text || '',
+    is_recommended: plan.is_recommended === true,
+    benefits: plan.benefits || [],
+    bonus_resources: plan.bonus_resources || [],
     stripe_price_id: plan.stripe_price_id || '',
     creem_product_id: plan.creem_product_id || '',
     waffo_pancake_product_id: plan.waffo_pancake_product_id || '',
@@ -134,6 +164,23 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       monthly_amount: parseQuotaFromDollars(Number(values.monthly_amount || 0)),
       upgrade_group: values.upgrade_group || '',
       downgrade_group: values.downgrade_group || '',
+      bonus_resources: values.bonus_resources.map((resource) => ({
+        resource_key: resource.resource_key.trim().toLowerCase(),
+        resource_type: resource.resource_type,
+        model_name: resource.model_name.trim(),
+        display_name: resource.display_name?.trim() || '',
+        amount: Number(resource.amount || 0),
+      })),
     },
+  }
+}
+
+export function emptyBonusResource(): SubscriptionBonusResource {
+  return {
+    resource_key: '',
+    resource_type: 'quota',
+    model_name: '',
+    display_name: '',
+    amount: 1,
   }
 }

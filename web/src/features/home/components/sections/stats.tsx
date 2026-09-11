@@ -2,9 +2,9 @@
 Copyright (C) 2023-2026 QuantumNous
 
 This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,88 +16,70 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useRef, useEffect, useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 interface CounterProps {
   end: number
   suffix?: string
-  prefix?: string
-  duration?: number
-  decimals?: number
 }
 
 function Counter(props: CounterProps) {
-  const { end, suffix = '', prefix = '', duration = 1600, decimals = 0 } = props
   const ref = useRef<HTMLSpanElement>(null)
-  const startedRef = useRef(false)
+  const hasStarted = useRef(false)
 
-  const formatValue = useCallback(
-    (v: number) =>
-      decimals > 0 ? v.toFixed(decimals) : Math.round(v).toLocaleString(),
-    [decimals]
+  const renderValue = useCallback(
+    (value: number) => {
+      if (ref.current) {
+        ref.current.textContent = `${Math.round(value).toLocaleString()}${props.suffix ?? ''}`
+      }
+    },
+    [props.suffix]
   )
 
-  const animate = useCallback(() => {
-    const el = ref.current
-    if (!el) return
-    const start = performance.now()
-    const step = (now: number) => {
-      const progress = Math.min((now - start) / duration, 1)
-      const eased = 1 - Math.pow(1 - progress, 3)
-      el.textContent = `${prefix}${formatValue(eased * end)}${suffix}`
-      if (progress < 1) requestAnimationFrame(step)
-    }
-    requestAnimationFrame(step)
-  }, [end, duration, prefix, suffix, formatValue])
-
   useEffect(() => {
-    const el = ref.current
-    if (!el) return
+    const element = ref.current
+    if (!element) return
 
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    if (mq.matches) {
-      el.textContent = `${prefix}${formatValue(end)}${suffix}`
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    if (reducedMotion.matches) {
+      renderValue(props.end)
       return
     }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && !startedRef.current) {
-          startedRef.current = true
-          animate()
-          observer.unobserve(el)
+        if (!entry.isIntersecting || hasStarted.current) return
+        hasStarted.current = true
+        const start = performance.now()
+
+        const animate = (now: number) => {
+          const progress = Math.min((now - start) / 1000, 1)
+          const eased = 1 - Math.pow(1 - progress, 3)
+          renderValue(eased * props.end)
+          if (progress < 1) requestAnimationFrame(animate)
         }
+
+        requestAnimationFrame(animate)
+        observer.unobserve(element)
       },
       { threshold: 0.5 }
     )
 
-    observer.observe(el)
+    observer.observe(element)
     return () => observer.disconnect()
-  }, [animate, end, prefix, suffix, formatValue])
+  }, [props.end, renderValue])
 
-  return (
-    <span ref={ref} className='tabular-nums'>
-      {prefix}0{suffix}
-    </span>
-  )
+  return <span ref={ref}>0{props.suffix}</span>
 }
 
 interface StatsProps {
   className?: string
 }
 
-interface StatItem {
-  end: number
-  suffix: string
-  label: string
-  decimals?: number
-}
-
 export function Stats(_props: StatsProps) {
   const { t } = useTranslation()
-
-  const stats: StatItem[] = [
+  const stats = [
     { end: 50, suffix: '+', label: t('upstream services integrated') },
     { end: 100, suffix: '+', label: t('model billing support') },
     { end: 50, suffix: '+', label: t('compatible API routes') },
@@ -105,24 +87,22 @@ export function Stats(_props: StatsProps) {
   ]
 
   return (
-    <div className='border-border/40 bg-muted/10 relative z-10 border-y'>
-      <div className='mx-auto max-w-6xl px-6 py-10 md:py-12'>
-        <div className='grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-12'>
-          {stats.map((s) => (
-            <div
-              key={s.label}
-              className='flex flex-col items-center text-center'
-            >
-              <span className='text-2xl font-bold tracking-tight md:text-3xl'>
-                <Counter end={s.end} suffix={s.suffix} decimals={s.decimals} />
-              </span>
-              <span className='text-muted-foreground mt-1.5 text-xs'>
-                {s.label}
-              </span>
-            </div>
-          ))}
-        </div>
+    <section
+      className='home-stats border-b'
+      aria-label={t('API usage records')}
+    >
+      <div className='mx-auto grid max-w-7xl grid-cols-2 md:grid-cols-4'>
+        {stats.map((stat) => (
+          <div key={stat.label} className='home-stat-cell'>
+            <span className='home-stat-value font-mono'>
+              <Counter end={stat.end} suffix={stat.suffix} />
+            </span>
+            <span className='text-muted-foreground mt-2 text-xs'>
+              {stat.label}
+            </span>
+          </div>
+        ))}
       </div>
-    </div>
+    </section>
   )
 }

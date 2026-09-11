@@ -148,7 +148,11 @@ const MaxTaskDurationSeconds = 3600
 func validateTaskDurationBounds(req TaskSubmitReq) *dto.TaskError {
 	seconds := req.Duration
 	if seconds == 0 && req.Seconds != "" {
-		seconds, _ = strconv.Atoi(req.Seconds)
+		parsed, err := strconv.Atoi(strings.TrimSpace(req.Seconds))
+		if err != nil {
+			return createTaskError(fmt.Errorf("seconds must be an integer"), "invalid_seconds", http.StatusBadRequest, true)
+		}
+		seconds = parsed
 	}
 	if seconds < 0 || seconds > MaxTaskDurationSeconds {
 		return createTaskError(fmt.Errorf("seconds must be between 1 and %d", MaxTaskDurationSeconds), "invalid_seconds", http.StatusBadRequest, true)
@@ -158,28 +162,42 @@ func validateTaskDurationBounds(req TaskSubmitReq) *dto.TaskError {
 
 func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string) (TaskSubmitReq, error) {
 	var req TaskSubmitReq
-	if _, err := c.MultipartForm(); err != nil {
+	form, err := common.ParseMultipartFormReusable(c)
+	if err != nil {
 		return req, err
 	}
+	defer form.RemoveAll()
 
-	formData := c.Request.PostForm
+	formData := url.Values(form.Value)
 	req = TaskSubmitReq{
-		Prompt:   formData.Get("prompt"),
-		Model:    formData.Get("model"),
-		Mode:     formData.Get("mode"),
-		Image:    formData.Get("image"),
-		Size:     formData.Get("size"),
-		Metadata: make(map[string]interface{}),
+		Prompt:         formData.Get("prompt"),
+		Model:          formData.Get("model"),
+		Mode:           formData.Get("mode"),
+		Image:          formData.Get("image"),
+		Size:           formData.Get("size"),
+		InputReference: formData.Get("input_reference"),
+		AspectRatio:    formData.Get("aspect_ratio"),
+		WorkflowID:     formData.Get("workflow_id"),
+		ReferenceVideo: formData.Get("reference_video"),
+		ReferenceAudio: formData.Get("reference_audio"),
+		Metadata:       make(map[string]interface{}),
 	}
 
-	if durationStr := formData.Get("seconds"); durationStr != "" {
-		if duration, err := strconv.Atoi(durationStr); err == nil {
+	if secondsStr := formData.Get("seconds"); secondsStr != "" {
+		req.Seconds = secondsStr
+		if duration, err := strconv.Atoi(secondsStr); err == nil {
 			req.Duration = duration
 		}
 	}
 
 	if images := formData["images"]; len(images) > 0 {
 		req.Images = images
+	}
+	if videos := formData["reference_videos"]; len(videos) > 0 {
+		req.ReferenceVideos = videos
+	}
+	if audios := formData["reference_audios"]; len(audios) > 0 {
+		req.ReferenceAudios = audios
 	}
 
 	for key, values := range formData {
@@ -211,9 +229,15 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	prompt = req.Prompt
 	model = req.Model
 	size = req.Size
-	seconds, _ = strconv.Atoi(req.Seconds)
-	if seconds == 0 {
-		seconds = req.Duration
+	seconds = req.Duration
+	if req.Seconds != "" {
+		parsed, parseErr := strconv.Atoi(strings.TrimSpace(req.Seconds))
+		if parseErr != nil {
+			return createTaskError(fmt.Errorf("seconds must be an integer"), "invalid_seconds", http.StatusBadRequest, true)
+		}
+		if seconds == 0 {
+			seconds = parsed
+		}
 	}
 	if req.InputReference != "" {
 		req.Images = []string{req.InputReference}
@@ -268,14 +292,21 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 
 func isKnownTaskField(field string) bool {
 	knownFields := map[string]bool{
-		"prompt":          true,
-		"model":           true,
-		"mode":            true,
-		"image":           true,
-		"images":          true,
-		"size":            true,
-		"duration":        true,
-		"input_reference": true, // Sora 特有字段
+		"prompt":           true,
+		"model":            true,
+		"mode":             true,
+		"image":            true,
+		"images":           true,
+		"size":             true,
+		"duration":         true,
+		"seconds":          true,
+		"input_reference":  true, // Sora 特有字段
+		"aspect_ratio":     true,
+		"workflow_id":      true,
+		"reference_videos": true,
+		"reference_audios": true,
+		"reference_video":  true,
+		"reference_audio":  true,
 	}
 	return knownFields[field]
 }

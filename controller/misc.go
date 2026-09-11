@@ -119,10 +119,11 @@ func GetStatus(c *gin.Context) {
 		"stripe_unit_price": setting.StripeUnitPrice,
 
 		// 面板启用开关
-		"api_info_enabled":      cs.ApiInfoEnabled,
-		"uptime_kuma_enabled":   cs.UptimeKumaEnabled,
-		"announcements_enabled": cs.AnnouncementsEnabled,
-		"faq_enabled":           cs.FAQEnabled,
+		"api_info_enabled":          cs.ApiInfoEnabled,
+		"uptime_kuma_enabled":       cs.UptimeKumaEnabled,
+		"announcements_enabled":     cs.AnnouncementsEnabled,
+		"faq_enabled":               cs.FAQEnabled,
+		"affiliate_cdk_open_to_all": operation_setting.GetDistributionSetting().CdkPurchaseOpenToAll,
 
 		// 模块管理配置
 		"HeaderNavModules":    common.OptionMap["HeaderNavModules"],

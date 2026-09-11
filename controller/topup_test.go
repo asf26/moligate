@@ -36,3 +36,25 @@ func TestGetPayMoneyUsesTieredDiscounts(t *testing.T) {
 	require.InDelta(t, 130.2, getPayMoney(700, "default"), 0.000001)
 	require.InDelta(t, 360, getPayMoney(2000, "default"), 0.000001)
 }
+
+func TestGetPayMoneyUsesOneToOneUsdCreditToCnyPaymentRate(t *testing.T) {
+	originalPrice := operation_setting.Price
+	originalQuotaDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType
+	originalDiscounts := operation_setting.GetPaymentSetting().AmountDiscount
+	originalTopupGroupRatio := common.TopupGroupRatio2JSONString()
+
+	t.Cleanup(func() {
+		operation_setting.Price = originalPrice
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalQuotaDisplayType
+		operation_setting.GetPaymentSetting().AmountDiscount = originalDiscounts
+		require.NoError(t, common.UpdateTopupGroupRatioByJSONString(originalTopupGroupRatio))
+	})
+
+	operation_setting.Price = 1
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
+	operation_setting.GetPaymentSetting().AmountDiscount = map[int]float64{}
+	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"default":1}`))
+
+	// A $10 credit purchase is charged as ¥10 at the default 1:1 rate.
+	require.InDelta(t, 10, getPayMoney(10, "default"), 0.000001)
+}

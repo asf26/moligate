@@ -271,6 +271,7 @@ export interface GetChannelsParams {
   status?: string // 'enabled', 'disabled', or empty for all
   type?: number
   group?: string
+  capability?: 'video'
   id_sort?: boolean
   tag_mode?: boolean
   sort_by?: ChannelSortBy
@@ -283,6 +284,7 @@ export interface SearchChannelsParams {
   model?: string
   status?: string
   type?: number
+  capability?: 'video'
   id_sort?: boolean
   tag_mode?: boolean
   sort_by?: ChannelSortBy

@@ -78,13 +78,15 @@ func (w *WalletFunding) Refund() error {
 // ---------------------------------------------------------------------------
 
 type SubscriptionFunding struct {
-	requestId      string
-	userId         int
-	modelName      string
-	effectiveGroup string
-	amount         int64 // 预扣的订阅额度（subConsume）
-	subscriptionId int
-	preConsumed    int64
+	requestId           string
+	userId              int
+	modelName           string
+	effectiveGroup      string
+	amount              int64 // 预扣的订阅额度（subConsume）
+	resource            *model.SubscriptionResourceRequest
+	subscriptionId      int
+	preConsumed         int64
+	resourcePreConsumed int64
 	// 以下字段在 PreConsume 成功后填充，供 RelayInfo 同步使用
 	AmountTotal     int64
 	AmountUsedAfter int64
@@ -96,12 +98,22 @@ func (s *SubscriptionFunding) Source() string { return BillingSourceSubscription
 
 func (s *SubscriptionFunding) PreConsume(_ int) error {
 	// amount 参数被忽略，使用内部 s.amount（已在构造时根据 preConsumedQuota 计算）
-	res, err := model.PreConsumeUserSubscription(s.requestId, s.userId, s.modelName, 0, s.amount, s.effectiveGroup)
+	res, err := model.PreConsumeUserSubscriptionWithResource(s.requestId, s.userId, s.modelName, 0, s.amount, s.resource, s.effectiveGroup)
 	if err != nil {
 		return err
 	}
 	s.subscriptionId = res.UserSubscriptionId
 	s.preConsumed = res.PreConsumed
+	s.resourcePreConsumed = res.ResourcePreConsumed
+	if res.ResourceKey != "" {
+		s.resource = &model.SubscriptionResourceRequest{
+			ResourceKey:  res.ResourceKey,
+			ResourceType: res.ResourceType,
+			Amount:       res.ResourcePreConsumed,
+		}
+	} else {
+		s.resource = nil
+	}
 	s.AmountTotal = res.AmountTotal
 	s.AmountUsedAfter = res.AmountUsedAfter
 	// 获取订阅计划信息
@@ -113,14 +125,30 @@ func (s *SubscriptionFunding) PreConsume(_ int) error {
 }
 
 func (s *SubscriptionFunding) Settle(delta int) error {
+	return s.adjust(int64(delta))
+}
+
+func (s *SubscriptionFunding) ReserveDelta(delta int64) error {
+	return s.adjust(delta)
+}
+
+func (s *SubscriptionFunding) adjust(delta int64) error {
 	if delta == 0 {
 		return nil
+	}
+	if s.resource != nil && s.resource.ResourceType == model.SubscriptionResourceTypeImageCount {
+		// Image-count grants are consumed as whole generations during pre-consume;
+		// the quota-price delta is settled against the token quota only.
+		return nil
+	}
+	if s.resource != nil && s.resource.ResourceKey != "" {
+		return model.PostConsumeUserSubscriptionResourceDelta(s.subscriptionId, s.resource.ResourceKey, s.resource.ResourceType, delta)
 	}
 	return model.PostConsumeUserSubscriptionDelta(s.subscriptionId, int64(delta))
 }
 
 func (s *SubscriptionFunding) Refund() error {
-	if s.preConsumed <= 0 {
+	if s.preConsumed <= 0 && s.resourcePreConsumed <= 0 {
 		return nil
 	}
 	return refundWithRetry(func() error {

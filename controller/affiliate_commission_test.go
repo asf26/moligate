@@ -89,6 +89,12 @@ func TestSelfAffiliateReadAPIsDoNotRequireDistributionQualification(t *testing.T
 			call:   GetSelfAffiliateCommissions,
 		},
 		{
+			name:   "invitees",
+			method: http.MethodGet,
+			path:   "/api/affiliate/self/invitees",
+			call:   GetSelfAffiliateInvitees,
+		},
+		{
 			name:   "redemptions",
 			method: http.MethodGet,
 			path:   "/api/affiliate/self/redemptions",
@@ -216,6 +222,75 @@ func TestAdminExportAffiliateCommissionsUsesRewardPointFields(t *testing.T) {
 	require.True(t, strings.Contains(body, "奖励积分"))
 	require.True(t, strings.Contains(body, "50000"))
 	require.False(t, strings.Contains(body, "agent@example.com"))
+}
+
+func TestSelfAffiliateCdkAPIsAllowOpenToAll(t *testing.T) {
+	setupAffiliateCommissionControllerTestDB(t)
+	oldDistribution := *operation_setting.GetDistributionSetting()
+	oldPayment := *operation_setting.GetPaymentSetting()
+	t.Cleanup(func() {
+		*operation_setting.GetDistributionSetting() = oldDistribution
+		*operation_setting.GetPaymentSetting() = oldPayment
+	})
+	distribution := operation_setting.GetDistributionSetting()
+	distribution.CdkPurchaseOpenToAll = true
+	distribution.CdkPurchaseDiscountBps = 8000
+	payment := operation_setting.GetPaymentSetting()
+	payment.ComplianceConfirmed = true
+	payment.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:                  1001,
+		Username:            "open_cdk_user",
+		DisplayName:         "open_cdk_user",
+		Status:              common.UserStatusEnabled,
+		Role:                common.RoleCommonUser,
+		AffCode:             "open_cdk_user_code",
+		AffiliateCdkEnabled: false,
+	}).Error)
+
+	c, w := affiliateControllerTestContext(http.MethodGet, "/api/affiliate/self/cdk/info", nil)
+	c.Set("id", 1001)
+	GetSelfAffiliateCdkInfo(c)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"success":true`)
+	require.Contains(t, w.Body.String(), `"cdk_purchase_open_to_all":true`)
+}
+
+func TestAdminListAffiliateInviteesReturnsUnmaskedUsernames(t *testing.T) {
+	setupAffiliateCommissionControllerTestDB(t)
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:       1101,
+		Username: "promoter_admin_test",
+		AffCode:  "promoter_admin_test_code",
+		Status:   common.UserStatusEnabled,
+		Role:     common.RoleCommonUser,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:          1102,
+		Username:    "invited_visible_name",
+		AffCode:     "invited_visible_name_code",
+		DisplayName: "Invited Visible Name",
+		Status:      common.UserStatusEnabled,
+		Role:        common.RoleCommonUser,
+		InviterId:   1101,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.AffiliateCommission{
+		TradeNo:           "admin-invitee-topup",
+		BuyerId:           1102,
+		PromoterId:        1101,
+		Level:             model.AffiliateCommissionLevel1,
+		BaseQuota:         500000,
+		RewardPoints:      50,
+		CommissionRateBps: 1000,
+		Status:            model.AffiliateCommissionStatusPending,
+	}).Error)
+
+	c, w := affiliateControllerTestContext(http.MethodGet, "/api/affiliate/admin/invitees?promoter_id=1101", nil)
+	AdminListAffiliateInvitees(c)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"success":true`)
+	require.Contains(t, w.Body.String(), "invited_visible_name")
+	require.Contains(t, w.Body.String(), "\"reward_points\":50")
 }
 
 func TestSelfAffiliateCdkAPIsRequireComplianceAndDiscount(t *testing.T) {

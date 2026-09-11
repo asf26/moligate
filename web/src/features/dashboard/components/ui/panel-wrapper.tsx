@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
@@ -28,6 +28,7 @@ interface PanelWrapperProps {
   loading?: boolean
   empty?: boolean
   emptyMessage?: string
+  emptyHeight?: string
   height?: string
   className?: string
   contentClassName?: string
@@ -68,7 +69,7 @@ export function PanelWrapper(props: PanelWrapperProps) {
   const resolvedEmptyMessage = props.emptyMessage ?? t('No data available')
   const height = props.height ?? 'h-64'
   const frameClassName = cn(
-    'overflow-hidden rounded-2xl border bg-card shadow-xs',
+    'overflow-hidden rounded-xl border bg-card shadow-xs',
     props.className
   )
 
@@ -85,12 +86,12 @@ export function PanelWrapper(props: PanelWrapperProps) {
 
   if (props.empty) {
     return (
-      <div className={frameClassName}>
+      <div data-panel-state='empty' className={frameClassName}>
         <PanelHeader title={props.title} description={props.description} />
         <div
           className={cn(
             'text-muted-foreground flex items-center justify-center px-4 text-sm',
-            height,
+            props.emptyHeight ?? 'h-32 sm:h-36',
             props.contentClassName
           )}
         >

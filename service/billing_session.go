@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -110,7 +111,13 @@ func (s *BillingSession) Refund(c *gin.Context) {
 			common.SysLog("error refunding billing source: " + err.Error())
 		}
 		if extraReserved > 0 && funding.Source() == BillingSourceSubscription && subscriptionId > 0 {
-			if err := model.PostConsumeUserSubscriptionDelta(subscriptionId, -int64(extraReserved)); err != nil {
+			var err error
+			if subscriptionFunding, ok := funding.(*SubscriptionFunding); ok {
+				err = subscriptionFunding.ReserveDelta(-int64(extraReserved))
+			} else {
+				err = model.PostConsumeUserSubscriptionDelta(subscriptionId, -int64(extraReserved))
+			}
+			if err != nil {
 				common.SysLog("error refunding subscription extra reserved quota: " + err.Error())
 			}
 		}
@@ -253,7 +260,7 @@ func (s *BillingSession) reserveFunding(delta int) error {
 		funding.consumed += delta
 		return nil
 	case *SubscriptionFunding:
-		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, int64(delta)); err != nil {
+		if err := funding.ReserveDelta(int64(delta)); err != nil {
 			return types.NewErrorWithStatusCode(
 				fmt.Errorf("订阅额度不足或未配置订阅: %s", err.Error()),
 				types.ErrorCodeInsufficientUserQuota,
@@ -277,7 +284,7 @@ func (s *BillingSession) rollbackFundingReserve(delta int) {
 			funding.consumed -= delta
 		}
 	case *SubscriptionFunding:
-		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
+		if err := funding.ReserveDelta(-int64(delta)); err != nil {
 			common.SysLog("error rolling back subscription funding reserve: " + err.Error())
 		}
 	}
@@ -396,6 +403,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		if subConsume <= 0 {
 			subConsume = 1
 		}
+		resource := subscriptionResourceRequest(relayInfo, subConsume)
 		session := &BillingSession{
 			relayInfo: relayInfo,
 			funding: &SubscriptionFunding{
@@ -404,6 +412,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 				modelName:      relayInfo.OriginModelName,
 				effectiveGroup: relayInfo.UsingGroup,
 				amount:         subConsume,
+				resource:       resource,
 			},
 		}
 		// 必须传 subConsume 而非 preConsumedQuota，保证 SubscriptionFunding.amount、
@@ -454,5 +463,34 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			return nil, apiErr
 		}
 		return session, nil
+	}
+}
+
+func subscriptionResourceRequest(relayInfo *relaycommon.RelayInfo, quotaAmount int64) *model.SubscriptionResourceRequest {
+	if relayInfo == nil || quotaAmount <= 0 {
+		return nil
+	}
+	modelName := strings.TrimSpace(strings.ToLower(relayInfo.OriginModelName))
+	if modelName == "" {
+		return nil
+	}
+	if imageRequest, ok := relayInfo.Request.(*dto.ImageRequest); ok && modelName == "gpt-image-2" {
+		count := int64(1)
+		if imageRequest.N != nil && *imageRequest.N > 0 {
+			count = int64(*imageRequest.N)
+		}
+		if count > int64(dto.MaxImageN) {
+			count = int64(dto.MaxImageN)
+		}
+		return &model.SubscriptionResourceRequest{
+			ResourceKey:  modelName,
+			ResourceType: model.SubscriptionResourceTypeImageCount,
+			Amount:       count,
+		}
+	}
+	return &model.SubscriptionResourceRequest{
+		ResourceKey:  modelName,
+		ResourceType: model.SubscriptionResourceTypeQuota,
+		Amount:       quotaAmount,
 	}
 }

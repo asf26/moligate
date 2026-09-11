@@ -21,9 +21,9 @@ import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 
 import { getSelf } from '@/lib/api'
-import { formatQuota } from '@/lib/format'
 
 import { redeemTopupCode } from '../api'
+import { formatWalletQuota } from '../lib'
 
 // ============================================================================
 // Redemption Hook
@@ -46,7 +46,7 @@ export function useRedemption() {
         const quotaAdded = response.data
         toast.success(
           i18next.t('Redemption successful! Added: {{quota}}', {
-            quota: formatQuota(quotaAdded),
+            quota: formatWalletQuota(quotaAdded),
           })
         )
         await getSelf()

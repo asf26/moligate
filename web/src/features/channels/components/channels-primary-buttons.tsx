@@ -29,6 +29,7 @@ import {
   SortAsc,
   RefreshCw,
   ArrowUpFromLine,
+  Video,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -66,11 +67,16 @@ import {
 } from '../lib'
 import { useChannels } from './channels-provider'
 
-export function ChannelsPrimaryButtons() {
+type ChannelsPrimaryButtonsProps = {
+  videoOnly?: boolean
+}
+
+export function ChannelsPrimaryButtons(props: ChannelsPrimaryButtonsProps) {
   const { t } = useTranslation()
   const {
     setOpen,
     setCurrentRow,
+    setNewChannelType,
     enableTagMode,
     setEnableTagMode,
     idSort,
@@ -154,13 +160,20 @@ export function ChannelsPrimaryButtons() {
               onClick={() => {
                 if (!canEditSensitive) return
                 setCurrentRow(null)
+                setNewChannelType(props.videoOnly ? 54 : null)
                 setOpen('create-channel')
               }}
               size='sm'
               disabled={!canEditSensitive}
             >
-              <Plus className='h-4 w-4' />
-              <span className='max-sm:hidden'>{t('Create Channel')}</span>
+              {props.videoOnly ? (
+                <Video className='h-4 w-4' />
+              ) : (
+                <Plus className='h-4 w-4' />
+              )}
+              <span className='max-sm:hidden'>
+                {props.videoOnly ? t('Add Video Account') : t('Create Channel')}
+              </span>
               <span className='sm:hidden'>{t('Create')}</span>
             </Button>
           </TooltipTrigger>

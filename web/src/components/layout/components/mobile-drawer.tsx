@@ -272,7 +272,7 @@ export function MobileDrawer({
                           className='text-primary/60 hover:text-primary/80 transition-colors'
                           onClick={onClose}
                         >
-                          {link.title}
+                          {t(link.title)}
                         </Link>
                       </motion.div>
                     ))}

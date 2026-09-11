@@ -8,5 +8,6 @@ docs
 .eslintcache
 .gocache
 /web/node_modules
+**/node_modules
 /web/dist
 !THIRD-PARTY-LICENSES.md

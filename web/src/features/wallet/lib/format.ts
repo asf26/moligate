@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { formatQuotaWithCurrency } from '@/lib/currency'
+
 import { DEFAULT_DISCOUNT_RATE } from '../constants'
 
 // ============================================================================
@@ -75,6 +77,27 @@ export function formatUsdCreditAmount(amount: number | string): string {
 export function formatLocalPaymentAmount(amount: number | string): string {
   const formatted = formatCurrency(amount)
   return formatted === '-' ? formatted : `¥${formatted}`
+}
+
+/**
+ * Format raw wallet quota as system USD credit.
+ *
+ * Wallet balances are stored in quota units (tokens), but the wallet UI
+ * presents those credits as dollars independently of the site's payment
+ * currency. Payment totals use `formatLocalPaymentAmount` instead.
+ */
+export function formatWalletQuota(
+  quota: number | string | null | undefined
+): string {
+  const numeric =
+    typeof quota === 'number' ? quota : Number.parseFloat(String(quota ?? ''))
+  if (!Number.isFinite(numeric)) return '-'
+
+  return formatQuotaWithCurrency(numeric, {
+    digitsLarge: 2,
+    digitsSmall: 4,
+    abbreviate: true,
+  })
 }
 
 /**

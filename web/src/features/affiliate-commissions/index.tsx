@@ -55,6 +55,7 @@ import {
   getAdminAffiliateSummary,
   offlineCashbackAffiliateRewardPoints,
 } from './api'
+import { AffiliateInviteesAdminPanel } from './components/affiliate-invitees-admin-panel'
 import type {
   AffiliateRewardPointSettlement,
   AffiliateRewardPointSettlementFilters,
@@ -203,6 +204,7 @@ export function AffiliateCommissions() {
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4'>
+            <AffiliateInviteesAdminPanel />
             <div className='grid gap-3 sm:grid-cols-4'>
               {[
                 [

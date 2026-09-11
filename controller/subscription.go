@@ -171,6 +171,53 @@ func validateSubscriptionApplicableGroups(groups, legacyGroups []string) error {
 	return nil
 }
 
+func validateSubscriptionPlanPresentation(plan model.SubscriptionPlan) error {
+	if len(strings.TrimSpace(plan.BadgeText)) > 64 {
+		return errors.New("卡片标签不能超过64个字符")
+	}
+	if len(plan.Benefits) > 12 {
+		return errors.New("套餐权益最多配置12条")
+	}
+	for _, benefit := range plan.Benefits {
+		if len(strings.TrimSpace(benefit)) > 240 {
+			return errors.New("单条套餐权益不能超过240个字符")
+		}
+	}
+	if len(plan.BonusResources) > model.SubscriptionMaxBonusResources {
+		return fmt.Errorf("赠送资源最多配置%d项", model.SubscriptionMaxBonusResources)
+	}
+	seen := make(map[string]struct{}, len(plan.BonusResources))
+	for _, resource := range plan.BonusResources {
+		key := strings.TrimSpace(strings.ToLower(resource.ResourceKey))
+		resourceType := strings.TrimSpace(strings.ToLower(resource.ResourceType))
+		modelName := strings.TrimSpace(resource.ModelName)
+		if key == "" {
+			key = strings.ToLower(modelName)
+		}
+		if key == "" || modelName == "" {
+			return errors.New("赠送资源必须填写资源键和模型名称")
+		}
+		if resourceType == "" {
+			resourceType = model.SubscriptionResourceTypeQuota
+		}
+		if resourceType != model.SubscriptionResourceTypeQuota && resourceType != model.SubscriptionResourceTypeImageCount {
+			return errors.New("赠送资源类型无效")
+		}
+		if resource.Amount <= 0 || resource.Amount > int64(common.MaxQuota) {
+			return fmt.Errorf("赠送资源数量必须在1到%d之间", common.MaxQuota)
+		}
+		if len(key) > 128 || len(modelName) > 128 || len(strings.TrimSpace(resource.DisplayName)) > 128 {
+			return errors.New("赠送资源名称不能超过128个字符")
+		}
+		dedupeKey := key + "\x00" + resourceType
+		if _, ok := seen[dedupeKey]; ok {
+			return fmt.Errorf("赠送资源重复: %s", key)
+		}
+		seen[dedupeKey] = struct{}{}
+	}
+	return nil
+}
+
 func AdminCreateSubscriptionPlan(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
@@ -179,6 +226,10 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 	var req AdminUpsertSubscriptionPlanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if err := validateSubscriptionPlanPresentation(req.Plan); err != nil {
+		common.ApiError(c, err)
 		return
 	}
 	req.Plan.Id = 0
@@ -267,6 +318,10 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
+	if err := validateSubscriptionPlanPresentation(req.Plan); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if strings.TrimSpace(req.Plan.Title) == "" {
 		common.ApiErrorMsg(c, "套餐标题不能为空")
 		return
@@ -334,6 +389,21 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	includedModels, err := common.Marshal(req.Plan.IncludedModels)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	benefits, err := common.Marshal(req.Plan.Benefits)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	bonusResources, err := common.Marshal(req.Plan.BonusResources)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		// update plan (allow zero values updates with map)
 		updateMap := map[string]interface{}{
@@ -357,6 +427,12 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"upgrade_group":              req.Plan.UpgradeGroup,
 			"downgrade_group":            req.Plan.DowngradeGroup,
 			"applicable_groups":          string(applicableGroups),
+			"model_family":               req.Plan.ModelFamily,
+			"included_models":            string(includedModels),
+			"badge_text":                 req.Plan.BadgeText,
+			"is_recommended":             req.Plan.IsRecommended,
+			"benefits":                   string(benefits),
+			"bonus_resources":            string(bonusResources),
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
 			"updated_at":                 common.GetTimestamp(),

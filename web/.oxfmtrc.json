@@ -20,6 +20,7 @@
     "build",
     "coverage",
     ".tanstack",
+    "infinite-canvas",
     ".eslintrc.cjs",
     "**/routeTree.gen.ts",
     "src/routeTree.gen.ts"

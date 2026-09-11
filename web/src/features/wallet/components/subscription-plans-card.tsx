@@ -16,28 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { CalendarClock, Check, RefreshCw, Sparkles } from 'lucide-react'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import type { TFunction } from 'i18next'
+import { Check, Gift, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
-import {
-  StatusBadge,
-  dotColorMap,
-  textColorMap,
-} from '@/components/status-badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Tooltip,
@@ -47,21 +33,30 @@ import {
 import {
   getPublicPlans,
   getSelfSubscriptionFull,
-  updateBillingPreference,
 } from '@/features/subscriptions/api'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import {
   formatDuration,
-  formatResetPeriod,
   formatSubscriptionPrice,
 } from '@/features/subscriptions/lib'
+import {
+  getIncludedModels,
+  groupPlansByModelFamily,
+  type ModelFamilyKey,
+  type ModelFamilyPlanGroup,
+} from '@/features/subscriptions/lib/model-family'
 import type {
   PlanRecord,
+  SubscriptionPlan,
   UserSubscriptionRecord,
 } from '@/features/subscriptions/types'
-import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import {
+  DEFAULT_CURRENCY_CONFIG,
+  useSystemConfigStore,
+} from '@/stores/system-config-store'
 
+import { formatWalletQuota } from '../lib'
 import type { PaymentMethod, TopupInfo } from '../types'
 
 interface SubscriptionPlansCardProps {
@@ -71,93 +66,334 @@ interface SubscriptionPlansCardProps {
   onPurchaseSuccess?: () => void | Promise<void>
 }
 
-interface QuotaUsageProps {
-  label: string
-  amount: number
-  used: number
-  resetTime?: number
-}
-
-function QuotaUsage(props: QuotaUsageProps) {
+function ModelFamilyHeader({
+  group,
+  headingId,
+}: {
+  group: ModelFamilyPlanGroup
+  headingId: string
+}) {
   const { t } = useTranslation()
-  const remaining = Math.max(0, props.amount - props.used)
-  const percent =
-    props.amount > 0
-      ? Math.min(100, Math.round((props.used / props.amount) * 100))
-      : 0
+  const modelCount = group.family.models.length
 
   return (
-    <div className='min-w-0 border-t px-2 py-3 sm:px-3 lg:border-t-0 lg:px-3'>
-      <div>
-        <div className='text-xs font-medium'>{props.label}</div>
-        <div className='text-muted-foreground mt-0.5 text-xs tabular-nums'>
-          {formatQuota(props.used)} / {formatQuota(props.amount)}
-        </div>
+    <div className='subscription-model-family-header'>
+      <div className='subscription-package-family-kicker'>
+        <span
+          className={cn(
+            'subscription-model-family-mark',
+            `subscription-model-family-mark-${group.family.tone}`
+          )}
+          aria-hidden='true'
+        />
+        <h3
+          id={headingId}
+          className='text-base font-semibold tracking-tight sm:text-lg'
+        >
+          {t(group.family.labelKey)}
+        </h3>
+        <span className='subscription-model-family-count'>
+          {modelCount} {t('models')}
+        </span>
       </div>
-      <div className='mt-2 min-w-0'>
-        <Progress value={percent} className='h-1.5' />
-        {props.resetTime && props.resetTime > 0 ? (
-          <div className='text-muted-foreground mt-1.5 flex items-center gap-1 text-[10px] leading-4'>
-            <CalendarClock className='size-3 shrink-0' aria-hidden='true' />
-            <span className='truncate'>
-              {t('Next reset')}:{' '}
-              {new Date(props.resetTime * 1000).toLocaleString()}
-            </span>
-          </div>
-        ) : null}
-      </div>
-      <div className='mt-2 flex items-baseline justify-between'>
-        <div className='order-2 text-sm font-semibold tabular-nums'>
-          {formatQuota(remaining)}
-        </div>
-        <div className='text-muted-foreground text-[11px]'>
-          {t('Remaining')}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-interface PlanQuotaValueProps {
-  label: string
-  amount: number
-}
-
-function PlanQuotaValue(props: PlanQuotaValueProps) {
-  const { t } = useTranslation()
-
-  return (
-    <div className='flex min-w-0 items-center justify-between gap-3 py-2'>
-      <span className='text-muted-foreground text-xs'>{props.label}</span>
-      <span className='max-w-full text-xs font-semibold tabular-nums'>
-        {props.amount > 0 ? formatQuota(props.amount) : t('Unlimited')}
+      <p className='subscription-package-family-description text-muted-foreground text-xs leading-5 sm:text-sm'>
+        {t(group.family.descriptionKey)}
+      </p>
+      <span className='subscription-model-family-tier-count'>
+        {group.plans.length} {t('tiers')}
       </span>
     </div>
   )
 }
 
-function getEpayMethods(payMethods: PaymentMethod[] = []): PaymentMethod[] {
-  return payMethods.filter(
-    (m) => m?.type && m.type !== 'stripe' && m.type !== 'creem'
+interface SubscriptionPlanCardProps {
+  record: PlanRecord
+  family: ModelFamilyPlanGroup['family']
+  isPopular: boolean
+  purchaseCount: number
+  rechargeEnabled: boolean
+  onSelect: (record: PlanRecord) => void
+}
+
+function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
+  const { t } = useTranslation()
+  const currency = useSystemConfigStore((state) => state.config.currency)
+  const plan = props.record.plan
+  const price = formatSubscriptionPrice(plan)
+  const priceAmount = Number(plan.price_amount || 0)
+  const limit = Number(plan.max_purchase_per_user || 0)
+  const reached = limit > 0 && props.purchaseCount >= limit
+  const includedModels = getIncludedModels(plan, props.family)
+  const bonusResources = (plan.bonus_resources || []).filter(
+    (resource) => Number(resource.amount) > 0 && resource.model_name?.trim()
+  )
+  const badgeText =
+    plan.badge_text?.trim() || (props.isPopular ? t('Hot recommendation') : '')
+  const totalQuota = Number(plan.total_amount || 0)
+  const quotaPerUnit =
+    currency?.quotaPerUnit > 0
+      ? currency.quotaPerUnit
+      : DEFAULT_CURRENCY_CONFIG.quotaPerUnit
+  const bonusPercent = getPlanBonusPercent(
+    totalQuota,
+    priceAmount,
+    quotaPerUnit
+  )
+  const stockRemaining =
+    limit > 0 ? Math.max(0, limit - props.purchaseCount) : 0
+  const stockPercent =
+    limit > 0 ? Math.min(100, Math.round((stockRemaining / limit) * 100)) : 100
+  const benefits = getPlanBenefits(
+    plan,
+    props.family,
+    t,
+    price,
+    totalQuota,
+    includedModels.length
+  )
+
+  return (
+    <article
+      className={cn(
+        'subscription-billing-plan-card relative flex min-w-0 flex-col bg-card p-4 transition-all duration-200',
+        `subscription-billing-plan-card-tone-${props.family.tone}`,
+        (badgeText || limit > 0) && 'subscription-billing-plan-card-with-badge',
+        props.isPopular && 'subscription-billing-plan-featured'
+      )}
+      aria-label={plan.title || t('Subscription Plans')}
+    >
+      {(badgeText || limit > 0) && (
+        <div className='subscription-plan-badges'>
+          {badgeText && (
+            <span
+              className={cn(
+                'subscription-billing-plan-badge',
+                props.isPopular && 'subscription-billing-plan-badge-featured',
+                !props.isPopular && 'subscription-billing-plan-badge-custom'
+              )}
+            >
+              {props.isPopular && (
+                <Sparkles className='size-3' aria-hidden='true' />
+              )}
+              {badgeText}
+            </span>
+          )}
+          {limit > 0 && (
+            <span className='subscription-billing-plan-badge subscription-billing-plan-badge-stock'>
+              {t('Only {{count}} left', { count: stockRemaining })}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className='subscription-plan-card-header'>
+        <h4 className='text-base font-semibold tracking-tight'>
+          {plan.title || t('Subscription Plans')}
+        </h4>
+        <p className='text-muted-foreground mt-1.5 line-clamp-2 min-h-9 text-xs leading-5'>
+          {plan.subtitle || t('Subscribe to a plan for model access')}
+        </p>
+      </div>
+
+      <div className='subscription-plan-price-row mt-4 flex items-baseline gap-1'>
+        <span className='font-[family-name:var(--font-geist-mono)] text-3xl font-bold tracking-tight tabular-nums'>
+          {price}
+        </span>
+        <span className='text-muted-foreground text-sm'>
+          / {formatDuration(plan, t)}
+        </span>
+      </div>
+
+      <div className='subscription-plan-summary-grid mt-4'>
+        <div className='subscription-plan-summary-block subscription-plan-summary-block-credit'>
+          <span>{t('Estimated wallet credit')}</span>
+          <strong>
+            {totalQuota > 0 ? formatWalletQuota(totalQuota) : t('Unlimited')}
+          </strong>
+        </div>
+        <div className='subscription-plan-summary-block subscription-plan-summary-block-bonus'>
+          <span>{t('Bonus ratio (%)')}</span>
+          <strong>{bonusPercent > 0 ? `+${bonusPercent}%` : '—'}</strong>
+        </div>
+      </div>
+
+      <div className='subscription-plan-access-strip mt-4'>
+        <Gift
+          className='subscription-plan-access-icon size-4 shrink-0'
+          aria-hidden='true'
+        />
+        <div className='min-w-0'>
+          <p className='truncate text-xs font-semibold'>
+            {t('Package benefits')}
+          </p>
+          <p className='text-muted-foreground mt-0.5 text-[11px]'>
+            {t('Includes {{count}} models from {{family}}', {
+              count: includedModels.length,
+              family: t(props.family.labelKey),
+            })}
+          </p>
+        </div>
+      </div>
+
+      {bonusResources.length > 0 && (
+        <div className='subscription-plan-bonus-resources mt-3'>
+          <div className='flex items-center gap-2 text-xs font-semibold'>
+            <Gift
+              className='subscription-plan-access-icon size-3.5 shrink-0'
+              aria-hidden='true'
+            />
+            {t('Included extras')}
+          </div>
+          <div className='mt-2 flex flex-wrap gap-1.5'>
+            {bonusResources.map((resource) => (
+              <span
+                key={`${resource.resource_key}-${resource.resource_type}`}
+                className='subscription-plan-bonus-resource'
+              >
+                {resource.display_name?.trim() || resource.model_name}
+                <strong>
+                  {resource.resource_type === 'image_count'
+                    ? `${resource.amount} ${t('generations')}`
+                    : formatWalletQuota(Number(resource.amount))}
+                </strong>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <ul className='subscription-plan-benefits mt-4 space-y-2'>
+        {benefits.map((benefit) => (
+          <li
+            key={benefit}
+            className='text-foreground/90 flex items-start gap-2 text-sm'
+          >
+            <Check
+              className='subscription-plan-check mt-0.5 size-4 shrink-0'
+              aria-hidden='true'
+            />
+            <span className='leading-snug'>{benefit}</span>
+          </li>
+        ))}
+      </ul>
+
+      <div className='subscription-plan-stock mt-4'>
+        <div className='flex items-center justify-between gap-3 text-[11px]'>
+          <span className='text-muted-foreground'>{t('Available')}</span>
+          <span className='font-medium tabular-nums'>
+            {limit > 0 ? `${stockRemaining}/${limit}` : t('Unlimited')}
+          </span>
+        </div>
+        <Progress
+          value={stockPercent}
+          className='subscription-plan-stock-progress mt-2 h-1.5'
+          aria-label={`${t('Available')} ${stockPercent}%`}
+        />
+      </div>
+
+      <div className='subscription-plan-card-footer mt-auto pt-4'>
+        {reached ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='h-10 w-full text-xs'
+                  disabled
+                />
+              }
+            >
+              {t('Limit Reached')}
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('Purchase limit reached')} ({props.purchaseCount}/{limit})
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <Button
+            variant='default'
+            size='sm'
+            className='subscription-plan-cta h-10 w-full text-xs'
+            onClick={() => {
+              if (props.rechargeEnabled) props.onSelect(props.record)
+            }}
+            disabled={!props.rechargeEnabled}
+          >
+            {props.rechargeEnabled
+              ? t('Subscribe Now')
+              : t('Recharge permission required')}
+          </Button>
+        )}
+      </div>
+    </article>
   )
 }
 
-function getBillingPreferenceLabel(
-  preference: string,
-  t: (key: string) => string
-): string {
-  switch (preference) {
-    case 'subscription_first':
-      return t('Subscription First')
-    case 'wallet_first':
-      return t('Wallet First')
-    case 'subscription_only':
-      return t('Subscription Only')
-    case 'wallet_only':
-      return t('Wallet Only')
-    default:
-      return preference
+function getPlanBenefits(
+  plan: SubscriptionPlan,
+  family: ModelFamilyPlanGroup['family'],
+  t: TFunction,
+  price: string,
+  totalQuota: number,
+  includedModelCount: number
+): string[] {
+  const configuredBenefits = (plan.benefits || [])
+    .map((benefit) => benefit.trim())
+    .filter(Boolean)
+  if (configuredBenefits.length > 0) return configuredBenefits
+
+  const familyLabel = t(family.labelKey)
+  const credit = totalQuota > 0 ? formatWalletQuota(totalQuota) : t('Unlimited')
+  return [
+    t('Supports the {{family}} model family', { family: familyLabel }),
+    t('Pay {{price}}, receive {{credit}} in {{family}} quota', {
+      price,
+      credit,
+      family: familyLabel,
+    }),
+    t('{{family}} usage is billed by configured ratios', {
+      family: familyLabel,
+    }),
+    t(family.descriptionKey),
+    t('Includes {{count}} models from {{family}}', {
+      count: includedModelCount,
+      family: familyLabel,
+    }),
+    t('Valid for {{duration}}', {
+      duration: formatDuration(plan, t),
+    }),
+  ]
+}
+
+function getPlanBonusPercent(
+  totalQuota: number,
+  priceAmount: number,
+  quotaPerUnit: number
+): number {
+  if (
+    !Number.isFinite(totalQuota) ||
+    !Number.isFinite(priceAmount) ||
+    !Number.isFinite(quotaPerUnit) ||
+    totalQuota <= 0 ||
+    priceAmount <= 0 ||
+    quotaPerUnit <= 0
+  ) {
+    return 0
   }
+
+  const creditedAmount = totalQuota / quotaPerUnit
+  return Math.max(
+    0,
+    Math.round(((creditedAmount - priceAmount) / priceAmount) * 100)
+  )
+}
+
+function getEpayMethods(payMethods: PaymentMethod[] = []): PaymentMethod[] {
+  return payMethods.filter(
+    (method) =>
+      method?.type && method.type !== 'stripe' && method.type !== 'creem'
+  )
 }
 
 export function SubscriptionPlansCard({
@@ -169,19 +405,15 @@ export function SubscriptionPlansCard({
   const { t } = useTranslation()
 
   const [plans, setPlans] = useState<PlanRecord[]>([])
-  const [activeSubscriptions, setActiveSubscriptions] = useState<
-    UserSubscriptionRecord[]
-  >([])
   const [allSubscriptions, setAllSubscriptions] = useState<
     UserSubscriptionRecord[]
   >([])
-  const [billingPreference, setBillingPreference] =
-    useState('subscription_first')
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<PlanRecord | null>(null)
+  const [selectedFamilyKey, setSelectedFamilyKey] = useState<
+    ModelFamilyKey | undefined
+  >()
 
   const enableStripe = !!topupInfo?.enable_stripe_topup
   const enableCreem = !!topupInfo?.enable_creem_topup
@@ -195,10 +427,8 @@ export function SubscriptionPlansCard({
 
   const fetchPlans = useCallback(async () => {
     try {
-      const res = await getPublicPlans()
-      if (res.success) {
-        setPlans(res.data || [])
-      }
+      const response = await getPublicPlans()
+      setPlans(response.success ? response.data || [] : [])
     } catch {
       setPlans([])
     }
@@ -206,103 +436,75 @@ export function SubscriptionPlansCard({
 
   const fetchSelfSubscription = useCallback(async () => {
     try {
-      const res = await getSelfSubscriptionFull()
-      if (res.success && res.data) {
-        setBillingPreference(
-          res.data.billing_preference || 'subscription_first'
-        )
-        setActiveSubscriptions(res.data.subscriptions || [])
-        setAllSubscriptions(res.data.all_subscriptions || [])
+      const response = await getSelfSubscriptionFull()
+      if (response.success && response.data) {
+        setAllSubscriptions(response.data.all_subscriptions || [])
       }
     } catch {
-      // ignore
+      // The page remains usable when subscription data is temporarily unavailable.
     }
   }, [])
 
   useEffect(() => {
-    const init = async () => {
+    const initialize = async () => {
       setLoading(true)
       await Promise.all([fetchPlans(), fetchSelfSubscription()])
       setLoading(false)
     }
-    init()
+    void initialize()
   }, [fetchPlans, fetchSelfSubscription])
 
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    try {
-      await fetchSelfSubscription()
-    } finally {
-      setRefreshing(false)
-    }
-  }
+  const displayPlans = useMemo(
+    () =>
+      plans
+        .filter((record) => record?.plan?.enabled !== false)
+        .sort((left, right) => {
+          const priceDelta =
+            Number(left.plan.price_amount) - Number(right.plan.price_amount)
+          if (priceDelta !== 0) return priceDelta
+          const orderDelta = left.plan.sort_order - right.plan.sort_order
+          return orderDelta !== 0 ? orderDelta : left.plan.id - right.plan.id
+        }),
+    [plans]
+  )
 
-  const handlePreferenceChange = async (pref: string) => {
-    const previous = billingPreference
-    setBillingPreference(pref)
-    try {
-      const res = await updateBillingPreference(pref)
-      if (res.success) {
-        toast.success(t('Updated successfully'))
-        const normalized = res.data?.billing_preference || pref
-        setBillingPreference(normalized)
-      } else {
-        toast.error(res.message || t('Update failed'))
-        setBillingPreference(previous)
-      }
-    } catch {
-      toast.error(t('Request failed'))
-      setBillingPreference(previous)
-    }
-  }
+  // The administrator controls every sellable plan. Keep all configured
+  // durations visible together so a plan is never hidden behind a cycle toggle.
+  const visiblePlans = displayPlans
 
-  const hasActive = activeSubscriptions.length > 0
-  const hasAny = allSubscriptions.length > 0
-  const disablePref = !hasActive
-  const isSubPref =
-    billingPreference === 'subscription_first' ||
-    billingPreference === 'subscription_only'
-  const displayPref =
-    disablePref && isSubPref ? 'wallet_first' : billingPreference
+  const modelFamilyGroups = useMemo(
+    () => groupPlansByModelFamily(visiblePlans.map((record) => record.plan)),
+    [visiblePlans]
+  )
+
+  const selectedFamilyGroup =
+    modelFamilyGroups.find((group) => group.family.key === selectedFamilyKey) ||
+    modelFamilyGroups[0]
+
+  const planRecordMap = useMemo(
+    () => new Map(visiblePlans.map((record) => [record.plan.id, record])),
+    [visiblePlans]
+  )
+
+  const planPurchaseCountMap = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const subscription of allSubscriptions) {
+      const planId = subscription.subscription?.plan_id
+      if (planId) map.set(planId, (map.get(planId) || 0) + 1)
+    }
+    return map
+  }, [allSubscriptions])
 
   useEffect(() => {
     onAvailabilityChange?.(true)
   }, [onAvailabilityChange])
 
-  const planPurchaseCountMap = useMemo(() => {
-    const map = new Map<number, number>()
-    for (const sub of allSubscriptions) {
-      const planId = sub?.subscription?.plan_id
-      if (!planId) continue
-      map.set(planId, (map.get(planId) || 0) + 1)
-    }
-    return map
-  }, [allSubscriptions])
-
-  const planTitleMap = useMemo(() => {
-    const map = new Map<number, string>()
-    for (const p of plans) {
-      if (p?.plan?.id) {
-        map.set(p.plan.id, p.plan.title || '')
-      }
-    }
-    return map
-  }, [plans])
-
-  const getRemainingDays = (sub: UserSubscriptionRecord) => {
-    const endTime = sub?.subscription?.end_time || 0
-    if (!endTime) return 0
-    const now = Date.now() / 1000
-    return Math.max(0, Math.ceil((endTime - now) / 86400))
-  }
-
   if (loading) {
     return (
-      <div className='flex flex-col gap-5'>
-        <Skeleton className='h-40 w-full rounded-xl' />
-        <div className='grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3'>
+      <div className='flex flex-col gap-6'>
+        <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3'>
           {['first', 'second', 'third'].map((key) => (
-            <Skeleton key={key} className='h-80 w-full rounded-xl' />
+            <Skeleton key={key} className='h-72 w-full rounded-2xl' />
           ))}
         </div>
       </div>
@@ -311,326 +513,31 @@ export function SubscriptionPlansCard({
 
   return (
     <>
-      <div className='flex flex-col gap-6'>
-        <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
-          <CardHeader className='bg-muted/20 border-b px-4 py-3.5 sm:px-5'>
-            <div className='flex flex-wrap items-center justify-between gap-3'>
-              <div className='flex min-w-0 flex-wrap items-center gap-2'>
-                <CardTitle className='text-sm'>
-                  {t('My Subscriptions')}
-                </CardTitle>
-                <span className='flex items-center gap-1.5 text-xs font-medium'>
-                  <span
-                    className={cn(
-                      'size-1.5 shrink-0 rounded-full',
-                      hasActive ? dotColorMap.success : dotColorMap.neutral
-                    )}
-                    aria-hidden='true'
-                  />
-                  {hasActive ? (
-                    <span className={cn(textColorMap.success)}>
-                      {activeSubscriptions.length} {t('active')}
-                    </span>
-                  ) : (
-                    <span className='text-muted-foreground'>
-                      {t('No Active')}
-                    </span>
-                  )}
-                  {allSubscriptions.length > activeSubscriptions.length && (
-                    <>
-                      <span className='text-muted-foreground/30'>·</span>
-                      <span className='text-muted-foreground'>
-                        {allSubscriptions.length - activeSubscriptions.length}{' '}
-                        {t('expired')}
-                      </span>
-                    </>
-                  )}
-                </span>
-              </div>
-              <div className='flex w-full items-center gap-2 sm:w-auto'>
-                <span className='text-muted-foreground hidden text-xs lg:inline'>
-                  {t('Preferences')}
-                </span>
-                <Select
-                  items={[
-                    {
-                      value: 'subscription_first',
-                      label: (
-                        <>
-                          {getBillingPreferenceLabel('subscription_first', t)}
-                          {disablePref ? ` (${t('No Active')})` : ''}
-                        </>
-                      ),
-                    },
-                    {
-                      value: 'wallet_first',
-                      label: getBillingPreferenceLabel('wallet_first', t),
-                    },
-                    {
-                      value: 'subscription_only',
-                      label: (
-                        <>
-                          {getBillingPreferenceLabel('subscription_only', t)}
-                          {disablePref ? ` (${t('No Active')})` : ''}
-                        </>
-                      ),
-                    },
-                    {
-                      value: 'wallet_only',
-                      label: getBillingPreferenceLabel('wallet_only', t),
-                    },
-                  ]}
-                  value={displayPref}
-                  onValueChange={(v) => v !== null && handlePreferenceChange(v)}
-                >
-                  <SelectTrigger className='h-8 flex-1 text-xs sm:w-[150px] sm:flex-none'>
-                    <SelectValue>
-                      {getBillingPreferenceLabel(displayPref, t)}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      <SelectItem
-                        value='subscription_first'
-                        disabled={disablePref}
-                      >
-                        {getBillingPreferenceLabel('subscription_first', t)}
-                        {disablePref ? ` (${t('No Active')})` : ''}
-                      </SelectItem>
-                      <SelectItem value='wallet_first'>
-                        {getBillingPreferenceLabel('wallet_first', t)}
-                      </SelectItem>
-                      <SelectItem
-                        value='subscription_only'
-                        disabled={disablePref}
-                      >
-                        {getBillingPreferenceLabel('subscription_only', t)}
-                        {disablePref ? ` (${t('No Active')})` : ''}
-                      </SelectItem>
-                      <SelectItem value='wallet_only'>
-                        {getBillingPreferenceLabel('wallet_only', t)}
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant='ghost'
-                        size='icon'
-                        className='size-8'
-                        onClick={handleRefresh}
-                        disabled={refreshing}
-                        aria-label={t('Refresh')}
-                      />
-                    }
-                  >
-                    <RefreshCw
-                      className={cn('size-3.5', refreshing && 'animate-spin')}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent>{t('Refresh')}</TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-          </CardHeader>
-
-          {disablePref && isSubPref && (
-            <p className='text-muted-foreground border-b px-4 py-3 text-xs sm:px-5'>
-              {t(
-                'Preference saved as {{pref}}, but no active subscription. Wallet will be used automatically.',
-                {
-                  pref:
-                    billingPreference === 'subscription_only'
-                      ? t('Subscription Only')
-                      : t('Subscription First'),
-                }
-              )}
-            </p>
-          )}
-
-          <CardContent className='flex flex-col gap-3 p-4 sm:px-5 sm:py-4'>
-            {hasAny ? (
-              <>
-                {allSubscriptions.map((sub) => {
-                  const subscription = sub.subscription
-                  const totalAmount = Number(subscription?.amount_total || 0)
-                  const usedAmount = Number(subscription?.amount_used || 0)
-                  const planTitle =
-                    planTitleMap.get(subscription?.plan_id) || ''
-                  const remainDays = getRemainingDays(sub)
-                  const now = Date.now() / 1000
-                  const isExpired = (subscription?.end_time || 0) < now
-                  const isCancelled = subscription?.status === 'cancelled'
-                  const isActive =
-                    subscription?.status === 'active' && !isExpired
-                  const nextResetTime = subscription?.next_reset_time ?? 0
-                  const quotaUsages: QuotaUsageProps[] = [
-                    totalAmount > 0
-                      ? {
-                          label: t('Total Quota'),
-                          amount: totalAmount,
-                          used: usedAmount,
-                          resetTime: nextResetTime,
-                        }
-                      : null,
-                    Number(subscription?.daily_amount || 0) > 0
-                      ? {
-                          label: t('Daily Quota'),
-                          amount: Number(subscription?.daily_amount || 0),
-                          used: Number(subscription?.daily_used || 0),
-                          resetTime: subscription?.daily_reset_time,
-                        }
-                      : null,
-                    Number(subscription?.weekly_amount || 0) > 0
-                      ? {
-                          label: t('Weekly Quota'),
-                          amount: Number(subscription?.weekly_amount || 0),
-                          used: Number(subscription?.weekly_used || 0),
-                          resetTime: subscription?.weekly_reset_time,
-                        }
-                      : null,
-                    Number(subscription?.monthly_amount || 0) > 0
-                      ? {
-                          label: t('Monthly Quota'),
-                          amount: Number(subscription?.monthly_amount || 0),
-                          used: Number(subscription?.monthly_used || 0),
-                          resetTime: subscription?.monthly_reset_time,
-                        }
-                      : null,
-                  ].filter((quota) => quota !== null)
-                  let statusBadge = (
-                    <StatusBadge
-                      label={t('Expired')}
-                      variant='neutral'
-                      copyable={false}
-                    />
-                  )
-                  if (isActive) {
-                    statusBadge = (
-                      <StatusBadge
-                        label={t('Active')}
-                        variant='success'
-                        copyable={false}
-                      />
-                    )
-                  } else if (isCancelled) {
-                    statusBadge = (
-                      <StatusBadge
-                        label={t('Cancelled')}
-                        variant='neutral'
-                        copyable={false}
-                      />
-                    )
-                  }
-
-                  let endTimeLabel = t('Expired at')
-                  if (isActive) {
-                    endTimeLabel = t('Until')
-                  } else if (isCancelled) {
-                    endTimeLabel = t('Cancelled at')
-                  }
-
-                  if (!isActive) {
-                    return (
-                      <div
-                        key={subscription?.id}
-                        className='bg-muted/25 flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-xs'
-                      >
-                        <div className='flex min-w-0 flex-wrap items-center gap-2'>
-                          <span className='font-medium break-words'>
-                            {planTitle
-                              ? `${planTitle} · ${t('Subscription')} #${subscription?.id}`
-                              : `${t('Subscription')} #${subscription?.id}`}
-                          </span>
-                          {statusBadge}
-                        </div>
-                        <span className='text-muted-foreground shrink-0'>
-                          {endTimeLabel}{' '}
-                          {new Date(
-                            (subscription?.end_time || 0) * 1000
-                          ).toLocaleString()}
-                        </span>
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <div key={subscription?.id} className='text-xs'>
-                      <div className='flex flex-wrap items-start justify-between gap-3 border-b pb-3.5'>
-                        <div className='min-w-0'>
-                          <div className='flex min-w-0 flex-wrap items-center gap-2'>
-                            <span className='text-sm font-semibold break-words'>
-                              {planTitle
-                                ? `${planTitle} · ${t('Subscription')} #${subscription?.id}`
-                                : `${t('Subscription')} #${subscription?.id}`}
-                            </span>
-                            {statusBadge}
-                          </div>
-                          <div className='text-muted-foreground mt-1.5 flex items-center gap-1.5'>
-                            <CalendarClock
-                              className='size-3.5'
-                              aria-hidden='true'
-                            />
-                            {endTimeLabel}{' '}
-                            {new Date(
-                              (subscription?.end_time || 0) * 1000
-                            ).toLocaleString()}
-                          </div>
-                        </div>
-                        {isActive && (
-                          <div className='shrink-0 text-right'>
-                            <div className='text-lg leading-5 font-semibold tabular-nums'>
-                              {remainDays}
-                            </div>
-                            <div className='text-muted-foreground text-xs'>
-                              {t('{{count}} days remaining', {
-                                count: remainDays,
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      {quotaUsages.length > 0 ? (
-                        <div className='grid grid-cols-2 gap-x-3 lg:grid-cols-4 lg:gap-x-0 lg:divide-x'>
-                          {quotaUsages.map((quota) => (
-                            <QuotaUsage key={quota.label} {...quota} />
-                          ))}
-                        </div>
-                      ) : (
-                        <div className='text-muted-foreground py-4'>
-                          {t('Total Quota')}: {t('Unlimited')}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </>
-            ) : (
-              <div className='flex min-h-28 items-center justify-center text-sm'>
-                <span className='text-muted-foreground'>
-                  {t('Subscribe to a plan for model access')}
-                </span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {plans.length > 0 ? (
-          <section aria-label={t('Subscription Plans')}>
-            <div className='mb-3 flex items-end justify-between gap-4'>
+      <div className='subscription-billing-card flex flex-col gap-8'>
+        {visiblePlans.length > 0 && (
+          <section
+            id='subscription-plan-options'
+            className='subscription-plan-options scroll-mt-6'
+            aria-label={t('Subscription Plans')}
+          >
+            <div className='subscription-plans-heading mb-5'>
               <div>
-                <h3 className='text-base font-semibold'>
-                  {t('Subscription Plans')}
-                </h3>
-                <p className='text-muted-foreground mt-0.5 text-xs'>
-                  {t('Subscribe to a plan for model access')}
+                <p className='subscription-section-kicker'>
+                  {t('Model packages')}
+                </p>
+                <h2 className='mt-2 text-xl font-semibold tracking-tight sm:text-2xl'>
+                  {t('Choose a model package')}
+                </h2>
+                <p className='text-muted-foreground mt-2 text-sm'>
+                  {t(
+                    'Select a model family, then choose the tier that fits your workload.'
+                  )}
                 </p>
               </div>
             </div>
+
             {!rechargeEnabled && (
-              <Alert variant='destructive' className='mb-3 max-w-3xl'>
+              <Alert variant='destructive' className='mb-5'>
                 <AlertDescription>
                   {t(
                     'Subscription is locked for this account. Please join the official group and contact an administrator to enable subscription access.'
@@ -638,151 +545,118 @@ export function SubscriptionPlansCard({
                 </AlertDescription>
               </Alert>
             )}
-            <div className='grid grid-cols-[repeat(auto-fill,minmax(260px,300px))] gap-3'>
-              {plans.map((p, index) => {
-                const plan = p?.plan
-                if (!plan) return null
-                const totalAmount = Number(plan.total_amount || 0)
-                const dailyAmount = Number(plan.daily_amount || 0)
-                const weeklyAmount = Number(plan.weekly_amount || 0)
-                const monthlyAmount = Number(plan.monthly_amount || 0)
-                const price = formatSubscriptionPrice(plan)
-                const isPopular = index === 0 && plans.length > 1
-                const limit = Number(plan.max_purchase_per_user || 0)
-                const count = planPurchaseCountMap.get(plan.id) || 0
-                const reached = limit > 0 && count >= limit
-                const resetPeriod = formatResetPeriod(plan, t)
 
-                return (
-                  <Card
-                    key={plan.id}
-                    data-card-hover='false'
-                    className={cn(
-                      'relative gap-0 overflow-hidden py-0',
-                      isPopular && 'border-foreground/30 shadow-sm'
-                    )}
-                  >
-                    {isPopular && (
-                      <div className='bg-foreground text-background flex h-7 items-center justify-center gap-1.5 text-[11px] font-medium'>
-                        <Sparkles className='size-3.5' aria-hidden='true' />
-                        {t('Recommended')}
-                      </div>
-                    )}
-                    <CardHeader className='border-b px-3.5 py-3.5'>
-                      <div className='min-h-9'>
-                        <CardTitle className='text-sm'>
-                          {plan.title || t('Subscription Plans')}
-                        </CardTitle>
-                        {plan.subtitle && (
-                          <p className='text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-5'>
-                            {plan.subtitle}
-                          </p>
+            <div className='subscription-package-toolbar'>
+              <div
+                className='subscription-model-family-tabs'
+                role='tablist'
+                aria-label={t('Model packages')}
+              >
+                {modelFamilyGroups.map((group) => {
+                  const isSelected =
+                    selectedFamilyGroup?.family.key === group.family.key
+                  return (
+                    <button
+                      key={group.family.key}
+                      id={`subscription-family-tab-${group.family.key}`}
+                      type='button'
+                      role='tab'
+                      aria-selected={isSelected}
+                      aria-controls={
+                        isSelected
+                          ? `subscription-family-panel-${group.family.key}`
+                          : undefined
+                      }
+                      className={cn(
+                        'subscription-model-family-tab',
+                        isSelected && 'subscription-model-family-tab-active'
+                      )}
+                      onClick={() => setSelectedFamilyKey(group.family.key)}
+                    >
+                      <span
+                        className={cn(
+                          'subscription-model-family-tab-dot',
+                          `subscription-model-family-tab-dot-${group.family.tone}`
                         )}
-                      </div>
-                      <div className='mt-2.5 flex items-end gap-1.5'>
-                        <span className='text-xl font-semibold tabular-nums'>
-                          {price}
-                        </span>
-                        <span className='text-muted-foreground pb-1 text-xs'>
-                          / {formatDuration(plan, t)}
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardContent className='flex flex-1 flex-col px-3.5 py-2.5'>
-                      <div className='divide-y'>
-                        <PlanQuotaValue
-                          label={t('Total Quota')}
-                          amount={totalAmount}
-                        />
-                        <PlanQuotaValue
-                          label={t('Daily Quota')}
-                          amount={dailyAmount}
-                        />
-                        <PlanQuotaValue
-                          label={t('Weekly Quota')}
-                          amount={weeklyAmount}
-                        />
-                        <PlanQuotaValue
-                          label={t('Monthly Quota')}
-                          amount={monthlyAmount}
-                        />
-                      </div>
-                      <div className='text-muted-foreground mt-3 flex min-h-8 items-start gap-2 text-[11px] leading-4'>
-                        <Check
-                          className='text-foreground mt-0.5 size-3.5 shrink-0'
-                          aria-hidden='true'
-                        />
-                        <span>
-                          {resetPeriod !== t('No Reset')
-                            ? `${t('Total Quota Reset')}: ${resetPeriod}`
-                            : `${t('Validity Period')}: ${formatDuration(plan, t)}`}
-                        </span>
-                      </div>
-                      <div className='mt-3'>
-                        {reached ? (
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <Button
-                                  variant='outline'
-                                  size='sm'
-                                  className='h-8 w-full text-xs'
-                                  disabled
-                                />
-                              }
-                            >
-                              {t('Limit Reached')}
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t('Purchase limit reached')} ({count}/{limit})
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <Button
-                            variant={isPopular ? 'default' : 'outline'}
-                            size='sm'
-                            className='h-8 w-full text-xs'
-                            onClick={() => {
-                              if (!rechargeEnabled) return
-                              setSelectedPlan(p)
-                              setPurchaseOpen(true)
-                            }}
-                            disabled={!rechargeEnabled}
-                          >
-                            {rechargeEnabled
-                              ? t('Subscribe Now')
-                              : t('Recharge permission required')}
-                          </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
+                        aria-hidden='true'
+                      />
+                      <span>{t(group.family.labelKey)}</span>
+                      <span className='subscription-model-family-tab-count'>
+                        {group.plans.length}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
+
+            {selectedFamilyGroup && (
+              <div
+                id={`subscription-family-panel-${selectedFamilyGroup.family.key}`}
+                role='tabpanel'
+                aria-labelledby={`subscription-family-heading-${selectedFamilyGroup.family.key}`}
+                className='subscription-model-family-panel'
+                tabIndex={0}
+              >
+                <ModelFamilyHeader
+                  group={selectedFamilyGroup}
+                  headingId={`subscription-family-heading-${selectedFamilyGroup.family.key}`}
+                />
+                <div className='subscription-billing-plan-grid'>
+                  {selectedFamilyGroup.plans.map((plan) => {
+                    const familyPlans = selectedFamilyGroup.plans
+                    const familyRecommended =
+                      familyPlans.find((candidate) => candidate.is_recommended)
+                        ?.id ??
+                      familyPlans.find(
+                        (candidate) =>
+                          candidate.title.trim().toLowerCase() === 'standard'
+                      )?.id ??
+                      familyPlans[Math.floor((familyPlans.length - 1) / 2)]?.id
+                    const record = planRecordMap.get(plan.id)
+                    if (!record) return null
+                    return (
+                      <SubscriptionPlanCard
+                        key={plan.id}
+                        record={record}
+                        family={selectedFamilyGroup.family}
+                        isPopular={plan.id === familyRecommended}
+                        purchaseCount={planPurchaseCountMap.get(plan.id) || 0}
+                        rechargeEnabled={rechargeEnabled}
+                        onSelect={(selected) => {
+                          setSelectedPlan(selected)
+                          setPurchaseOpen(true)
+                        }}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </section>
-        ) : !rechargeEnabled ? (
-          <Alert variant='destructive'>
-            <AlertDescription>
-              {t(
-                'Subscription is locked for this account. Please join the official group and contact an administrator to enable subscription access.'
-              )}
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <p className='text-muted-foreground py-4 text-center text-sm'>
-            {t('No plans available')}
-          </p>
         )}
+
+        {displayPlans.length === 0 &&
+          (!rechargeEnabled ? (
+            <Alert variant='destructive'>
+              <AlertDescription>
+                {t(
+                  'Subscription is locked for this account. Please join the official group and contact an administrator to enable subscription access.'
+                )}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <p className='text-muted-foreground py-4 text-center text-sm'>
+              {t('No plans available')}
+            </p>
+          ))}
       </div>
 
       <SubscriptionPurchaseDialog
         open={purchaseOpen}
         onOpenChange={(open) => {
           setPurchaseOpen(open)
-          if (!open) {
-            fetchSelfSubscription()
-          }
+          if (!open) void fetchSelfSubscription()
         }}
         plan={selectedPlan}
         enableStripe={enableStripe}

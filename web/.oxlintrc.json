@@ -16,6 +16,7 @@
     "build",
     "coverage",
     ".tanstack",
+    "infinite-canvas",
     ".eslintrc.cjs",
     "src/components/ui",
     "src/routeTree.gen.ts"

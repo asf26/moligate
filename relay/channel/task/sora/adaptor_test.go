@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -38,4 +39,10 @@ func TestSoraBuildRequestBodyReturnsReplayablePassThroughBody(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, replayBody.Close())
 	assert.Equal(t, payload, replay)
+}
+
+func TestParseTaskResultKeepsUnknownStableVideoTaskQueued(t *testing.T) {
+	result, err := (&TaskAdaptor{}).ParseTaskResult([]byte(`{"id":"video-task","status":"unknown"}`))
+	require.NoError(t, err)
+	assert.Equal(t, model.TaskStatusQueued, result.Status)
 }

@@ -39,6 +39,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/task/hailuo"
 	taskjimeng "github.com/QuantumNous/new-api/relay/channel/task/jimeng"
 	"github.com/QuantumNous/new-api/relay/channel/task/kling"
+	taskminimaxh3 "github.com/QuantumNous/new-api/relay/channel/task/minimax_h3"
 	tasksora "github.com/QuantumNous/new-api/relay/channel/task/sora"
 	"github.com/QuantumNous/new-api/relay/channel/task/suno"
 	taskvertex "github.com/QuantumNous/new-api/relay/channel/task/vertex"
@@ -50,6 +51,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/xunfei"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu_4v"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 )
 
@@ -147,6 +149,8 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 	//	return &aiproxy.Adaptor{}
 	case constant.TaskPlatformSuno:
 		return &suno.TaskAdaptor{}
+	case constant.TaskPlatformMiniMaxH3:
+		return &taskminimaxh3.TaskAdaptor{}
 	}
 	if channelType, err := strconv.ParseInt(string(platform), 10, 64); err == nil {
 		switch channelType {
@@ -162,7 +166,7 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 			return &taskVidu.TaskAdaptor{}
 		case constant.ChannelTypeDoubaoVideo, constant.ChannelTypeVolcEngine:
 			return &taskdoubao.TaskAdaptor{}
-		case constant.ChannelTypeSora, constant.ChannelTypeOpenAI:
+		case constant.ChannelTypeSora, constant.ChannelTypeOpenAI, constant.ChannelTypeNewAPI:
 			return &tasksora.TaskAdaptor{}
 		case constant.ChannelTypeGemini:
 			return &taskGemini.TaskAdaptor{}
@@ -171,4 +175,17 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 		}
 	}
 	return nil
+}
+
+// GetTaskAdaptorForInfo selects the H3 adapter for a MiniMax channel when the
+// configured model is one of the OpenAI-compatible MiniMax H3 models. Legacy
+// MiniMax tasks continue to use the Hailuo adapter and platform value.
+func GetTaskAdaptorForInfo(platform constant.TaskPlatform, info *relaycommon.RelayInfo) channel.TaskAdaptor {
+	if platform == constant.TaskPlatformMiniMaxH3 {
+		return &taskminimaxh3.TaskAdaptor{}
+	}
+	if info != nil && info.ChannelType == constant.ChannelTypeMiniMax && taskminimaxh3.IsModel(info.OriginModelName) {
+		return &taskminimaxh3.TaskAdaptor{}
+	}
+	return GetTaskAdaptor(platform)
 }

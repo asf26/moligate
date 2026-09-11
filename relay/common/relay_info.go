@@ -866,16 +866,22 @@ type TaskRelayInfo struct {
 }
 
 type TaskSubmitReq struct {
-	Prompt         string                 `json:"prompt"`
-	Model          string                 `json:"model,omitempty"`
-	Mode           string                 `json:"mode,omitempty"`
-	Image          string                 `json:"image,omitempty"`
-	Images         []string               `json:"images,omitempty"`
-	Size           string                 `json:"size,omitempty"`
-	Duration       int                    `json:"duration,omitempty"`
-	Seconds        string                 `json:"seconds,omitempty"`
-	InputReference string                 `json:"input_reference,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	Prompt          string                 `json:"prompt"`
+	Model           string                 `json:"model,omitempty"`
+	Mode            string                 `json:"mode,omitempty"`
+	Image           string                 `json:"image,omitempty"`
+	Images          []string               `json:"images,omitempty"`
+	Size            string                 `json:"size,omitempty"`
+	Duration        int                    `json:"duration,omitempty"`
+	Seconds         string                 `json:"seconds,omitempty"`
+	InputReference  string                 `json:"input_reference,omitempty"`
+	AspectRatio     string                 `json:"aspect_ratio,omitempty"`
+	WorkflowID      string                 `json:"workflow_id,omitempty"`
+	ReferenceVideos []string               `json:"reference_videos,omitempty"`
+	ReferenceAudios []string               `json:"reference_audios,omitempty"`
+	ReferenceVideo  string                 `json:"reference_video,omitempty"`
+	ReferenceAudio  string                 `json:"reference_audio,omitempty"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty"`
 }
 
 func (t *TaskSubmitReq) GetPrompt() string {
@@ -891,6 +897,7 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	aux := &struct {
 		Metadata json.RawMessage `json:"metadata,omitempty"`
 		Duration json.RawMessage `json:"duration,omitempty"`
+		Seconds  json.RawMessage `json:"seconds,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(t),
@@ -909,6 +916,28 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 			if err := common.Unmarshal(aux.Duration, &durationStr); err == nil && durationStr != "" {
 				if v, err := strconv.Atoi(durationStr); err == nil {
 					t.Duration = v
+				}
+			}
+		}
+	}
+
+	if len(aux.Seconds) > 0 && string(aux.Seconds) != "null" {
+		var secondsString string
+		if err := common.Unmarshal(aux.Seconds, &secondsString); err == nil {
+			t.Seconds = secondsString
+		} else {
+			// The OpenAI video contract accepts a number while older gateway
+			// clients send a string. Keep one normalized representation for all
+			// adaptors and let validation reject malformed/overflowing values.
+			raw := strings.TrimSpace(string(aux.Seconds))
+			if seconds, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil {
+				t.Seconds = strconv.FormatInt(seconds, 10)
+			} else {
+				var secondsFloat float64
+				if floatErr := common.Unmarshal(aux.Seconds, &secondsFloat); floatErr == nil && secondsFloat >= 0 && secondsFloat <= float64(^uint(0)>>1) && secondsFloat == float64(int64(secondsFloat)) {
+					t.Seconds = strconv.FormatInt(int64(secondsFloat), 10)
+				} else {
+					t.Seconds = raw
 				}
 			}
 		}

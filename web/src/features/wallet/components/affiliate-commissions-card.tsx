@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { HandCoins } from 'lucide-react'
+import { HandCoins, Percent, UsersRound } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -38,17 +38,19 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
+  getSelfAffiliateInvitees,
   getSelfAffiliateRewardPointSettlements,
   getSelfAffiliateSummary,
   quoteSelfAffiliateRewardPoints,
   redeemSelfAffiliateRewardPoints,
 } from '@/features/affiliate-commissions/api'
+import { AffiliateInviteesTable } from '@/features/affiliate-commissions/components/affiliate-invitees-table'
 import type { AffiliateRewardPointSettlement } from '@/features/affiliate-commissions/types'
 import { useDebounce } from '@/hooks'
 import { getSelf } from '@/lib/api'
-import { formatQuota, formatTimestamp } from '@/lib/format'
+import { formatTimestamp } from '@/lib/format'
 
-import { formatRewardPoints } from '../lib'
+import { formatRewardPoints, formatWalletQuota } from '../lib'
 
 function formatPoints(points: number | undefined) {
   return formatRewardPoints(points || 0)
@@ -80,12 +82,25 @@ export function AffiliateCommissionsCard() {
     queryFn: () =>
       getSelfAffiliateRewardPointSettlements({ p: 1, page_size: 8 }),
   })
+  const inviteesQuery = useQuery({
+    queryKey: ['self-affiliate-invitees'],
+    queryFn: () => getSelfAffiliateInvitees({ p: 1, page_size: 50 }),
+  })
 
   const summary = summaryQuery.data?.data
   const rows = settlementsQuery.data?.data?.items || []
-  const loading = summaryQuery.isLoading || settlementsQuery.isLoading
+  const inviteeRows = inviteesQuery.data?.data?.items || []
+  const inviteeTotal =
+    inviteesQuery.data?.data?.total || summary?.invite_count || 0
+  const loading =
+    summaryQuery.isLoading ||
+    settlementsQuery.isLoading ||
+    inviteesQuery.isLoading
   const pendingPoints = summary?.pending_points || 0
   const processedPoints = getProcessedPoints(summary)
+
+  const formatRate = (rateBps: number | undefined) =>
+    `${((rateBps || 0) / 100).toFixed(2).replace(/\.00$/, '')}%`
   const redeemPoints = Number(redeemPointsInput)
   const redeemPointsEntered = redeemPointsInput.trim().length > 0
   const redeemPointsValid =
@@ -125,7 +140,7 @@ export function AffiliateCommissionsCard() {
         return
       }
       const redeemedPoints = formatPoints(res.data?.redeemed_points)
-      const walletAmount = formatQuota(res.data?.redeemed_quota || 0)
+      const walletAmount = formatWalletQuota(res.data?.redeemed_quota || 0)
       toast.success(
         t('Redeemed {{points}} points, added {{walletAmount}}', {
           points: redeemedPoints,
@@ -173,8 +188,8 @@ export function AffiliateCommissionsCard() {
 
   return (
     <>
-      <Card className='bg-muted/20 py-0'>
-        <CardContent className='space-y-4 p-3 sm:p-4'>
+      <Card className='bg-background py-0'>
+        <CardContent className='space-y-5 p-4 sm:p-6'>
           <div className='flex min-w-0 items-center gap-2.5'>
             <div className='bg-background flex size-8 shrink-0 items-center justify-center rounded-lg border'>
               <HandCoins className='text-muted-foreground size-4' />
@@ -201,24 +216,32 @@ export function AffiliateCommissionsCard() {
             </Button>
           </div>
 
-          <div className='grid gap-2 sm:grid-cols-3'>
+          <div className='grid gap-2 sm:grid-cols-4'>
             {[
               {
                 label: t('Pending Points'),
                 value: formatPoints(summary?.pending_points),
+                unit: t('points'),
               },
               {
                 label: t('Redeemed Points'),
                 value: formatPoints(processedPoints),
+                unit: t('points'),
               },
               {
                 label: t('Total Points'),
                 value: formatPoints(summary?.total_points),
+                unit: t('points'),
+              },
+              {
+                label: t('Invited users'),
+                value: String(inviteeTotal),
+                unit: '',
               },
             ].map((item) => (
               <div
                 key={item.label}
-                className='bg-background rounded-lg border p-3'
+                className='bg-muted/20 rounded-xl border p-3.5'
               >
                 <div className='text-muted-foreground text-xs font-medium'>
                   {item.label}
@@ -227,57 +250,118 @@ export function AffiliateCommissionsCard() {
                   <Skeleton className='mt-2 h-5 w-24' />
                 ) : (
                   <div className='mt-1 text-sm font-semibold tabular-nums'>
-                    {item.value} {t('points')}
+                    {item.value} {item.unit}
                   </div>
                 )}
               </div>
             ))}
           </div>
 
-          <div className='bg-background divide-y rounded-lg border'>
-            {loading ? (
-              Array.from({ length: 3 }).map((_, index) => (
-                <div key={index} className='flex items-center gap-3 p-3'>
-                  <Skeleton className='h-4 w-24' />
-                  <Skeleton className='h-4 flex-1' />
-                  <Skeleton className='h-4 w-20' />
-                </div>
-              ))
-            ) : rows.length === 0 ? (
-              <div className='text-muted-foreground p-3 text-sm'>
-                {t('No reward point activity')}
+          <div className='space-y-3 border-t pt-5'>
+            <div className='flex items-center gap-2'>
+              <Percent className='text-primary size-4' />
+              <div>
+                <h4 className='text-sm font-semibold'>
+                  {t('Invitation reward rates')}
+                </h4>
+                <p className='text-muted-foreground text-xs'>
+                  {t(
+                    'Rates apply to each credited wallet top-up from your invitees.'
+                  )}
+                </p>
               </div>
-            ) : (
-              rows.map((row) => (
-                <div
-                  key={row.id}
-                  className='grid gap-2 p-3 text-sm sm:grid-cols-[140px_minmax(0,1fr)_160px] sm:items-center'
-                >
-                  <Badge
-                    variant={
-                      row.settlement_type === 'wallet' ? 'secondary' : 'outline'
-                    }
+            </div>
+            <div className='grid gap-2 sm:grid-cols-2'>
+              {[
+                [
+                  t('Level 1 reward rate'),
+                  formatRate(summary?.level1_rate_bps),
+                ],
+                [
+                  t('Points per paid unit'),
+                  String(summary?.points_per_amount_unit || 0),
+                ],
+              ].map(([label, value]) => (
+                <div key={label} className='bg-muted/20 rounded-xl border p-3'>
+                  <div className='text-muted-foreground text-xs'>{label}</div>
+                  <div className='mt-1 text-lg font-semibold tabular-nums'>
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className='space-y-3 border-t pt-5'>
+            <div className='flex items-center gap-2'>
+              <UsersRound className='text-primary size-4' />
+              <div>
+                <h4 className='text-sm font-semibold'>{t('Invited users')}</h4>
+                <p className='text-muted-foreground text-xs'>
+                  {t(
+                    'See each invitee and the reward points their top-ups contributed.'
+                  )}
+                </p>
+              </div>
+            </div>
+            <AffiliateInviteesTable
+              items={inviteeRows}
+              total={inviteeTotal}
+              isLoading={inviteesQuery.isLoading}
+            />
+          </div>
+
+          <div className='space-y-3 border-t pt-5'>
+            <h4 className='text-sm font-semibold'>
+              {t('Invitation activity')}
+            </h4>
+            <div className='bg-muted/10 divide-y rounded-xl border'>
+              {loading ? (
+                Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className='flex items-center gap-3 p-3'>
+                    <Skeleton className='h-4 w-24' />
+                    <Skeleton className='h-4 flex-1' />
+                    <Skeleton className='h-4 w-20' />
+                  </div>
+                ))
+              ) : rows.length === 0 ? (
+                <div className='text-muted-foreground p-3 text-sm'>
+                  {t('No reward point activity')}
+                </div>
+              ) : (
+                rows.map((row) => (
+                  <div
+                    key={row.id}
+                    className='grid gap-2 p-3 text-sm sm:grid-cols-[140px_minmax(0,1fr)_160px] sm:items-center'
                   >
-                    {t(getSettlementLabelKey(row))}
-                  </Badge>
-                  <div className='min-w-0'>
-                    <div className='font-medium tabular-nums'>
-                      {formatPoints(row.points)} {t('points')}
+                    <Badge
+                      variant={
+                        row.settlement_type === 'wallet'
+                          ? 'secondary'
+                          : 'outline'
+                      }
+                    >
+                      {t(getSettlementLabelKey(row))}
+                    </Badge>
+                    <div className='min-w-0'>
+                      <div className='font-medium tabular-nums'>
+                        {formatPoints(row.points)} {t('points')}
+                      </div>
+                      <div className='text-muted-foreground text-xs'>
+                        {row.wallet_quota > 0
+                          ? t('Wallet credit: {{amount}}', {
+                              amount: formatWalletQuota(row.wallet_quota),
+                            })
+                          : t('Processed points')}
+                      </div>
                     </div>
                     <div className='text-muted-foreground text-xs'>
-                      {row.wallet_quota > 0
-                        ? t('Wallet credit: {{amount}}', {
-                            amount: formatQuota(row.wallet_quota),
-                          })
-                        : t('Processed points')}
+                      {formatTimestamp(row.settled_at || row.created_at)}
                     </div>
                   </div>
-                  <div className='text-muted-foreground text-xs'>
-                    {formatTimestamp(row.settled_at || row.created_at)}
-                  </div>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -350,7 +434,7 @@ export function AffiliateCommissionsCard() {
                   <Skeleton className='mt-2 h-6 w-28' />
                 ) : quote ? (
                   <div className='mt-1 text-lg font-semibold tabular-nums'>
-                    {formatQuota(quote.redeemed_quota)}
+                    {formatWalletQuota(quote.redeemed_quota)}
                   </div>
                 ) : (
                   <div className='text-muted-foreground mt-1 text-sm'>

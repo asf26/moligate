@@ -57,6 +57,7 @@ var defaultModelRatio = map[string]float64{
 	"gpt-4.1-nano":                              0.05, // $0.1 / 1M tokens
 	"gpt-4.1-nano-2025-04-14":                   0.05, // $0.1 / 1M tokens
 	"gpt-image-1":                               2.5,  // $5 / 1M tokens
+	"gpt-image-2":                               2.5,  // fallback; override in model settings when provider pricing differs
 	"o1":                                        7.5,  // $15 / 1M tokens
 	"o1-2024-12-17":                             7.5,  // $15 / 1M tokens
 	"o1-preview":                                7.5,  // $15 / 1M tokens
@@ -296,6 +297,14 @@ var defaultModelPrice = map[string]float64{
 	"mj_upload":                      0.05,
 	"sora-2":                         0.3,
 	"sora-2-pro":                     0.5,
+	"minimax-h3-original-768p":       0.1,
+	"minimax-h3-original-1080p":      0.15,
+	"minimax-h3-original-cf-2k":      0.15,
+	"minimax-h3-original-cf-4k":      0.19,
+	"minimax-h3-comic-768p":          0.13,
+	"minimax-h3-comic-cf-2k":         0.19,
+	"minimax-h3-comic-cf-4k":         0.23,
+	"minimax-h3-quantized-768p":      0.04,
 	"gpt-4o-mini-tts":                0.3,
 	"veo-3.0-generate-001":           0.4,
 	"veo-3.0-fast-generate-001":      0.15,
@@ -330,6 +339,7 @@ var defaultCompletionRatio = map[string]float64{
 	"gpt-4o-gizmo-*": 3,
 	"gpt-4-all":      2,
 	"gpt-image-1":    8,
+	"gpt-image-2":    8,
 }
 
 // InitRatioSettings initializes all model related settings maps
@@ -637,6 +647,7 @@ func ModelRatio2JSONString() string {
 
 var defaultImageRatio = map[string]float64{
 	"gpt-image-1": 2,
+	"gpt-image-2": 2,
 }
 var imageRatioMap = types.NewRWMap[string, float64]()
 var audioRatioMap = types.NewRWMap[string, float64]()

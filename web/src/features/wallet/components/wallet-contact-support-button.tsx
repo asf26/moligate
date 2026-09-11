@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { MessageCircle, Video } from 'lucide-react'
+import { MessageCircle } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -34,7 +34,13 @@ import { useTheme } from '@/context/theme-provider'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { cn } from '@/lib/utils'
 
-export function WalletContactSupportButton() {
+interface WalletContactSupportButtonProps {
+  className?: string
+}
+
+export function WalletContactSupportButton(
+  props: WalletContactSupportButtonProps
+) {
   const { t } = useTranslation()
   const { qqGroup, wechatGroup, loading } = useSystemConfig()
   const { resolvedTheme } = useTheme()
@@ -82,11 +88,8 @@ export function WalletContactSupportButton() {
     <Dialog>
       <DialogTrigger
         render={
-          <Button
-            size='sm'
-            className='w-full border-0 bg-zinc-950 px-3 text-white shadow-lg shadow-cyan-500/15 hover:bg-zinc-900 sm:w-auto dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-white'
-          >
-            <Video data-icon='inline-start' />
+          <Button size='sm' className={cn('w-full px-3', props.className)}>
+            <MessageCircle data-icon='inline-start' />
             {t('Contact support')}
           </Button>
         }

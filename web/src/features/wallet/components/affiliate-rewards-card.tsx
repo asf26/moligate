@@ -25,7 +25,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatQuota } from '@/lib/format'
 
 import type { UserWalletData } from '../types'
 
@@ -45,86 +44,94 @@ export function AffiliateRewardsCard({
   loading,
 }: AffiliateRewardsCardProps) {
   const { t } = useTranslation()
+
   if (loading) {
     return (
-      <Card data-card-hover='false' className='bg-muted/20 py-0'>
-        <CardContent className='grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,0.72fr)_minmax(320px,1.15fr)] lg:items-center'>
-          <div>
-            <Skeleton className='h-5 w-32' />
-            <Skeleton className='mt-2 h-4 w-48' />
+      <Card
+        data-card-hover='false'
+        className='border-primary/15 bg-primary/[0.03] py-0'
+      >
+        <CardContent className='space-y-5 p-4 sm:p-5'>
+          <div className='flex items-center gap-3'>
+            <Skeleton className='size-10 rounded-xl' />
+            <div className='space-y-2'>
+              <Skeleton className='h-5 w-40' />
+              <Skeleton className='h-4 w-64 max-w-[60vw]' />
+            </div>
           </div>
-          <Skeleton className='h-14 rounded-lg' />
-          <Skeleton className='h-10 rounded-lg' />
+          <Skeleton className='h-20 rounded-xl' />
         </CardContent>
       </Card>
     )
   }
 
   const hasRewards = (user?.aff_quota ?? 0) > 0
-
   return (
-    <Card data-card-hover='false' className='bg-muted/20 py-0'>
-      <CardContent className='grid gap-3 p-3 sm:gap-4 sm:p-4 lg:grid-cols-[minmax(200px,1fr)_minmax(180px,0.65fr)_minmax(280px,1fr)] lg:items-center'>
-        <div className='flex min-w-0 items-center gap-2.5'>
-          <IconBadge tone='chart-3'>
-            <Share2 />
-          </IconBadge>
-          <div className='min-w-0'>
-            <h3 className='truncate text-sm font-semibold'>
-              {t('Registration Invite Rewards')}
-            </h3>
-            <p className='text-muted-foreground line-clamp-1 text-xs'>
-              {t(
-                'Earn quota rewards when invited users register. Transfer accumulated rewards to your balance anytime.'
-              )}
-            </p>
-          </div>
-        </div>
-
-        <div className='grid grid-cols-3 gap-1.5 text-center'>
-          {[
-            [t('Pending'), formatQuota(user?.aff_quota ?? 0)],
-            [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
-            [t('Invites'), String(user?.aff_count ?? 0)],
-          ].map(([label, value]) => (
-            <div key={label}>
-              <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
-                {label}
-              </div>
-              <div className='mt-0.5 truncate text-sm font-semibold tabular-nums'>
-                {value}
-              </div>
+    <Card
+      data-card-hover='false'
+      className='border-primary/20 bg-primary/[0.035] py-0'
+    >
+      <CardContent className='p-4 sm:p-5'>
+        <div className='flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between'>
+          <div className='flex min-w-0 items-start gap-3'>
+            <IconBadge tone='chart-3' size='lg'>
+              <Share2 />
+            </IconBadge>
+            <div className='min-w-0'>
+              <h3 className='text-base font-semibold tracking-tight sm:text-lg'>
+                {t('Registration Invite Rewards')}
+              </h3>
+              <p className='text-muted-foreground mt-1 max-w-2xl text-xs leading-5 sm:text-sm'>
+                {t(
+                  'Earn quota rewards when invited users register. Transfer accumulated rewards to your balance anytime.'
+                )}
+              </p>
             </div>
-          ))}
-        </div>
+          </div>
 
-        <div className='flex items-center gap-2'>
-          <Input
-            value={affiliateLink}
-            readOnly
-            className='border-muted bg-background/70 h-9 min-w-0 flex-1 font-mono text-xs'
-          />
-          <CopyButton
-            value={affiliateLink}
-            variant='outline'
-            className='bg-background size-9 shrink-0'
-            iconClassName='size-4'
-            tooltip={t('Copy referral link')}
-            aria-label={t('Copy referral link')}
-          />
           {hasRewards && (
             <Button
               onClick={onTransfer}
               disabled={!complianceConfirmed}
-              className='h-9 shrink-0 px-3'
               size='sm'
+              className='w-full shrink-0 sm:w-auto'
             >
               {t('Transfer to Balance')}
             </Button>
           )}
         </div>
+
+        <div className='bg-background/80 mt-5 rounded-xl border p-3 sm:p-4'>
+          <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+            <div className='min-w-0'>
+              <p className='text-muted-foreground text-xs font-medium tracking-[0.14em] uppercase'>
+                {t('Referral link:')}
+              </p>
+              <p className='text-muted-foreground mt-1 text-xs'>
+                {t('Share your link and earn rewards')}
+              </p>
+            </div>
+            <div className='flex w-full min-w-0 items-center gap-2 sm:max-w-[34rem]'>
+              <Input
+                value={affiliateLink}
+                readOnly
+                aria-label={t('Referral link:')}
+                className='border-muted bg-background h-9 min-w-0 flex-1 font-mono text-xs'
+              />
+              <CopyButton
+                value={affiliateLink}
+                variant='outline'
+                className='bg-background size-9'
+                iconClassName='size-4'
+                tooltip={t('Copy referral link')}
+                aria-label={t('Copy referral link')}
+              />
+            </div>
+          </div>
+        </div>
+
         {!complianceConfirmed ? (
-          <p className='text-muted-foreground text-xs lg:col-span-3'>
+          <p className='text-muted-foreground mt-3 text-xs leading-5'>
             {t(
               'Referral reward transfer is disabled until the administrator confirms compliance terms.'
             )}

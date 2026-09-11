@@ -26,6 +26,7 @@ import { Route as errors403RouteImport } from './routes/(errors)/403'
 import { Route as errors404RouteImport } from './routes/(errors)/404'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
+import { Route as AuthenticatedCanvasRouteRouteImport } from './routes/_authenticated/canvas/route'
 import { Route as AuthenticatedChat2linkRouteImport } from './routes/_authenticated/chat2link'
 import { Route as AuthenticatedSystemSettingsRouteRouteImport } from './routes/_authenticated/system-settings/route'
 import { Route as AboutIndexRouteImport } from './routes/about/index'
@@ -38,12 +39,16 @@ import { Route as authUserResetRouteImport } from './routes/(auth)/user/reset'
 import { Route as AuthenticatedAffiliateCdkIndexRouteImport } from './routes/_authenticated/affiliate-cdk/index'
 import { Route as AuthenticatedAffiliateCommissionsIndexRouteImport } from './routes/_authenticated/affiliate-commissions/index'
 import { Route as AuthenticatedAffiliateIndexRouteImport } from './routes/_authenticated/affiliate/index'
+import { Route as AuthenticatedCanvasIndexRouteImport } from './routes/_authenticated/canvas/index'
+import { Route as AuthenticatedCanvasImageRouteImport } from './routes/_authenticated/canvas/image'
+import { Route as AuthenticatedCanvasVideoRouteImport } from './routes/_authenticated/canvas/video'
 import { Route as AuthenticatedChannelMonitorsIndexRouteImport } from './routes/_authenticated/channel-monitors/index'
 import { Route as AuthenticatedChannelStatusIndexRouteImport } from './routes/_authenticated/channel-status/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
+import { Route as AuthenticatedEnterpriseBillingIndexRouteImport } from './routes/_authenticated/enterprise-billing/index'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
@@ -52,6 +57,7 @@ import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
 import { Route as AuthenticatedSubscriptionPlansIndexRouteImport } from './routes/_authenticated/subscription-plans/index'
+import { Route as AuthenticatedSubscriptionUsageIndexRouteImport } from './routes/_authenticated/subscription-usage/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
 import { Route as AuthenticatedSystemInfoIndexRouteImport } from './routes/_authenticated/system-info/index'
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
@@ -158,6 +164,12 @@ const errors503Route = errors503RouteImport.update({
   path: '/503',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedCanvasRouteRoute =
+  AuthenticatedCanvasRouteRouteImport.update({
+    id: '/canvas',
+    path: '/canvas',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedChat2linkRoute = AuthenticatedChat2linkRouteImport.update({
   id: '/chat2link',
   path: '/chat2link',
@@ -222,6 +234,24 @@ const AuthenticatedAffiliateIndexRoute =
     path: '/affiliate/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedCanvasIndexRoute =
+  AuthenticatedCanvasIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedCanvasRouteRoute,
+  } as any)
+const AuthenticatedCanvasImageRoute =
+  AuthenticatedCanvasImageRouteImport.update({
+    id: '/image',
+    path: '/image',
+    getParentRoute: () => AuthenticatedCanvasRouteRoute,
+  } as any)
+const AuthenticatedCanvasVideoRoute =
+  AuthenticatedCanvasVideoRouteImport.update({
+    id: '/video',
+    path: '/video',
+    getParentRoute: () => AuthenticatedCanvasRouteRoute,
+  } as any)
 const AuthenticatedChannelMonitorsIndexRoute =
   AuthenticatedChannelMonitorsIndexRouteImport.update({
     id: '/channel-monitors/',
@@ -255,6 +285,12 @@ const AuthenticatedDashboardSectionRoute =
   AuthenticatedDashboardSectionRouteImport.update({
     id: '/dashboard/$section',
     path: '/dashboard/$section',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedEnterpriseBillingIndexRoute =
+  AuthenticatedEnterpriseBillingIndexRouteImport.update({
+    id: '/enterprise-billing/',
+    path: '/enterprise-billing/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedErrorsErrorRoute =
@@ -302,6 +338,12 @@ const AuthenticatedSubscriptionPlansIndexRoute =
   AuthenticatedSubscriptionPlansIndexRouteImport.update({
     id: '/subscription-plans/',
     path: '/subscription-plans/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSubscriptionUsageIndexRoute =
+  AuthenticatedSubscriptionUsageIndexRouteImport.update({
+    id: '/subscription-usage/',
+    path: '/subscription-usage/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSubscriptionsIndexRoute =
@@ -439,6 +481,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/user-agreement': typeof UserAgreementRoute
+  '/canvas': typeof AuthenticatedCanvasRouteRouteWithChildren
   '/system-settings': typeof AuthenticatedSystemSettingsRouteRouteWithChildren
   '/forgot-password': typeof authForgotPasswordRoute
   '/oauth': typeof authOauthRoute
@@ -460,6 +503,8 @@ export interface FileRoutesByFullPath {
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/user/reset': typeof authUserResetRoute
+  '/canvas/image': typeof AuthenticatedCanvasImageRoute
+  '/canvas/video': typeof AuthenticatedCanvasVideoRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
@@ -468,16 +513,19 @@ export interface FileRoutesByFullPath {
   '/affiliate-cdk/': typeof AuthenticatedAffiliateCdkIndexRoute
   '/affiliate-commissions/': typeof AuthenticatedAffiliateCommissionsIndexRoute
   '/affiliate/': typeof AuthenticatedAffiliateIndexRoute
+  '/canvas/': typeof AuthenticatedCanvasIndexRoute
   '/channel-monitors/': typeof AuthenticatedChannelMonitorsIndexRoute
   '/channel-status/': typeof AuthenticatedChannelStatusIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/enterprise-billing/': typeof AuthenticatedEnterpriseBillingIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/subscription-plans/': typeof AuthenticatedSubscriptionPlansIndexRoute
+  '/subscription-usage/': typeof AuthenticatedSubscriptionUsageIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-info/': typeof AuthenticatedSystemInfoIndexRoute
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
@@ -524,6 +572,8 @@ export interface FileRoutesByTo {
   '/rankings': typeof RankingsIndexRoute
   '/setup': typeof SetupIndexRoute
   '/user/reset': typeof authUserResetRoute
+  '/canvas/image': typeof AuthenticatedCanvasImageRoute
+  '/canvas/video': typeof AuthenticatedCanvasVideoRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
@@ -532,16 +582,19 @@ export interface FileRoutesByTo {
   '/affiliate-cdk': typeof AuthenticatedAffiliateCdkIndexRoute
   '/affiliate-commissions': typeof AuthenticatedAffiliateCommissionsIndexRoute
   '/affiliate': typeof AuthenticatedAffiliateIndexRoute
+  '/canvas': typeof AuthenticatedCanvasIndexRoute
   '/channel-monitors': typeof AuthenticatedChannelMonitorsIndexRoute
   '/channel-status': typeof AuthenticatedChannelStatusIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
+  '/enterprise-billing': typeof AuthenticatedEnterpriseBillingIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
   '/subscription-plans': typeof AuthenticatedSubscriptionPlansIndexRoute
+  '/subscription-usage': typeof AuthenticatedSubscriptionUsageIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-info': typeof AuthenticatedSystemInfoIndexRoute
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
@@ -571,6 +624,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/user-agreement': typeof UserAgreementRoute
+  '/_authenticated/canvas': typeof AuthenticatedCanvasRouteRouteWithChildren
   '/_authenticated/system-settings': typeof AuthenticatedSystemSettingsRouteRouteWithChildren
   '/(auth)/forgot-password': typeof authForgotPasswordRoute
   '/(auth)/oauth': typeof authOauthRoute
@@ -592,6 +646,8 @@ export interface FileRoutesById {
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/(auth)/user/reset': typeof authUserResetRoute
+  '/_authenticated/canvas/image': typeof AuthenticatedCanvasImageRoute
+  '/_authenticated/canvas/video': typeof AuthenticatedCanvasVideoRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
@@ -600,16 +656,19 @@ export interface FileRoutesById {
   '/_authenticated/affiliate-cdk/': typeof AuthenticatedAffiliateCdkIndexRoute
   '/_authenticated/affiliate-commissions/': typeof AuthenticatedAffiliateCommissionsIndexRoute
   '/_authenticated/affiliate/': typeof AuthenticatedAffiliateIndexRoute
+  '/_authenticated/canvas/': typeof AuthenticatedCanvasIndexRoute
   '/_authenticated/channel-monitors/': typeof AuthenticatedChannelMonitorsIndexRoute
   '/_authenticated/channel-status/': typeof AuthenticatedChannelStatusIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/_authenticated/enterprise-billing/': typeof AuthenticatedEnterpriseBillingIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/_authenticated/subscription-plans/': typeof AuthenticatedSubscriptionPlansIndexRoute
+  '/_authenticated/subscription-usage/': typeof AuthenticatedSubscriptionUsageIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/_authenticated/system-info/': typeof AuthenticatedSystemInfoIndexRoute
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
@@ -638,6 +697,7 @@ export interface FileRouteTypes {
     | '/'
     | '/privacy-policy'
     | '/user-agreement'
+    | '/canvas'
     | '/system-settings'
     | '/forgot-password'
     | '/oauth'
@@ -659,6 +719,8 @@ export interface FileRouteTypes {
     | '/rankings/'
     | '/setup/'
     | '/user/reset'
+    | '/canvas/image'
+    | '/canvas/video'
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
@@ -667,16 +729,19 @@ export interface FileRouteTypes {
     | '/affiliate-cdk/'
     | '/affiliate-commissions/'
     | '/affiliate/'
+    | '/canvas/'
     | '/channel-monitors/'
     | '/channel-status/'
     | '/channels/'
     | '/dashboard/'
+    | '/enterprise-billing/'
     | '/keys/'
     | '/models/'
     | '/playground/'
     | '/profile/'
     | '/redemption-codes/'
     | '/subscription-plans/'
+    | '/subscription-usage/'
     | '/subscriptions/'
     | '/system-info/'
     | '/system-settings/'
@@ -723,6 +788,8 @@ export interface FileRouteTypes {
     | '/rankings'
     | '/setup'
     | '/user/reset'
+    | '/canvas/image'
+    | '/canvas/video'
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
@@ -731,16 +798,19 @@ export interface FileRouteTypes {
     | '/affiliate-cdk'
     | '/affiliate-commissions'
     | '/affiliate'
+    | '/canvas'
     | '/channel-monitors'
     | '/channel-status'
     | '/channels'
     | '/dashboard'
+    | '/enterprise-billing'
     | '/keys'
     | '/models'
     | '/playground'
     | '/profile'
     | '/redemption-codes'
     | '/subscription-plans'
+    | '/subscription-usage'
     | '/subscriptions'
     | '/system-info'
     | '/system-settings'
@@ -769,6 +839,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/privacy-policy'
     | '/user-agreement'
+    | '/_authenticated/canvas'
     | '/_authenticated/system-settings'
     | '/(auth)/forgot-password'
     | '/(auth)/oauth'
@@ -790,6 +861,8 @@ export interface FileRouteTypes {
     | '/rankings/'
     | '/setup/'
     | '/(auth)/user/reset'
+    | '/_authenticated/canvas/image'
+    | '/_authenticated/canvas/video'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dashboard/$section'
     | '/_authenticated/errors/$error'
@@ -798,16 +871,19 @@ export interface FileRouteTypes {
     | '/_authenticated/affiliate-cdk/'
     | '/_authenticated/affiliate-commissions/'
     | '/_authenticated/affiliate/'
+    | '/_authenticated/canvas/'
     | '/_authenticated/channel-monitors/'
     | '/_authenticated/channel-status/'
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
+    | '/_authenticated/enterprise-billing/'
     | '/_authenticated/keys/'
     | '/_authenticated/models/'
     | '/_authenticated/playground/'
     | '/_authenticated/profile/'
     | '/_authenticated/redemption-codes/'
     | '/_authenticated/subscription-plans/'
+    | '/_authenticated/subscription-usage/'
     | '/_authenticated/subscriptions/'
     | '/_authenticated/system-info/'
     | '/_authenticated/system-settings/'
@@ -972,6 +1048,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof errors503RouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/canvas': {
+      id: '/_authenticated/canvas'
+      path: '/canvas'
+      fullPath: '/canvas'
+      preLoaderRoute: typeof AuthenticatedCanvasRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/chat2link': {
       id: '/_authenticated/chat2link'
       path: '/chat2link'
@@ -1056,6 +1139,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAffiliateIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/canvas/': {
+      id: '/_authenticated/canvas/'
+      path: '/'
+      fullPath: '/canvas/'
+      preLoaderRoute: typeof AuthenticatedCanvasIndexRouteImport
+      parentRoute: typeof AuthenticatedCanvasRouteRoute
+    }
+    '/_authenticated/canvas/image': {
+      id: '/_authenticated/canvas/image'
+      path: '/image'
+      fullPath: '/canvas/image'
+      preLoaderRoute: typeof AuthenticatedCanvasImageRouteImport
+      parentRoute: typeof AuthenticatedCanvasRouteRoute
+    }
+    '/_authenticated/canvas/video': {
+      id: '/_authenticated/canvas/video'
+      path: '/video'
+      fullPath: '/canvas/video'
+      preLoaderRoute: typeof AuthenticatedCanvasVideoRouteImport
+      parentRoute: typeof AuthenticatedCanvasRouteRoute
+    }
     '/_authenticated/channel-monitors/': {
       id: '/_authenticated/channel-monitors/'
       path: '/channel-monitors'
@@ -1096,6 +1200,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/$section'
       fullPath: '/dashboard/$section'
       preLoaderRoute: typeof AuthenticatedDashboardSectionRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/enterprise-billing/': {
+      id: '/_authenticated/enterprise-billing/'
+      path: '/enterprise-billing'
+      fullPath: '/enterprise-billing/'
+      preLoaderRoute: typeof AuthenticatedEnterpriseBillingIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/errors/$error': {
@@ -1152,6 +1263,13 @@ declare module '@tanstack/react-router' {
       path: '/subscription-plans'
       fullPath: '/subscription-plans/'
       preLoaderRoute: typeof AuthenticatedSubscriptionPlansIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/subscription-usage/': {
+      id: '/_authenticated/subscription-usage/'
+      path: '/subscription-usage'
+      fullPath: '/subscription-usage/'
+      preLoaderRoute: typeof AuthenticatedSubscriptionUsageIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/subscriptions/': {
@@ -1337,6 +1455,24 @@ const authRouteRouteWithChildren = authRouteRoute._addFileChildren(
   authRouteRouteChildren,
 )
 
+interface AuthenticatedCanvasRouteRouteChildren {
+  AuthenticatedCanvasImageRoute: typeof AuthenticatedCanvasImageRoute
+  AuthenticatedCanvasVideoRoute: typeof AuthenticatedCanvasVideoRoute
+  AuthenticatedCanvasIndexRoute: typeof AuthenticatedCanvasIndexRoute
+}
+
+const AuthenticatedCanvasRouteRouteChildren: AuthenticatedCanvasRouteRouteChildren =
+  {
+    AuthenticatedCanvasImageRoute: AuthenticatedCanvasImageRoute,
+    AuthenticatedCanvasVideoRoute: AuthenticatedCanvasVideoRoute,
+    AuthenticatedCanvasIndexRoute: AuthenticatedCanvasIndexRoute,
+  }
+
+const AuthenticatedCanvasRouteRouteWithChildren =
+  AuthenticatedCanvasRouteRoute._addFileChildren(
+    AuthenticatedCanvasRouteRouteChildren,
+  )
+
 interface AuthenticatedSystemSettingsRouteRouteChildren {
   AuthenticatedSystemSettingsIndexRoute: typeof AuthenticatedSystemSettingsIndexRoute
   AuthenticatedSystemSettingsAuthSectionRoute: typeof AuthenticatedSystemSettingsAuthSectionRoute
@@ -1395,6 +1531,7 @@ const AuthenticatedSystemSettingsRouteRouteWithChildren =
   )
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedCanvasRouteRoute: typeof AuthenticatedCanvasRouteRouteWithChildren
   AuthenticatedSystemSettingsRouteRoute: typeof AuthenticatedSystemSettingsRouteRouteWithChildren
   AuthenticatedChat2linkRoute: typeof AuthenticatedChat2linkRoute
   AuthenticatedChatChatIdRoute: typeof AuthenticatedChatChatIdRoute
@@ -1409,12 +1546,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChannelStatusIndexRoute: typeof AuthenticatedChannelStatusIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
+  AuthenticatedEnterpriseBillingIndexRoute: typeof AuthenticatedEnterpriseBillingIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
   AuthenticatedSubscriptionPlansIndexRoute: typeof AuthenticatedSubscriptionPlansIndexRoute
+  AuthenticatedSubscriptionUsageIndexRoute: typeof AuthenticatedSubscriptionUsageIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
   AuthenticatedSystemInfoIndexRoute: typeof AuthenticatedSystemInfoIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
@@ -1423,6 +1562,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedCanvasRouteRoute: AuthenticatedCanvasRouteRouteWithChildren,
   AuthenticatedSystemSettingsRouteRoute:
     AuthenticatedSystemSettingsRouteRouteWithChildren,
   AuthenticatedChat2linkRoute: AuthenticatedChat2linkRoute,
@@ -1440,6 +1580,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChannelStatusIndexRoute: AuthenticatedChannelStatusIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
+  AuthenticatedEnterpriseBillingIndexRoute:
+    AuthenticatedEnterpriseBillingIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
@@ -1448,6 +1590,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedRedemptionCodesIndexRoute,
   AuthenticatedSubscriptionPlansIndexRoute:
     AuthenticatedSubscriptionPlansIndexRoute,
+  AuthenticatedSubscriptionUsageIndexRoute:
+    AuthenticatedSubscriptionUsageIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
   AuthenticatedSystemInfoIndexRoute: AuthenticatedSystemInfoIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,

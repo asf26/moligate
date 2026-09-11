@@ -74,36 +74,37 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
     if (!isValidElement(node)) return
     const child = node as ReactElement<SlotProps>
     if (child.type === SectionPageLayoutTitle) title = child.props.children
-    else if (child.type === SectionPageLayoutDescription)
+    else if (child.type === SectionPageLayoutDescription) {
       description = child.props.children
-    else if (child.type === SectionPageLayoutActions)
+    } else if (child.type === SectionPageLayoutActions) {
       actions = child.props.children
-    else if (child.type === SectionPageLayoutContent)
+    } else if (child.type === SectionPageLayoutContent) {
       content = child.props.children
-    else if (child.type === SectionPageLayoutBreadcrumb)
+    } else if (child.type === SectionPageLayoutBreadcrumb) {
       breadcrumb = child.props.children
+    }
   })
 
   return (
     <PageFooterProvider container={footerContainer}>
-      <Main>
-        <div className='shrink-0 px-3 pt-3 pb-2.5 sm:px-4 sm:pt-5 sm:pb-3'>
+      <Main className='workspace-page'>
+        <div className='workspace-page-header shrink-0 px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4 lg:px-8'>
           {breadcrumb != null && (
             <div className='mb-2 sm:mb-3'>{breadcrumb}</div>
           )}
           <div className='flex flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:gap-x-4'>
             <div className='min-w-0 flex-1'>
-              <h2 className='truncate text-base font-bold tracking-tight sm:text-lg'>
+              <h2 className='workspace-page-title truncate text-xl font-semibold tracking-tight sm:text-2xl'>
                 {title}
               </h2>
               {description != null && (
-                <p className='text-muted-foreground mt-1 text-sm'>
+                <p className='workspace-page-description text-muted-foreground mt-1.5 text-sm'>
                   {description}
                 </p>
               )}
             </div>
             {actions != null && (
-              <div className='flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-x-4'>
+              <div className='workspace-page-actions flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-x-4'>
                 {actions}
               </div>
             )}
@@ -113,8 +114,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
         <div
           className={
             props.fixedContent
-              ? 'min-h-0 min-w-0 flex-1 overflow-hidden px-3 pt-1 pb-3 sm:px-4 sm:pt-1.5 sm:pb-4'
-              : 'min-h-0 min-w-0 flex-1 overflow-auto px-3 pt-1 pb-3 sm:px-4 sm:pt-1.5 sm:pb-4'
+              ? 'workspace-page-content min-h-0 min-w-0 flex-1 overflow-hidden px-4 pt-1 pb-5 sm:px-6 sm:pt-1.5 sm:pb-6 lg:px-8'
+              : 'workspace-page-content min-h-0 min-w-0 flex-1 overflow-auto px-4 pt-1 pb-5 sm:px-6 sm:pt-1.5 sm:pb-6 lg:px-8'
           }
         >
           {content}
@@ -122,7 +123,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
 
         <div
           ref={setFooterContainer}
-          className='bg-background shrink-0 border-t px-3 py-2.5 empty:hidden sm:px-4 sm:py-3'
+          className='workspace-page-footer bg-background shrink-0 border-t px-4 py-2.5 empty:hidden sm:px-6 sm:py-3 lg:px-8'
         />
       </Main>
     </PageFooterProvider>

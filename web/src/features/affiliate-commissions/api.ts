@@ -27,6 +27,8 @@ import type {
   AffiliateRewardPointSettlementListResponse,
   AffiliateRewardPointSettlementQuery,
   AffiliateCommissionSummary,
+  AffiliateInviteeListResponse,
+  AffiliateInviteeQuery,
   AffiliateCdkCode,
   AffiliateCdkCodeListResponse,
   AffiliateCdkCodeQuery,
@@ -123,6 +125,14 @@ export async function getSelfAffiliateCommissions(
   return res.data
 }
 
+export async function getSelfAffiliateInvitees(
+  query: Omit<AffiliateInviteeQuery, 'promoter_id' | 'promoter_username'> = {}
+): Promise<ApiResponse<AffiliateInviteeListResponse>> {
+  const qs = buildQueryString(query)
+  const res = await api.get(`/api/affiliate/self/invitees${qs ? `?${qs}` : ''}`)
+  return res.data
+}
+
 export async function getSelfAffiliateRewardPointSettlements(
   query: AffiliateRewardPointSettlementQuery = {}
 ): Promise<ApiResponse<AffiliateRewardPointSettlementListResponse>> {
@@ -214,6 +224,16 @@ export async function getAdminAffiliateCommissions(
   const qs = buildQueryString(query)
   const res = await api.get(
     `/api/affiliate/admin/commissions${qs ? `?${qs}` : ''}`
+  )
+  return res.data
+}
+
+export async function getAdminAffiliateInvitees(
+  query: AffiliateInviteeQuery = {}
+): Promise<ApiResponse<AffiliateInviteeListResponse>> {
+  const qs = buildQueryString(query)
+  const res = await api.get(
+    `/api/affiliate/admin/invitees${qs ? `?${qs}` : ''}`
   )
   return res.data
 }

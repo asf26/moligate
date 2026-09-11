@@ -1,10 +1,12 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,6 +21,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const maxStableVideoImageBytes = 30 << 20
 
 // videoProxyError returns a standardized OpenAI-style error response.
 func videoProxyError(c *gin.Context, status int, errType, message string) {
@@ -111,9 +115,24 @@ func VideoProxy(c *gin.Context) {
 			videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to resolve Vertex video URL")
 			return
 		}
-	case constant.ChannelTypeOpenAI, constant.ChannelTypeSora:
+	case constant.ChannelTypeOpenAI, constant.ChannelTypeSora, constant.ChannelTypeNewAPI:
 		videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.GetUpstreamTaskID())
-		req.Header.Set("Authorization", "Bearer "+channel.Key)
+		apiKey := channel.Key
+		if task.PrivateData.Key != "" {
+			apiKey = task.PrivateData.Key
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	case constant.ChannelTypeMiniMax:
+		if task.Platform == constant.TaskPlatformMiniMaxH3 {
+			videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.GetUpstreamTaskID())
+			apiKey := channel.Key
+			if task.PrivateData.Key != "" {
+				apiKey = task.PrivateData.Key
+			}
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		} else {
+			videoURL = task.GetResultURL()
+		}
 	default:
 		// Video URL is stored in PrivateData.ResultURL (fallback to FailReason for old data)
 		videoURL = task.GetResultURL()
@@ -180,6 +199,103 @@ func VideoProxy(c *gin.Context) {
 	if _, err = io.Copy(c.Writer, resp.Body); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream video content: %s", err.Error()))
 	}
+}
+
+func UploadStableVideoMedia(c *gin.Context) {
+	modelName := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+	if !strings.HasPrefix(strings.ToLower(modelName), "seedance2.") {
+		videoProxyError(c, http.StatusBadRequest, "invalid_request_error", "this upload endpoint only supports stable video models")
+		return
+	}
+	if common.GetContextKeyInt(c, constant.ContextKeyChannelType) != constant.ChannelTypeNewAPI {
+		videoProxyError(c, http.StatusBadRequest, "invalid_request_error", "the selected channel does not support stable video media uploads")
+		return
+	}
+
+	form, err := common.ParseMultipartFormReusable(c)
+	if err != nil {
+		videoProxyError(c, http.StatusBadRequest, "invalid_request_error", "invalid multipart request")
+		return
+	}
+	files := form.File["file"]
+	if len(files) != 1 {
+		videoProxyError(c, http.StatusBadRequest, "invalid_request_error", "exactly one media file is required")
+		return
+	}
+	fileHeader := files[0]
+	if fileHeader.Size <= 0 || fileHeader.Size > maxStableVideoImageBytes {
+		videoProxyError(c, http.StatusBadRequest, "invalid_request_error", "reference image must be between 1 byte and 30 MB")
+		return
+	}
+	mediaTypes := form.Value["type"]
+	if len(mediaTypes) != 1 || strings.TrimSpace(mediaTypes[0]) != "images" {
+		videoProxyError(c, http.StatusBadRequest, "invalid_request_error", "only reference images are supported")
+		return
+	}
+
+	file, err := fileHeader.Open()
+	if err != nil {
+		videoProxyError(c, http.StatusBadRequest, "invalid_request_error", "failed to read reference image")
+		return
+	}
+	defer file.Close()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("type", "images"); err != nil {
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "failed to prepare upload")
+		return
+	}
+	part, err := writer.CreateFormFile("file", fileHeader.Filename)
+	if err != nil {
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "failed to prepare upload")
+		return
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "failed to prepare upload")
+		return
+	}
+	if err := writer.Close(); err != nil {
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "failed to prepare upload")
+		return
+	}
+
+	baseURL := strings.TrimRight(common.GetContextKeyString(c, constant.ContextKeyChannelBaseUrl), "/")
+	apiKey := common.GetContextKeyString(c, constant.ContextKeyChannelKey)
+	if baseURL == "" || apiKey == "" {
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "selected channel is incomplete")
+		return
+	}
+	request, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, baseURL+"/api/sd-media/upload", &body)
+	if err != nil {
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "failed to prepare upstream upload")
+		return
+	}
+	request.Header.Set("Authorization", "Bearer "+apiKey)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	channel, err := model.CacheGetChannel(common.GetContextKeyInt(c, constant.ContextKeyChannelId))
+	if err != nil {
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "failed to read selected channel")
+		return
+	}
+	client, err := service.GetHttpClientWithProxySettings(channel.GetSetting().Proxy, channel.GetSetting())
+	if err != nil {
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "failed to create upstream client")
+		return
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		videoProxyError(c, http.StatusBadGateway, "server_error", "failed to upload reference image")
+		return
+	}
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		videoProxyError(c, http.StatusBadGateway, "server_error", "failed to read upload response")
+		return
+	}
+	c.Data(response.StatusCode, "application/json; charset=utf-8", responseBody)
 }
 
 func writeVideoDataURL(c *gin.Context, dataURL string) error {

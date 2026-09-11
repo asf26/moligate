@@ -97,7 +97,10 @@ function UnifiedTableView<TData>({
   colSpan: number
   getColumnClassName: DataTableColumnClassName
 }) {
-  const tableSizing = getTableSizing(props)
+  const tableSizing = getTableSizing(
+    props,
+    rows.length === 0 && !props.isLoading
+  )
 
   return (
     <div className={props.tableContainerClassName}>
@@ -127,7 +130,10 @@ function SplitHeaderTableView<TData>({
   colSpan: number
   getColumnClassName: DataTableColumnClassName
 }) {
-  const tableSizing = getTableSizing(props)
+  const tableSizing = getTableSizing(
+    props,
+    rows.length === 0 && !props.isLoading
+  )
 
   return (
     <div
@@ -227,12 +233,22 @@ function mergePinnedColumns(
   ]
 }
 
-function getTableSizing<TData>(props: DataTableViewProps<TData>): {
+function getTableSizing<TData>(
+  props: DataTableViewProps<TData>,
+  fitEmptyState: boolean
+): {
   colgroup?: React.ReactNode
   style?: React.CSSProperties
 } {
   if (props.colgroup) {
     return { colgroup: props.colgroup }
+  }
+
+  // Sized columns are useful while rows are present, but they can make an
+  // empty-state message render outside the visible table viewport. Let an
+  // empty table use its natural width so the message stays centered.
+  if (fitEmptyState) {
+    return {}
   }
 
   if (!props.splitHeader && !props.applyHeaderSize) {

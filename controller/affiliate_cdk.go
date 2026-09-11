@@ -33,7 +33,7 @@ func requireSelfAffiliateCdkPermission(c *gin.Context) bool {
 		common.ApiError(c, err)
 		return false
 	}
-	if !user.AffiliateCdkEnabled {
+	if !user.AffiliateCdkEnabled && !operation_setting.GetDistributionSetting().CdkPurchaseOpenToAll {
 		common.ApiErrorMsg(c, "未开通 CDK 采购权限")
 		return false
 	}
@@ -63,6 +63,7 @@ func GetSelfAffiliateCdkInfo(c *gin.Context) {
 		"min_topup":                    model.MinTopUpAmountForDisplay(),
 		"max_quantity":                 model.AffiliateCdkOrderMaxQuantity,
 		"cdk_purchase_discount_bps":    distribution.CdkPurchaseDiscountBps,
+		"cdk_purchase_open_to_all":     distribution.CdkPurchaseOpenToAll,
 		"discount_configured":          discountConfigured,
 		"enable_cdk_purchase":          discountConfigured && isEpayTopUpEnabled(),
 		"payment_compliance_confirmed": true,

@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
+	taskminimaxh3 "github.com/QuantumNous/new-api/relay/channel/task/minimax_h3"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -150,13 +151,34 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if platform == "" {
 		platform = GetTaskPlatform(c)
 	}
-	adaptor := GetTaskAdaptor(platform)
+	adaptor := GetTaskAdaptorForInfo(platform, info)
 	if adaptor == nil {
 		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("invalid api platform: %s", platform), "invalid_api_platform", http.StatusBadRequest)
 	}
 	adaptor.Init(info)
 	if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
 		return nil, taskErr
+	}
+	// The original request model is available after the generic validation
+	// path. This fallback handles requests where RelayInfo was created without
+	// an original model (for example a direct /v1/videos call).
+	if platform != constant.TaskPlatformMiniMaxH3 && info.ChannelType == constant.ChannelTypeMiniMax {
+		if req, err := relaycommon.GetTaskRequest(c); err == nil && taskminimaxh3.IsModel(req.Model) {
+			if info.OriginModelName == "" {
+				info.OriginModelName = req.Model
+			}
+			adaptor = &taskminimaxh3.TaskAdaptor{}
+			adaptor.Init(info)
+			if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
+				return nil, taskErr
+			}
+			platform = constant.TaskPlatformMiniMaxH3
+		}
+	}
+	if platform == constant.TaskPlatformMiniMaxH3 && info.OriginModelName == "" {
+		if req, err := relaycommon.GetTaskRequest(c); err == nil {
+			info.OriginModelName = req.Model
+		}
 	}
 
 	// 2. 确定模型名称
@@ -251,10 +273,15 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 	}
 
+	resultPlatform := platform
+	if _, ok := adaptor.(*taskminimaxh3.TaskAdaptor); ok {
+		resultPlatform = constant.TaskPlatformMiniMaxH3
+	}
+
 	return &TaskSubmitResult{
 		UpstreamTaskID: upstreamTaskID,
 		TaskData:       taskData,
-		Platform:       platform,
+		Platform:       resultPlatform,
 		Quota:          finalQuota,
 	}, nil
 }

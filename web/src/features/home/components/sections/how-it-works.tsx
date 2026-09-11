@@ -2,9 +2,9 @@
 Copyright (C) 2023-2026 QuantumNous
 
 This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,74 +16,119 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Settings, Zap, BarChart3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { AnimateInView } from '@/components/animate-in-view'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
+interface IntegrationExample {
+  id: string
+  label: string
+  language: string
+  lines: string[]
+}
+
+const integrationExamples: IntegrationExample[] = [
+  {
+    id: 'claude-code',
+    label: 'Claude Code',
+    language: 'shell',
+    lines: [
+      'export ANTHROPIC_BASE_URL=https://your-gateway.example.com',
+      'export ANTHROPIC_API_KEY=sk_your_key_here',
+      '',
+      'claude --bare',
+    ],
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic SDK',
+    language: 'python',
+    lines: [
+      'from anthropic import Anthropic',
+      '',
+      'client = Anthropic(',
+      '  base_url="https://your-gateway.example.com",',
+      '  api_key="sk_your_key_here",',
+      ')',
+    ],
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI SDK',
+    language: 'python',
+    lines: [
+      'from openai import OpenAI',
+      '',
+      'client = OpenAI(',
+      '  base_url="https://your-gateway.example.com/v1",',
+      '  api_key="sk_your_key_here",',
+      ')',
+    ],
+  },
+  {
+    id: 'curl',
+    label: 'curl',
+    language: 'shell',
+    lines: [
+      'curl https://your-gateway.example.com/v1/messages \\',
+      '  -H "x-api-key: sk_your_key_here" \\',
+      '  -H "content-type: application/json" \\',
+      '  -d \'{"model":"your-model","messages":[]}\'',
+    ],
+  },
+]
 
 export function HowItWorks() {
   const { t } = useTranslation()
 
-  const steps = [
-    {
-      num: '1',
-      title: t('Configure'),
-      desc: t(
-        'Add your API keys, set up channels and configure access permissions'
-      ),
-      icon: <Settings className='size-6' strokeWidth={1.5} />,
-    },
-    {
-      num: '2',
-      title: t('Connect'),
-      desc: t(
-        'Connect through OpenAI, Claude, Gemini, and other compatible API routes'
-      ),
-      icon: <Zap className='size-6' strokeWidth={1.5} />,
-    },
-    {
-      num: '3',
-      title: t('Monitor'),
-      desc: t('Track usage, costs and performance with real-time analytics'),
-      icon: <BarChart3 className='size-6' strokeWidth={1.5} />,
-    },
-  ]
-
   return (
-    <section className='border-border/40 relative z-10 border-t px-6 py-24 md:py-32'>
-      <div className='mx-auto max-w-6xl'>
-        <AnimateInView className='mb-16 text-center md:mb-20'>
-          <p className='text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase'>
-            {t('How It Works')}
-          </p>
-          <h2 className='text-2xl font-bold tracking-tight md:text-3xl'>
-            {t('Three steps to get started')}
+    <section
+      id='integration'
+      className='home-reference-section home-reference-integration px-4 pb-24'
+    >
+      <div className='mx-auto max-w-4xl'>
+        <div className='text-center'>
+          <p className='home-reference-kicker'>{t('5-minute integration')}</p>
+          <h2 className='home-reference-heading mt-3'>
+            {t('Call it just like the official Claude API')}
           </h2>
-        </AnimateInView>
-
-        <div className='grid gap-8 md:grid-cols-3 md:gap-12'>
-          {steps.map((step, i) => (
-            <AnimateInView
-              key={step.num}
-              delay={i * 150}
-              animation='fade-up'
-              className='relative flex flex-col items-center text-center'
-            >
-              <div className='relative mb-6'>
-                <div className='text-muted-foreground border-border/50 bg-muted/30 flex size-16 items-center justify-center rounded-2xl border transition-colors'>
-                  {step.icon}
-                </div>
-                <div className='bg-foreground text-background absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full text-xs font-bold'>
-                  {step.num}
-                </div>
-              </div>
-              <h3 className='mb-2 text-base font-semibold'>{step.title}</h3>
-              <p className='text-muted-foreground max-w-[240px] text-sm leading-relaxed'>
-                {step.desc}
-              </p>
-            </AnimateInView>
-          ))}
+          <p className='text-muted-foreground mx-auto mt-4 max-w-2xl text-sm leading-5'>
+            {t(
+              'Point base_url to your gateway and replace api_key with your access key. Everything else stays the same.'
+            )}
+          </p>
         </div>
+
+        <Tabs defaultValue='claude-code' className='home-reference-code mt-10'>
+          <TabsList
+            variant='line'
+            className='home-reference-code-tabs h-auto w-full justify-start overflow-x-auto rounded-none border-b px-4 py-0'
+          >
+            {integrationExamples.map((example) => (
+              <TabsTrigger
+                key={example.id}
+                value={example.id}
+                className='home-reference-code-trigger flex-none px-3'
+              >
+                {t(example.label)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {integrationExamples.map((example) => (
+            <TabsContent
+              key={example.id}
+              value={example.id}
+              className='home-reference-code-content relative m-0 min-h-44 px-5 py-5 sm:px-6'
+            >
+              <span className='home-reference-code-language'>
+                {example.language}
+              </span>
+              <pre className='overflow-x-auto font-mono text-xs leading-7 sm:text-sm'>
+                <code>{example.lines.join('\n')}</code>
+              </pre>
+            </TabsContent>
+          ))}
+        </Tabs>
       </div>
     </section>
   )

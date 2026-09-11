@@ -63,6 +63,7 @@ func SetApiRouter(router *gin.Engine) {
 		// in Pancake's matching webhook slot; handler enforces env match.
 		apiRouter.POST("/waffo-pancake/webhook/:env", anonymousRequestBodyLimit, controller.WaffoPancakeWebhook)
 		apiRouter.POST("/cdk/redeem", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.RedeemCdkToolCode)
+		apiRouter.GET("/canvas/config", middleware.UserAuth(), middleware.DisableCache(), controller.GetCanvasConfig)
 
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UniversalVerify)
@@ -72,6 +73,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			affiliateSelfRoute.GET("/summary", controller.GetSelfAffiliateSummary)
 			affiliateSelfRoute.GET("/commissions", controller.GetSelfAffiliateCommissions)
+			affiliateSelfRoute.GET("/invitees", controller.GetSelfAffiliateInvitees)
 			affiliateSelfRoute.GET("/redemptions", controller.GetSelfAffiliateRewardPointSettlements)
 			affiliateSelfRoute.POST("/rewards/quote", controller.QuoteSelfAffiliateRewardPoints)
 			affiliateSelfRoute.POST("/rewards/redeem", controller.RedeemSelfAffiliateRewardPoints)
@@ -88,9 +90,21 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			affiliateAdminRoute.GET("/summary", controller.AdminAffiliateSummary)
 			affiliateAdminRoute.GET("/commissions", controller.AdminListAffiliateCommissions)
+			affiliateAdminRoute.GET("/invitees", controller.AdminListAffiliateInvitees)
 			affiliateAdminRoute.GET("/redemptions", controller.AdminListAffiliateRewardPointSettlements)
 			affiliateAdminRoute.POST("/rewards/offline-cashback", controller.AdminOfflineCashbackAffiliateRewardPoints)
 			affiliateAdminRoute.GET("/commissions/export", controller.AdminExportAffiliateCommissions)
+		}
+		enterpriseBillingRoute := apiRouter.Group("/enterprise-billing")
+		enterpriseBillingRoute.Use(middleware.AdminAuth())
+		{
+			enterpriseBillingRoute.GET("/accounts", controller.AdminListEnterpriseBillingAccounts)
+			enterpriseBillingRoute.POST("/accounts", controller.AdminCreateEnterpriseBillingAccount)
+			enterpriseBillingRoute.PUT("/accounts/:id", controller.AdminUpdateEnterpriseBillingAccount)
+			enterpriseBillingRoute.DELETE("/accounts/:id", controller.AdminDeleteEnterpriseBillingAccount)
+			enterpriseBillingRoute.GET("/report", controller.AdminGetEnterpriseBillingReport)
+			enterpriseBillingRoute.GET("/export/raw", controller.AdminExportEnterpriseBillingRaw)
+			enterpriseBillingRoute.GET("/export/customer", controller.AdminExportEnterpriseBillingCustomer)
 		}
 		apiRouter.POST("/affiliate/cdk/epay/notify", controller.AffiliateCdkEpayNotify)
 		apiRouter.GET("/affiliate/cdk/epay/notify", controller.AffiliateCdkEpayNotify)
@@ -186,11 +200,16 @@ func SetApiRouter(router *gin.Engine) {
 			}
 		}
 
-		// Subscription billing (plans, purchase, admin management)
+		// Enabled subscription plans are also used by the public homepage.
+		publicSubscriptionRoute := apiRouter.Group("/subscription")
+		{
+			publicSubscriptionRoute.GET("/plans", controller.GetSubscriptionPlans)
+		}
+
+		// Subscription billing (purchase, self-service, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")
 		subscriptionRoute.Use(middleware.UserAuth())
 		{
-			subscriptionRoute.GET("/plans", controller.GetSubscriptionPlans)
 			subscriptionRoute.GET("/self", controller.GetSubscriptionSelf)
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
 			subscriptionRoute.POST("/balance/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestBalancePay)

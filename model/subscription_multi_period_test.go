@@ -207,6 +207,12 @@ func TestCreateUserSubscriptionSnapshotsAllPeriodQuotas(t *testing.T) {
 		PriceAmount:      100,
 		DurationUnit:     SubscriptionDurationMonth,
 		DurationValue:    2,
+		ModelFamily:      "gpt",
+		IncludedModels:   []string{"gpt-5.5", "gpt-image-2"},
+		BonusResources: []SubscriptionBonusResource{
+			{ResourceKey: "grok", ResourceType: SubscriptionResourceTypeQuota, ModelName: "grok-4", Amount: 500},
+			{ResourceKey: "gpt-image-2", ResourceType: SubscriptionResourceTypeImageCount, ModelName: "gpt-image-2", Amount: 10},
+		},
 		TotalAmount:      10_000,
 		DailyAmount:      100,
 		WeeklyAmount:     500,
@@ -227,6 +233,15 @@ func TestCreateUserSubscriptionSnapshotsAllPeriodQuotas(t *testing.T) {
 	assert.EqualValues(t, plan.DailyAmount, subscription.DailyAmount)
 	assert.EqualValues(t, plan.WeeklyAmount, subscription.WeeklyAmount)
 	assert.EqualValues(t, plan.MonthlyAmount, subscription.MonthlyAmount)
+	assert.Equal(t, plan.ModelFamily, subscription.ModelFamily)
+	assert.Equal(t, plan.IncludedModels, subscription.IncludedModels)
+	require.Len(t, subscription.ResourceGrants, 2)
+	assert.Equal(t, "grok", subscription.ResourceGrants[0].ResourceKey)
+	assert.EqualValues(t, 500, subscription.ResourceGrants[0].Amount)
+	assert.Equal(t, SubscriptionResourceTypeImageCount, subscription.ResourceGrants[1].ResourceType)
+	assert.EqualValues(t, 10, subscription.ResourceGrants[1].Amount)
+	assert.Zero(t, subscription.ResourceGrants[0].Used)
+	assert.Zero(t, subscription.ResourceGrants[1].Used)
 	assert.Zero(t, subscription.DailyUsed)
 	assert.Zero(t, subscription.WeeklyUsed)
 	assert.Zero(t, subscription.MonthlyUsed)

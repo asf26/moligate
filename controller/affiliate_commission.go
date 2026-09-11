@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -83,6 +84,23 @@ func parseAffiliateCommissionQuery(c *gin.Context) (model.AffiliateCommissionQue
 	return query, nil
 }
 
+func parseAffiliateInviteeQuery(c *gin.Context) (model.AffiliateInviteeQuery, error) {
+	query := model.AffiliateInviteeQuery{
+		PromoterUsername: strings.TrimSpace(c.Query("promoter_username")),
+	}
+	if value := c.Query("promoter_id"); value != "" {
+		promoterId, err := strconv.Atoi(value)
+		if err != nil || promoterId <= 0 {
+			return query, fmt.Errorf("无效的推广人 ID")
+		}
+		query.PromoterId = promoterId
+	}
+	if query.PromoterId <= 0 && query.PromoterUsername == "" {
+		return query, fmt.Errorf("请提供推广人 ID 或用户名")
+	}
+	return query, nil
+}
+
 func parseAffiliateRewardPointSettlementQuery(c *gin.Context) (model.AffiliateRewardPointSettlementQuery, error) {
 	query := model.AffiliateRewardPointSettlementQuery{
 		SettlementType: c.Query("settlement_type"),
@@ -154,6 +172,23 @@ func GetSelfAffiliateCommissions(c *gin.Context) {
 	query.PromoterId = c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
 	records, total, err := model.ListAffiliateCommissions(query, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(records)
+	common.ApiSuccess(c, pageInfo)
+}
+
+func GetSelfAffiliateInvitees(c *gin.Context) {
+	if !requireSelfAffiliateUser(c) {
+		return
+	}
+	pageInfo := common.GetPageQuery(c)
+	records, total, err := model.ListAffiliateInvitees(model.AffiliateInviteeQuery{
+		PromoterId: c.GetInt("id"),
+	}, pageInfo)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -265,6 +300,23 @@ func AdminListAffiliateCommissions(c *gin.Context) {
 	}
 	pageInfo := common.GetPageQuery(c)
 	records, total, err := model.ListAffiliateCommissions(query, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(records)
+	common.ApiSuccess(c, pageInfo)
+}
+
+func AdminListAffiliateInvitees(c *gin.Context) {
+	query, err := parseAffiliateInviteeQuery(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo := common.GetPageQuery(c)
+	records, total, err := model.ListAffiliateInvitees(query, pageInfo)
 	if err != nil {
 		common.ApiError(c, err)
 		return

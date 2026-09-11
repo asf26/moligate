@@ -42,10 +42,12 @@ export function SubscriptionPlansPage() {
         {t('Subscription Plans')}
       </SectionPageLayout.Title>
       <SectionPageLayout.Description>
-        {t('Subscribe to a plan for model access')}
+        {t(
+          'Choose the plan that best matches your needs and enjoy stable, high-speed API service.'
+        )}
       </SectionPageLayout.Description>
       <SectionPageLayout.Content>
-        <div className='w-full'>
+        <div className='subscription-billing-page subscription-wide-page w-full'>
           <SubscriptionPlansCard
             topupInfo={topupInfo}
             userQuota={user?.quota}

@@ -44,6 +44,48 @@ var (
 	ErrSubscriptionImportedUsageOverLimit = errors.New("imported subscription usage exceeds plan limits")
 )
 
+// Subscription resource grants are optional entitlements attached to a plan.
+// They let an operator sell a model package while gifting quota for another
+// model (or a fixed number of image generations) without creating a second
+// subscription key.
+const (
+	SubscriptionResourceTypeQuota      = "quota"
+	SubscriptionResourceTypeImageCount = "image_count"
+	SubscriptionMaxBonusResources      = 32
+)
+
+// SubscriptionBonusResource is the plan-side definition of an additional
+// model entitlement. Amount is expressed in quota units for quota resources
+// and in generations for image_count resources.
+type SubscriptionBonusResource struct {
+	ResourceKey  string `json:"resource_key"`
+	ResourceType string `json:"resource_type"`
+	ModelName    string `json:"model_name"`
+	DisplayName  string `json:"display_name"`
+	Amount       int64  `json:"amount"`
+}
+
+// SubscriptionResourceGrant is the purchased snapshot of a bonus resource.
+// Keeping Used in the snapshot means editing a plan never changes an existing
+// customer's entitlement.
+type SubscriptionResourceGrant struct {
+	ResourceKey  string `json:"resource_key"`
+	ResourceType string `json:"resource_type"`
+	ModelName    string `json:"model_name"`
+	DisplayName  string `json:"display_name"`
+	Amount       int64  `json:"amount"`
+	Used         int64  `json:"used"`
+}
+
+// SubscriptionResourceRequest describes the entitlement to consume for a
+// request. Image generation requests use image_count so gpt-image-2 packs are
+// counted by generations instead of by their normal quota price.
+type SubscriptionResourceRequest struct {
+	ResourceKey  string
+	ResourceType string
+	Amount       int64
+}
+
 type AdminSubscriptionUsagePreview struct {
 	UserId               int      `json:"user_id"`
 	PlanId               int      `json:"plan_id"`
@@ -224,6 +266,22 @@ type SubscriptionPlan struct {
 	DowngradeGroup   string   `json:"downgrade_group" gorm:"type:varchar(64);default:''"`
 	ApplicableGroups []string `json:"applicable_groups" gorm:"type:text;serializer:json"`
 
+	// Model family and explicit model allow-list used by the subscription catalog.
+	// Empty values keep backwards compatibility with plans created before model
+	// packages were introduced; the frontend then falls back to a general package.
+	ModelFamily    string   `json:"model_family" gorm:"type:varchar(32);default:''"`
+	IncludedModels []string `json:"included_models" gorm:"type:text;serializer:json"`
+
+	// Optional public card presentation. Empty benefits keep the generated
+	// compatibility copy on the public subscription page.
+	BadgeText     string   `json:"badge_text" gorm:"type:varchar(64);default:''"`
+	IsRecommended bool     `json:"is_recommended"`
+	Benefits      []string `json:"benefits" gorm:"type:text;serializer:json"`
+
+	// Optional model-specific entitlements gifted with this plan. These are
+	// copied into UserSubscription.ResourceGrants when the plan is purchased.
+	BonusResources []SubscriptionBonusResource `json:"bonus_resources" gorm:"type:text;serializer:json"`
+
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
@@ -260,6 +318,102 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 		p.AllowWalletOverflow = common.GetPointer(true)
 	}
 	p.ApplicableGroups = normalizeSubscriptionGroups(p.ApplicableGroups)
+	p.ModelFamily = normalizeSubscriptionModelFamily(p.ModelFamily)
+	p.IncludedModels = normalizeSubscriptionModels(p.IncludedModels)
+	p.BadgeText = normalizeSubscriptionBadgeText(p.BadgeText)
+	p.Benefits = normalizeSubscriptionBenefits(p.Benefits)
+	p.BonusResources = normalizeSubscriptionBonusResources(p.BonusResources)
+}
+
+func normalizeSubscriptionModelFamily(family string) string {
+	family = strings.TrimSpace(strings.ToLower(family))
+	if len(family) > 32 {
+		return family[:32]
+	}
+	return family
+}
+
+func normalizeSubscriptionModels(models []string) []string {
+	seen := make(map[string]struct{}, len(models))
+	result := make([]string, 0, len(models))
+	for _, modelName := range models {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" || len(modelName) > 128 {
+			continue
+		}
+		if _, ok := seen[modelName]; ok {
+			continue
+		}
+		seen[modelName] = struct{}{}
+		result = append(result, modelName)
+		if len(result) >= 128 {
+			break
+		}
+	}
+	return result
+}
+
+func normalizeSubscriptionBadgeText(text string) string {
+	text = strings.TrimSpace(text)
+	if len(text) > 64 {
+		return text[:64]
+	}
+	return text
+}
+
+func normalizeSubscriptionBenefits(benefits []string) []string {
+	seen := make(map[string]struct{}, len(benefits))
+	result := make([]string, 0, len(benefits))
+	for _, benefit := range benefits {
+		benefit = strings.TrimSpace(benefit)
+		if benefit == "" || len(benefit) > 240 {
+			continue
+		}
+		if _, ok := seen[benefit]; ok {
+			continue
+		}
+		seen[benefit] = struct{}{}
+		result = append(result, benefit)
+		if len(result) >= 12 {
+			break
+		}
+	}
+	return result
+}
+
+func normalizeSubscriptionBonusResources(resources []SubscriptionBonusResource) []SubscriptionBonusResource {
+	seen := make(map[string]struct{}, len(resources))
+	result := make([]SubscriptionBonusResource, 0, len(resources))
+	for _, resource := range resources {
+		resource.ResourceKey = strings.TrimSpace(strings.ToLower(resource.ResourceKey))
+		resource.ResourceType = strings.TrimSpace(strings.ToLower(resource.ResourceType))
+		resource.ModelName = strings.TrimSpace(resource.ModelName)
+		resource.DisplayName = strings.TrimSpace(resource.DisplayName)
+		if resource.ResourceKey == "" {
+			resource.ResourceKey = strings.ToLower(resource.ModelName)
+		}
+		if resource.ResourceType == "" {
+			resource.ResourceType = SubscriptionResourceTypeQuota
+		}
+		if resource.ResourceKey == "" || resource.ModelName == "" || resource.Amount <= 0 {
+			continue
+		}
+		if resource.ResourceType != SubscriptionResourceTypeQuota && resource.ResourceType != SubscriptionResourceTypeImageCount {
+			continue
+		}
+		if len(resource.ResourceKey) > 128 || len(resource.ModelName) > 128 || len(resource.DisplayName) > 128 {
+			continue
+		}
+		if _, ok := seen[resource.ResourceKey+"\x00"+resource.ResourceType]; ok {
+			continue
+		}
+		seen[resource.ResourceKey+"\x00"+resource.ResourceType] = struct{}{}
+		result = append(result, resource)
+		if len(result) >= SubscriptionMaxBonusResources {
+			break
+		}
+	}
+	return result
 }
 
 func normalizeSubscriptionGroups(groups []string) []string {
@@ -291,6 +445,67 @@ func subscriptionGroupMatches(groups []string, effective string) bool {
 	for _, group := range groups {
 		if group == effective {
 			return true
+		}
+	}
+	return false
+}
+
+func normalizeSubscriptionResourceType(resourceType string) string {
+	resourceType = strings.TrimSpace(strings.ToLower(resourceType))
+	if resourceType == SubscriptionResourceTypeImageCount {
+		return SubscriptionResourceTypeImageCount
+	}
+	return SubscriptionResourceTypeQuota
+}
+
+func modelNameMatchesSubscriptionValue(modelName, value string) bool {
+	modelName = strings.TrimSpace(strings.ToLower(modelName))
+	value = strings.TrimSpace(strings.ToLower(value))
+	if modelName == "" || value == "" {
+		return false
+	}
+	return modelName == value || strings.HasPrefix(modelName, value+"-") || strings.HasPrefix(modelName, value+"/")
+}
+
+func subscriptionResourceMatches(resource SubscriptionResourceGrant, resourceKey, modelName string) bool {
+	return modelNameMatchesSubscriptionValue(modelName, resource.ResourceKey) ||
+		modelNameMatchesSubscriptionValue(modelName, resource.ModelName) ||
+		modelNameMatchesSubscriptionValue(resourceKey, resource.ResourceKey) ||
+		modelNameMatchesSubscriptionValue(resourceKey, resource.ModelName)
+}
+
+func subscriptionModelMatches(sub UserSubscription, modelName string) bool {
+	// Legacy subscriptions have no model snapshot and remain general-purpose.
+	if len(sub.IncludedModels) == 0 && strings.TrimSpace(sub.ModelFamily) == "" {
+		return true
+	}
+	// An explicit allow-list is authoritative. It must not silently widen to
+	// the family matcher when a model was intentionally omitted.
+	if len(sub.IncludedModels) > 0 {
+		for _, included := range sub.IncludedModels {
+			if modelNameMatchesSubscriptionValue(modelName, included) {
+				return true
+			}
+		}
+		return false
+	}
+	family := strings.TrimSpace(strings.ToLower(sub.ModelFamily))
+	if family == "" || family == "all" {
+		return family == "all"
+	}
+	model := strings.ToLower(strings.TrimSpace(modelName))
+	switch family {
+	case "ccmax", "cc max", "claude", "anthropic":
+		return strings.Contains(model, "claude") || strings.Contains(model, "anthropic")
+	case "gpt", "openai":
+		return strings.HasPrefix(model, "gpt") || strings.HasPrefix(model, "openai/")
+	case "gemini", "google":
+		return strings.HasPrefix(model, "gemini") || strings.HasPrefix(model, "google/")
+	case "chinese", "国产", "cn":
+		for _, prefix := range []string{"deepseek", "qwen", "glm", "kimi", "doubao", "minimax", "hunyuan", "ernie", "step"} {
+			if strings.HasPrefix(model, prefix) {
+				return true
+			}
 		}
 	}
 	return false
@@ -376,6 +591,11 @@ type UserSubscription struct {
 
 	// Whether wallet fallback is allowed after this subscription's quota is exhausted (snapshot from plan)
 	AllowWalletOverflow bool `json:"allow_wallet_overflow"`
+
+	// Model access and gifted resources are snapshots from the purchased plan.
+	ModelFamily    string                      `json:"model_family" gorm:"type:varchar(32);default:''"`
+	IncludedModels []string                    `json:"included_models" gorm:"type:text;serializer:json"`
+	ResourceGrants []SubscriptionResourceGrant `json:"resource_grants" gorm:"type:text;serializer:json"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
@@ -676,6 +896,17 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	if plan.AllowWalletOverflow != nil {
 		allowWalletOverflow = *plan.AllowWalletOverflow
 	}
+	bonusResources := normalizeSubscriptionBonusResources(plan.BonusResources)
+	resourceGrants := make([]SubscriptionResourceGrant, 0, len(bonusResources))
+	for _, resource := range bonusResources {
+		resourceGrants = append(resourceGrants, SubscriptionResourceGrant{
+			ResourceKey:  resource.ResourceKey,
+			ResourceType: resource.ResourceType,
+			ModelName:    resource.ModelName,
+			DisplayName:  resource.DisplayName,
+			Amount:       resource.Amount,
+		})
+	}
 	sub := &UserSubscription{
 		UserId:                   userId,
 		PlanId:                   plan.Id,
@@ -702,6 +933,9 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		DowngradeGroup:           strings.TrimSpace(plan.DowngradeGroup),
 		ApplicableGroups:         normalizeSubscriptionGroups(plan.ApplicableGroups),
 		AllowWalletOverflow:      allowWalletOverflow,
+		ModelFamily:              normalizeSubscriptionModelFamily(plan.ModelFamily),
+		IncludedModels:           normalizeSubscriptionModels(plan.IncludedModels),
+		ResourceGrants:           resourceGrants,
 		CreatedAt:                common.GetTimestamp(),
 		UpdatedAt:                common.GetTimestamp(),
 	}
@@ -1377,6 +1611,9 @@ func resetUserSubscriptionTx(tx *gorm.DB, sub *UserSubscription, plan *Subscript
 	sub.DailyUsed = 0
 	sub.WeeklyUsed = 0
 	sub.MonthlyUsed = 0
+	for i := range sub.ResourceGrants {
+		sub.ResourceGrants[i].Used = 0
+	}
 	if advanceResetTime {
 		resetAnchor := time.Unix(now, 0)
 		nextReset := calcNextResetTime(resetAnchor, resetAnchor, plan, sub.EndTime)
@@ -1506,11 +1743,15 @@ func AdminResetPlanSubscriptions(planId int, advanceResetTime bool) (*Subscripti
 }
 
 type SubscriptionPreConsumeResult struct {
-	UserSubscriptionId int
-	PreConsumed        int64
-	AmountTotal        int64
-	AmountUsedBefore   int64
-	AmountUsedAfter    int64
+	UserSubscriptionId  int
+	PreConsumed         int64
+	AmountTotal         int64
+	AmountUsedBefore    int64
+	AmountUsedAfter     int64
+	ResourceKey         string
+	ResourceType        string
+	ResourcePreConsumed int64
+	ResourceUsedAfter   int64
 }
 
 // ExpireDueSubscriptions marks expired subscriptions and handles group downgrade.
@@ -1618,6 +1859,9 @@ type SubscriptionPreConsumeRecord struct {
 	UserId             int    `json:"user_id" gorm:"index"`
 	UserSubscriptionId int    `json:"user_subscription_id" gorm:"index"`
 	PreConsumed        int64  `json:"pre_consumed" gorm:"type:bigint;not null;default:0"`
+	ResourceKey        string `json:"resource_key" gorm:"type:varchar(128);index"`
+	ResourceType       string `json:"resource_type" gorm:"type:varchar(32);index"`
+	ResourceAmount     int64  `json:"resource_amount" gorm:"type:bigint;not null;default:0"`
 	Status             string `json:"status" gorm:"type:varchar(32);index"` // consumed/refunded
 	CreatedAt          int64  `json:"created_at" gorm:"bigint"`
 	UpdatedAt          int64  `json:"updated_at" gorm:"bigint;index"`
@@ -1761,6 +2005,9 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 		}
 		if advanced {
 			sub.AmountUsed = 0
+			for i := range sub.ResourceGrants {
+				sub.ResourceGrants[i].Used = 0
+			}
 			sub.LastResetTime = base.Unix()
 			sub.NextResetTime = next
 			changed = true
@@ -1802,8 +2049,18 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 	return tx.Save(sub).Error
 }
 
-// PreConsumeUserSubscription pre-consumes against every configured quota on an active subscription.
+// PreConsumeUserSubscription preserves the legacy quota-only API. New callers
+// should use PreConsumeUserSubscriptionWithResource when a model-specific
+// bonus grant may satisfy the request.
 func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64, effectiveGroups ...string) (*SubscriptionPreConsumeResult, error) {
+	return PreConsumeUserSubscriptionWithResource(requestId, userId, modelName, quotaType, amount, nil, effectiveGroups...)
+}
+
+// PreConsumeUserSubscriptionWithResource pre-consumes either the primary
+// package quota or a matching model-specific resource grant. A matching grant
+// is used first; when it is exhausted the subscription is not silently charged
+// against an unrelated model package.
+func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelName string, quotaType int, amount int64, resource *SubscriptionResourceRequest, effectiveGroups ...string) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
@@ -1812,6 +2069,16 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 	}
 	if amount <= 0 {
 		return nil, errors.New("amount must be > 0")
+	}
+	if amount > int64(common.MaxQuota) {
+		return nil, errors.New("amount exceeds subscription quota limit")
+	}
+	if resource != nil {
+		resource.ResourceKey = strings.TrimSpace(resource.ResourceKey)
+		resource.ResourceType = normalizeSubscriptionResourceType(resource.ResourceType)
+		if resource.ResourceKey == "" || resource.Amount <= 0 || resource.Amount > int64(common.MaxQuota) {
+			return nil, errors.New("invalid subscription resource request")
+		}
 	}
 	now := GetDBTimestamp()
 	effectiveGroup := ""
@@ -1840,6 +2107,17 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			returnValue.AmountTotal = sub.AmountTotal
 			returnValue.AmountUsedBefore = sub.AmountUsed
 			returnValue.AmountUsedAfter = sub.AmountUsed
+			returnValue.ResourceKey = existing.ResourceKey
+			returnValue.ResourceType = existing.ResourceType
+			returnValue.ResourcePreConsumed = existing.ResourceAmount
+			if existing.ResourceKey != "" {
+				for _, grant := range sub.ResourceGrants {
+					if grant.ResourceKey == existing.ResourceKey && grant.ResourceType == existing.ResourceType {
+						returnValue.ResourceUsedAfter = grant.Used
+						break
+					}
+				}
+			}
 			return nil
 		}
 
@@ -1865,18 +2143,44 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			if err := maybeResetUserSubscriptionWithPlanTx(tx, &sub, plan, now); err != nil {
 				return err
 			}
+
+			resourceIndex := -1
+			if resource != nil {
+				resourceMatched := false
+				for i := range sub.ResourceGrants {
+					grant := sub.ResourceGrants[i]
+					if grant.ResourceType != resource.ResourceType || !subscriptionResourceMatches(grant, resource.ResourceKey, modelName) {
+						continue
+					}
+					resourceMatched = true
+					if subscriptionUsageHasCapacity(grant.Amount, grant.Used, resource.Amount) {
+						resourceIndex = i
+						break
+					}
+				}
+				// A configured but exhausted grant must not silently charge a
+				// different entitlement for the same model.
+				if resourceMatched && resourceIndex < 0 {
+					continue
+				}
+			}
+			if resourceIndex < 0 && !subscriptionModelMatches(sub, modelName) {
+				continue
+			}
 			usedBefore := sub.AmountUsed
-			if !subscriptionUsageHasCapacity(sub.AmountTotal, sub.AmountUsed, amount) {
-				continue
-			}
-			if sub.DailyAmount > 0 && !subscriptionUsageHasCapacity(sub.DailyAmount, sub.DailyUsed, amount) {
-				continue
-			}
-			if sub.WeeklyAmount > 0 && !subscriptionUsageHasCapacity(sub.WeeklyAmount, sub.WeeklyUsed, amount) {
-				continue
-			}
-			if sub.MonthlyAmount > 0 && !subscriptionUsageHasCapacity(sub.MonthlyAmount, sub.MonthlyUsed, amount) {
-				continue
+			if resourceIndex < 0 {
+				if !subscriptionUsageHasCapacity(sub.AmountTotal, sub.AmountUsed, amount) {
+					continue
+				}
+				if sub.DailyAmount > 0 && !subscriptionUsageHasCapacity(sub.DailyAmount, sub.DailyUsed, amount) {
+					continue
+				}
+				if sub.WeeklyAmount > 0 && !subscriptionUsageHasCapacity(sub.WeeklyAmount, sub.WeeklyUsed, amount) {
+					continue
+				}
+				if sub.MonthlyAmount > 0 && !subscriptionUsageHasCapacity(sub.MonthlyAmount, sub.MonthlyUsed, amount) {
+					continue
+				}
 			}
 			record := &SubscriptionPreConsumeRecord{
 				RequestId:          requestId,
@@ -1884,6 +2188,16 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				UserSubscriptionId: sub.Id,
 				PreConsumed:        amount,
 				Status:             "consumed",
+			}
+			if resourceIndex >= 0 {
+				grant := &sub.ResourceGrants[resourceIndex]
+				grant.Used, err = applySubscriptionUsageDelta(grant.Used, resource.Amount)
+				if err != nil {
+					return err
+				}
+				record.ResourceKey = grant.ResourceKey
+				record.ResourceType = grant.ResourceType
+				record.ResourceAmount = resource.Amount
 			}
 			if err := tx.Create(record).Error; err != nil {
 				var dup SubscriptionPreConsumeRecord
@@ -1896,30 +2210,43 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 					returnValue.AmountTotal = sub.AmountTotal
 					returnValue.AmountUsedBefore = sub.AmountUsed
 					returnValue.AmountUsedAfter = sub.AmountUsed
+					returnValue.ResourceKey = dup.ResourceKey
+					returnValue.ResourceType = dup.ResourceType
+					returnValue.ResourcePreConsumed = dup.ResourceAmount
+					if dup.ResourceKey != "" {
+						for _, grant := range sub.ResourceGrants {
+							if grant.ResourceKey == dup.ResourceKey && grant.ResourceType == dup.ResourceType {
+								returnValue.ResourceUsedAfter = grant.Used
+								break
+							}
+						}
+					}
 					return nil
 				}
 				return err
 			}
-			sub.AmountUsed, err = applySubscriptionUsageDelta(sub.AmountUsed, amount)
-			if err != nil {
-				return err
-			}
-			if sub.DailyAmount > 0 {
-				sub.DailyUsed, err = applySubscriptionUsageDelta(sub.DailyUsed, amount)
+			if resourceIndex < 0 {
+				sub.AmountUsed, err = applySubscriptionUsageDelta(sub.AmountUsed, amount)
 				if err != nil {
 					return err
 				}
-			}
-			if sub.WeeklyAmount > 0 {
-				sub.WeeklyUsed, err = applySubscriptionUsageDelta(sub.WeeklyUsed, amount)
-				if err != nil {
-					return err
+				if sub.DailyAmount > 0 {
+					sub.DailyUsed, err = applySubscriptionUsageDelta(sub.DailyUsed, amount)
+					if err != nil {
+						return err
+					}
 				}
-			}
-			if sub.MonthlyAmount > 0 {
-				sub.MonthlyUsed, err = applySubscriptionUsageDelta(sub.MonthlyUsed, amount)
-				if err != nil {
-					return err
+				if sub.WeeklyAmount > 0 {
+					sub.WeeklyUsed, err = applySubscriptionUsageDelta(sub.WeeklyUsed, amount)
+					if err != nil {
+						return err
+					}
+				}
+				if sub.MonthlyAmount > 0 {
+					sub.MonthlyUsed, err = applySubscriptionUsageDelta(sub.MonthlyUsed, amount)
+					if err != nil {
+						return err
+					}
 				}
 			}
 			if err := tx.Save(&sub).Error; err != nil {
@@ -1930,6 +2257,13 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			returnValue.AmountTotal = sub.AmountTotal
 			returnValue.AmountUsedBefore = usedBefore
 			returnValue.AmountUsedAfter = sub.AmountUsed
+			if resourceIndex >= 0 {
+				grant := sub.ResourceGrants[resourceIndex]
+				returnValue.ResourceKey = grant.ResourceKey
+				returnValue.ResourceType = grant.ResourceType
+				returnValue.ResourcePreConsumed = resource.Amount
+				returnValue.ResourceUsedAfter = grant.Used
+			}
 			return nil
 		}
 		return fmt.Errorf("subscription quota insufficient, need=%d", amount)
@@ -1955,6 +2289,20 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			return nil
 		}
 		if record.PreConsumed <= 0 {
+			if record.ResourceAmount <= 0 {
+				record.Status = "refunded"
+				return tx.Save(&record).Error
+			}
+			if err := postConsumeUserSubscriptionResourceDeltaTx(tx, record.UserSubscriptionId, record.ResourceKey, record.ResourceType, -record.ResourceAmount); err != nil {
+				return err
+			}
+			record.Status = "refunded"
+			return tx.Save(&record).Error
+		}
+		if record.ResourceKey != "" && record.ResourceAmount > 0 {
+			if err := postConsumeUserSubscriptionResourceDeltaTx(tx, record.UserSubscriptionId, record.ResourceKey, record.ResourceType, -record.ResourceAmount); err != nil {
+				return err
+			}
 			record.Status = "refunded"
 			return tx.Save(&record).Error
 		}
@@ -2065,6 +2413,51 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 	return DB.Transaction(func(tx *gorm.DB) error {
 		return postConsumeUserSubscriptionDeltaTx(tx, userSubscriptionId, delta)
 	})
+}
+
+// PostConsumeUserSubscriptionResourceDelta settles a model-specific quota
+// grant. Image-count grants are consumed at pre-consume time; only a negative
+// delta is accepted here to refund a failed request.
+func PostConsumeUserSubscriptionResourceDelta(userSubscriptionId int, resourceKey, resourceType string, delta int64) error {
+	if userSubscriptionId <= 0 {
+		return errors.New("invalid userSubscriptionId")
+	}
+	if strings.TrimSpace(resourceKey) == "" {
+		return errors.New("resource key is empty")
+	}
+	if delta == 0 {
+		return nil
+	}
+	if normalizeSubscriptionResourceType(resourceType) == SubscriptionResourceTypeImageCount && delta > 0 {
+		return errors.New("image-count resources are consumed at pre-consume time")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return postConsumeUserSubscriptionResourceDeltaTx(tx, userSubscriptionId, resourceKey, resourceType, delta)
+	})
+}
+
+func postConsumeUserSubscriptionResourceDeltaTx(tx *gorm.DB, userSubscriptionId int, resourceKey, resourceType string, delta int64) error {
+	normalizedType := normalizeSubscriptionResourceType(resourceType)
+	var sub UserSubscription
+	if err := lockForUpdate(tx).Where("id = ?", userSubscriptionId).First(&sub).Error; err != nil {
+		return err
+	}
+	for i := range sub.ResourceGrants {
+		grant := &sub.ResourceGrants[i]
+		if grant.ResourceType != normalizedType || grant.ResourceKey != strings.TrimSpace(strings.ToLower(resourceKey)) {
+			continue
+		}
+		newUsed, err := applySubscriptionUsageDelta(grant.Used, delta)
+		if err != nil {
+			return fmt.Errorf("subscription resource usage update failed: %w", err)
+		}
+		if delta > 0 && grant.Amount > 0 && newUsed > grant.Amount {
+			return fmt.Errorf("subscription resource used exceeds grant, used=%d total=%d", newUsed, grant.Amount)
+		}
+		grant.Used = newUsed
+		return tx.Save(&sub).Error
+	}
+	return errors.New("subscription resource grant not found")
 }
 
 func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, delta int64) error {

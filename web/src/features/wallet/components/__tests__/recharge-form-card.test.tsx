@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import i18next from 'i18next'
 import { beforeAll, describe, expect, test, vi } from 'vitest'
 
@@ -59,6 +60,11 @@ describe('recharge permission gate', () => {
       'Have a Code?': 'Have a Code?',
       'Enter your redemption code': 'Enter your redemption code',
       Redeem: 'Redeem',
+      'Secure payment': 'Secure payment',
+      'Instant credit': 'Instant credit',
+      'Clear billing records': 'Clear billing records',
+      'Amount to pay': 'Amount to pay',
+      'Pay {{amount}} now': 'Pay {{amount}} now',
     })
   })
 
@@ -79,5 +85,81 @@ describe('recharge permission gate', () => {
 
     expect(screen.getByLabelText('Custom Amount')).toBeInTheDocument()
     expect(screen.getByLabelText('Have a Code?')).toBeInTheDocument()
+  })
+
+  test('labels preset and custom totals as amounts to pay', () => {
+    const { container } = render(
+      <RechargeFormCard
+        topupInfo={{ ...baseTopupInfo, top_up_enabled: true }}
+        topUpEnabled
+        presetAmounts={[{ value: 10 }]}
+        selectedPreset={10}
+        onSelectPreset={() => undefined}
+        topupAmount={10}
+        onTopupAmountChange={() => undefined}
+        paymentAmount={10}
+        calculating={false}
+        onPaymentMethodSelect={() => undefined}
+        paymentLoading={null}
+        redemptionCode=''
+        onRedemptionCodeChange={() => undefined}
+        onRedeem={() => undefined}
+        redeeming={false}
+      />
+    )
+
+    expect(container.textContent?.match(/Amount to pay/g)).toHaveLength(2)
+    expect(container).not.toHaveTextContent('≈')
+  })
+
+  test('selects a payment method before opening the confirmation flow', async () => {
+    const user = userEvent.setup()
+    const onPaymentMethodChange = vi.fn()
+    const onPaymentMethodSelect = vi.fn()
+
+    render(
+      <RechargeFormCard
+        topupInfo={{
+          ...baseTopupInfo,
+          top_up_enabled: true,
+          pay_methods: [
+            { name: 'WeChat', type: 'wechat' },
+            { name: 'Alipay', type: 'alipay' },
+          ],
+        }}
+        topUpEnabled
+        presetAmounts={[]}
+        selectedPreset={null}
+        onSelectPreset={() => undefined}
+        topupAmount={10}
+        onTopupAmountChange={() => undefined}
+        paymentAmount={10}
+        calculating={false}
+        onPaymentMethodSelect={onPaymentMethodSelect}
+        onPaymentMethodChange={onPaymentMethodChange}
+        paymentLoading={null}
+        redemptionCode=''
+        onRedemptionCodeChange={() => undefined}
+        onRedeem={() => undefined}
+        redeeming={false}
+      />
+    )
+
+    const alipayButton = screen.getByRole('button', { name: 'Alipay' })
+    await user.click(alipayButton)
+
+    expect(alipayButton).toHaveAttribute('aria-pressed', 'true')
+    expect(onPaymentMethodChange).toHaveBeenCalledWith({
+      name: 'Alipay',
+      type: 'alipay',
+    })
+    expect(onPaymentMethodSelect).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /Pay .+ now/ }))
+
+    expect(onPaymentMethodSelect).toHaveBeenCalledWith({
+      name: 'Alipay',
+      type: 'alipay',
+    })
   })
 })

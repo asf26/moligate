@@ -41,6 +41,7 @@ import { useUpdateOption } from '../hooks/use-update-option'
 const schema = z
   .object({
     enabled: z.boolean(),
+    cdkPurchaseOpenToAll: z.boolean(),
     level1RatePercent: z.coerce.number().min(0).max(100),
     level2RatePercent: z.coerce.number().min(0).max(100),
     cdkPurchaseDiscountPercent: z.coerce.number().min(0).max(99.99),
@@ -58,6 +59,7 @@ type Values = z.infer<typeof schema>
 type Props = {
   defaultValues: {
     enabled: boolean
+    cdkPurchaseOpenToAll: boolean
     level1RateBps: number
     level2RateBps: number
     cdkPurchaseDiscountBps: number
@@ -119,6 +121,7 @@ export function DistributionSettingsSection({
   const updateOption = useUpdateOption()
   const defaults: Values = {
     enabled: defaultValues.enabled,
+    cdkPurchaseOpenToAll: defaultValues.cdkPurchaseOpenToAll,
     level1RatePercent: bpsToPercent(defaultValues.level1RateBps),
     level2RatePercent: bpsToPercent(defaultValues.level2RateBps),
     cdkPurchaseDiscountPercent: bpsToPercent(
@@ -145,7 +148,8 @@ export function DistributionSettingsSection({
       (values.enabled ||
         level1RateBps > 0 ||
         level2RateBps > 0 ||
-        cdkPurchaseDiscountBps > 0) &&
+        cdkPurchaseDiscountBps > 0 ||
+        values.cdkPurchaseOpenToAll) &&
       !complianceConfirmed
     ) {
       toast.error(
@@ -168,6 +172,12 @@ export function DistributionSettingsSection({
       updates.push({
         key: 'distribution_setting.enabled',
         value: String(values.enabled),
+      })
+    }
+    if (values.cdkPurchaseOpenToAll !== defaultValues.cdkPurchaseOpenToAll) {
+      updates.push({
+        key: 'distribution_setting.cdk_purchase_open_to_all',
+        value: String(values.cdkPurchaseOpenToAll),
       })
     }
     if (updates.length === 0) {
@@ -243,6 +253,36 @@ export function DistributionSettingsSection({
               )}
             </p>
           )}
+
+          <FormField
+            control={form.control}
+            name='cdkPurchaseOpenToAll'
+            render={({ field }) => (
+              <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
+                <div className='space-y-0.5'>
+                  <FormLabel className='text-base'>
+                    {t('Open CDK procurement to all users')}
+                  </FormLabel>
+                  <FormDescription>
+                    {t(
+                      'When enabled, every enabled account can purchase CDKs; when disabled, only users with the CDK permission can access it.'
+                    )}
+                  </FormDescription>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={
+                      updateOption.isPending ||
+                      isSubmitting ||
+                      (!complianceConfirmed && !field.value)
+                    }
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
 
           <div className='grid gap-6 sm:grid-cols-2 lg:grid-cols-3'>
             <FormField

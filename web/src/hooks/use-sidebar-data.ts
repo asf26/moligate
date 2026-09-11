@@ -22,6 +22,7 @@ import {
   CreditCard,
   Crown,
   FileText,
+  FileSpreadsheet,
   FlaskConical,
   HandCoins,
   Key,
@@ -31,9 +32,11 @@ import {
   Radio,
   ServerCog,
   Settings,
+  Sparkles,
   Ticket,
   User,
   Users,
+  Video,
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -93,6 +96,14 @@ export function useSidebarData(): SidebarData {
             icon: FileText,
           },
           {
+            title: t('AI Creation'),
+            url: '/canvas?standalone=true',
+            activeUrls: ['/canvas', '/canvas/image', '/canvas/video'],
+            configUrls: ['/canvas'],
+            icon: Sparkles,
+            openInNewTab: true,
+          },
+          {
             title: t('Task Logs'),
             url: '/usage-logs/task',
             activeUrls: ['/usage-logs/drawing'],
@@ -121,6 +132,11 @@ export function useSidebarData(): SidebarData {
             icon: Crown,
           },
           {
+            title: t('Subscription Usage'),
+            url: '/subscription-usage',
+            icon: Activity,
+          },
+          {
             title: t('Top-up Rewards'),
             url: '/affiliate',
             icon: HandCoins,
@@ -145,6 +161,12 @@ export function useSidebarData(): SidebarData {
             title: t('Channels'),
             url: '/channels',
             icon: Radio,
+          },
+          {
+            title: t('Video Accounts'),
+            url: '/channels?capability=video',
+            configUrls: ['/channels'],
+            icon: Video,
           },
           {
             title: t('Channel Monitors'),
@@ -175,6 +197,11 @@ export function useSidebarData(): SidebarData {
             title: t('Affiliate Management'),
             url: '/affiliate-commissions',
             icon: HandCoins,
+          },
+          {
+            title: t('Enterprise Billing'),
+            url: '/enterprise-billing',
+            icon: FileSpreadsheet,
           },
           {
             title: t('System Info'),

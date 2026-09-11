@@ -40,10 +40,12 @@ interface UseBillingHistoryOptions {
   initialPage?: number
   /** Initial page size */
   initialPageSize?: number
+  /** Always load the signed-in user's orders, including for administrators. */
+  userOnly?: boolean
 }
 
 export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
-  const { initialPage = 1, initialPageSize = 10 } = options
+  const { initialPage = 1, initialPageSize = 10, userOnly = false } = options
   const isAdmin = useIsAdmin()
 
   const [records, setRecords] = useState<TopupRecord[]>([])
@@ -63,9 +65,10 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     const requestId = ++requestIdRef.current
     setLoading(true)
     try {
-      const response = isAdmin
-        ? await getAllBillingHistory(page, pageSize, debouncedKeyword)
-        : await getUserBillingHistory(page, pageSize, debouncedKeyword)
+      const response =
+        isAdmin && !userOnly
+          ? await getAllBillingHistory(page, pageSize, debouncedKeyword)
+          : await getUserBillingHistory(page, pageSize, debouncedKeyword)
 
       if (requestId !== requestIdRef.current) return
 
@@ -92,7 +95,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
         setLoading(false)
       }
     }
-  }, [debouncedKeyword, isAdmin, page, pageSize])
+  }, [debouncedKeyword, isAdmin, page, pageSize, userOnly])
 
   /**
    * Complete a pending order (admin only)

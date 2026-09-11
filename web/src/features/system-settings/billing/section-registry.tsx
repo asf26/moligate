@@ -199,6 +199,8 @@ const BILLING_SECTIONS = [
       <DistributionSettingsSection
         defaultValues={{
           enabled: settings['distribution_setting.enabled'],
+          cdkPurchaseOpenToAll:
+            settings['distribution_setting.cdk_purchase_open_to_all'],
           level1RateBps: settings['distribution_setting.level1_rate_bps'],
           level2RateBps: settings['distribution_setting.level2_rate_bps'],
           cdkPurchaseDiscountBps:

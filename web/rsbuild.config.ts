@@ -17,10 +17,9 @@ export default defineConfig(({ envMode }) => {
 
   const isProd = envMode === 'production'
   const devProxy = Object.fromEntries(
-    (['/api', '/mj', '/pg'] as const).map((key) => [
-      key,
-      { target: serverUrl, changeOrigin: true },
-    ])
+    (
+      ['/api', '/mj', '/pg', '/v1', '/v1beta', '/kling', '/jimeng'] as const
+    ).map((key) => [key, { target: serverUrl, changeOrigin: true }])
   ) as Record<string, { target: string; changeOrigin: boolean }>
 
   return {
@@ -69,6 +68,18 @@ export default defineConfig(({ envMode }) => {
       host: '0.0.0.0',
       strictPort: false,
       proxy: devProxy,
+      publicDir: [
+        {
+          name: path.resolve(__dirname, './public'),
+          copyOnBuild: true,
+          watch: true,
+        },
+        {
+          name: path.resolve(__dirname, './canvas-public'),
+          copyOnBuild: true,
+          watch: true,
+        },
+      ],
     },
     output: {
       // Production optimizations

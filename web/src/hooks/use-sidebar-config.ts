@@ -40,6 +40,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
   chat: {
     enabled: true,
     playground: true,
+    canvas: true,
     chat: true,
   },
   console: {
@@ -55,6 +56,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     enabled: true,
     topup: true,
     subscription: true,
+    subscription_usage: true,
     affiliate: true,
     affiliate_cdk: true,
     personal: true,
@@ -127,6 +129,7 @@ const migrateSidebarModulesConfig = (
  */
 const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/playground': { section: 'chat', module: 'playground' },
+  '/canvas': { section: 'chat', module: 'canvas' },
   '/dashboard': { section: 'console', module: 'detail' },
   '/dashboard/overview': { section: 'console', module: 'detail' },
   '/dashboard/models': { section: 'console', module: 'detail' },
@@ -139,6 +142,10 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/channel-status': { section: 'console', module: 'channel_status' },
   '/wallet': { section: 'personal', module: 'topup' },
   '/subscription-plans': { section: 'personal', module: 'subscription' },
+  '/subscription-usage': {
+    section: 'personal',
+    module: 'subscription_usage',
+  },
   '/affiliate': { section: 'personal', module: 'affiliate' },
   '/affiliate-cdk': { section: 'personal', module: 'affiliate_cdk' },
   '/profile': { section: 'personal', module: 'personal' },
@@ -362,7 +369,9 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
     return parseUserSidebarConfig(auth?.user?.sidebar_modules)
   }, [auth?.user?.permissions?.sidebar_settings, auth?.user?.sidebar_modules])
 
-  const canAccessAffiliateCdkModule = auth?.user?.affiliate_cdk_enabled === true
+  const canAccessAffiliateCdkModule =
+    status?.affiliate_cdk_open_to_all === true ||
+    auth?.user?.affiliate_cdk_enabled === true
 
   const filteredNavGroups = useMemo(
     () =>
@@ -399,7 +408,9 @@ export function useIsSidebarModuleVisible(url: string): boolean {
     auth?.user?.permissions?.sidebar_settings === false
       ? null
       : parseUserSidebarConfig(auth?.user?.sidebar_modules)
-  const canAccessAffiliateCdkModule = auth?.user?.affiliate_cdk_enabled === true
+  const canAccessAffiliateCdkModule =
+    status?.affiliate_cdk_open_to_all === true ||
+    auth?.user?.affiliate_cdk_enabled === true
 
   return isModuleEnabled(
     url,

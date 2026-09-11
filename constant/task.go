@@ -5,6 +5,10 @@ type TaskPlatform string
 const (
 	TaskPlatformSuno       TaskPlatform = "suno"
 	TaskPlatformMidjourney              = "mj"
+	// TaskPlatformMiniMaxH3 is stored separately from the legacy MiniMax
+	// platform so the polling worker can select the OpenAI-compatible H3 API
+	// without changing the channel type (35) used for key and billing lookup.
+	TaskPlatformMiniMaxH3 TaskPlatform = "minimax-h3"
 )
 
 const (

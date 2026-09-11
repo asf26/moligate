@@ -18,6 +18,7 @@ type DistributionSetting struct {
 	Level1RateBps               int    `json:"level1_rate_bps"`
 	Level2RateBps               int    `json:"level2_rate_bps"`
 	CdkPurchaseDiscountBps      int    `json:"cdk_purchase_discount_bps"`
+	CdkPurchaseOpenToAll        bool   `json:"cdk_purchase_open_to_all"`
 	Currency                    string `json:"currency"`
 	PointsPerAmountUnit         int    `json:"points_per_amount_unit"`
 	OfflineAmountPerPointMicros int64  `json:"offline_amount_per_point_micros"`
@@ -28,6 +29,7 @@ var distributionSetting = DistributionSetting{
 	Level1RateBps:               0,
 	Level2RateBps:               0,
 	CdkPurchaseDiscountBps:      0,
+	CdkPurchaseOpenToAll:        false,
 	Currency:                    "CNY",
 	PointsPerAmountUnit:         DefaultDistributionPointsPerAmountUnit,
 	OfflineAmountPerPointMicros: DefaultDistributionOfflineAmountPerPointMicros,
@@ -58,7 +60,7 @@ func NormalizeDistributionCurrency(currency string) string {
 	return strings.ToUpper(currency)
 }
 
-func ValidateDistributionSetting(enabled bool, level1RateBps int, level2RateBps int, cdkPurchaseDiscountBps int, currency string, pointsPerAmountUnit int, offlineAmountPerPointMicros int64) error {
+func validateDistributionSetting(enabled bool, level1RateBps int, level2RateBps int, cdkPurchaseDiscountBps int, cdkPurchaseOpenToAll bool, currency string, pointsPerAmountUnit int, offlineAmountPerPointMicros int64) error {
 	if level1RateBps < 0 || level1RateBps > 10000 {
 		return errors.New("一级分销积分比例必须在 0 到 10000 之间")
 	}
@@ -80,10 +82,14 @@ func ValidateDistributionSetting(enabled bool, level1RateBps int, level2RateBps 
 	if offlineAmountPerPointMicros <= 0 || offlineAmountPerPointMicros > 1000000000 {
 		return errors.New("每积分线下价值必须大于 0 且不超过 1000")
 	}
-	if (enabled || level1RateBps > 0 || level2RateBps > 0 || cdkPurchaseDiscountBps > 0) && !IsPaymentComplianceConfirmed() {
-		return errors.New("开启分销或设置积分比例前，请先完成支付合规确认")
+	if (enabled || level1RateBps > 0 || level2RateBps > 0 || cdkPurchaseDiscountBps > 0 || cdkPurchaseOpenToAll) && !IsPaymentComplianceConfirmed() {
+		return errors.New("开启分销、CDK 采购或设置积分比例前，请先完成支付合规确认")
 	}
 	return nil
+}
+
+func ValidateDistributionSetting(enabled bool, level1RateBps int, level2RateBps int, cdkPurchaseDiscountBps int, currency string, pointsPerAmountUnit int, offlineAmountPerPointMicros int64) error {
+	return validateDistributionSetting(enabled, level1RateBps, level2RateBps, cdkPurchaseDiscountBps, false, currency, pointsPerAmountUnit, offlineAmountPerPointMicros)
 }
 
 func ValidateDistributionOptionUpdate(key string, value string) error {
@@ -113,6 +119,12 @@ func ValidateDistributionOptionUpdate(key string, value string) error {
 			return errors.New("代理 CDK 采购折扣参数无效")
 		}
 		current.CdkPurchaseDiscountBps = discountBps
+	case DistributionSettingName + ".cdk_purchase_open_to_all":
+		openToAll, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return errors.New("CDK 采购开放范围参数无效")
+		}
+		current.CdkPurchaseOpenToAll = openToAll
 	case DistributionSettingName + ".currency":
 		current.Currency = NormalizeDistributionCurrency(value)
 	case DistributionSettingName + ".points_per_amount_unit":
@@ -130,5 +142,5 @@ func ValidateDistributionOptionUpdate(key string, value string) error {
 	default:
 		return nil
 	}
-	return ValidateDistributionSetting(current.Enabled, current.Level1RateBps, current.Level2RateBps, current.CdkPurchaseDiscountBps, current.Currency, current.PointsPerAmountUnit, current.OfflineAmountPerPointMicros)
+	return validateDistributionSetting(current.Enabled, current.Level1RateBps, current.Level2RateBps, current.CdkPurchaseDiscountBps, current.CdkPurchaseOpenToAll, current.Currency, current.PointsPerAmountUnit, current.OfflineAmountPerPointMicros)
 }

@@ -36,6 +36,7 @@ const excludedDirs = new Set([
   'build',
   'coverage',
   'dist',
+  'infinite-canvas',
   'node_modules',
 ])
 const headerExtensions = new Set([

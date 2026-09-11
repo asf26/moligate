@@ -58,6 +58,17 @@ export function CommandMenu() {
     [setOpen]
   )
 
+  const runNavigation = React.useCallback(
+    (url: string, openInNewTab?: boolean) => {
+      if (openInNewTab) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+        return
+      }
+      navigate({ to: url })
+    },
+    [navigate]
+  )
+
   return (
     <CommandDialog modal open={open} onOpenChange={setOpen}>
       <Command>
@@ -74,7 +85,12 @@ export function CommandMenu() {
                         key={`${navItem.url}-${i}`}
                         value={navItem.title}
                         onSelect={() => {
-                          runCommand(() => navigate({ to: navItem.url }))
+                          runCommand(() =>
+                            runNavigation(
+                              String(navItem.url),
+                              navItem.openInNewTab
+                            )
+                          )
                         }}
                       >
                         <div className='flex size-4 items-center justify-center'>
@@ -89,7 +105,12 @@ export function CommandMenu() {
                       key={`${navItem.title}-${subItem.url}-${i}`}
                       value={`${navItem.title}-${subItem.url}`}
                       onSelect={() => {
-                        runCommand(() => navigate({ to: subItem.url }))
+                        runCommand(() =>
+                          runNavigation(
+                            String(subItem.url),
+                            subItem.openInNewTab
+                          )
+                        )
                       }}
                     >
                       <div className='flex size-4 items-center justify-center'>

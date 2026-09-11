@@ -27,5 +27,6 @@ export {
   PLAN_FORM_DEFAULTS,
   planToFormValues,
   formValuesToPlanPayload,
+  emptyBonusResource,
   type PlanFormValues,
 } from './plan-form'

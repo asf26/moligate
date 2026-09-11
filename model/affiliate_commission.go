@@ -127,6 +127,24 @@ type AffiliateCommissionQuery struct {
 	EndTime    int64
 }
 
+type AffiliateInviteeRecord struct {
+	UserId             int    `json:"user_id"`
+	Username           string `json:"username"`
+	DisplayName        string `json:"display_name"`
+	CreatedAt          int64  `json:"created_at"`
+	TopUpCount         int64  `json:"top_up_count"`
+	BaseQuota          int64  `json:"base_quota"`
+	RewardPoints       int64  `json:"reward_points"`
+	PendingPoints      int64  `json:"pending_points"`
+	SettledPoints      int64  `json:"settled_points"`
+	LastContributionAt int64  `json:"last_contribution_at"`
+}
+
+type AffiliateInviteeQuery struct {
+	PromoterId       int
+	PromoterUsername string
+}
+
 type AffiliateCommissionSummary struct {
 	PendingAmountMicros       int64  `json:"pending_amount_micros"`
 	SettledAmountMicros       int64  `json:"settled_amount_micros"`
@@ -150,6 +168,10 @@ type AffiliateCommissionSummary struct {
 	PendingWalletAmountMicros int64  `json:"pending_wallet_amount_micros"`
 	PricePerWalletUnitMicros  int64  `json:"price_per_wallet_unit_micros"`
 	Currency                  string `json:"currency"`
+	Level1RateBps             int    `json:"level1_rate_bps"`
+	Level2RateBps             int    `json:"level2_rate_bps"`
+	PointsPerAmountUnit       int    `json:"points_per_amount_unit"`
+	InviteCount               int64  `json:"invite_count"`
 }
 
 type AffiliateRewardPointRedemptionResult struct {
@@ -589,6 +611,48 @@ func ListAffiliateCommissions(query AffiliateCommissionQuery, pageInfo *common.P
 	return records, total, err
 }
 
+func ListAffiliateInvitees(query AffiliateInviteeQuery, pageInfo *common.PageInfo) (records []*AffiliateInviteeRecord, total int64, err error) {
+	promoterId := query.PromoterId
+	if promoterId <= 0 && strings.TrimSpace(query.PromoterUsername) != "" {
+		var promoter User
+		if err = DB.Select("id").Where("username = ?", strings.TrimSpace(query.PromoterUsername)).First(&promoter).Error; err != nil {
+			return nil, 0, err
+		}
+		promoterId = promoter.Id
+	}
+	if promoterId <= 0 {
+		return nil, 0, errors.New("推广人 ID 参数无效")
+	}
+
+	baseQuery := DB.Model(&User{}).Where("users.inviter_id = ?", promoterId)
+	if err = baseQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	selectQuery := DB.Model(&User{}).
+		Select(strings.Join([]string{
+			"users.id AS user_id",
+			"users.username",
+			"users.display_name",
+			"users.created_at",
+			"COUNT(affiliate_commissions.id) AS top_up_count",
+			"COALESCE(SUM(affiliate_commissions.base_quota), 0) AS base_quota",
+			"COALESCE(SUM(affiliate_commissions.reward_points), 0) AS reward_points",
+			"COALESCE(SUM(CASE WHEN affiliate_commissions.status = ? AND affiliate_commissions.reward_points > affiliate_commissions.settled_points THEN affiliate_commissions.reward_points - affiliate_commissions.settled_points ELSE 0 END), 0) AS pending_points",
+			"COALESCE(SUM(affiliate_commissions.settled_points), 0) AS settled_points",
+			"COALESCE(MAX(affiliate_commissions.created_at), 0) AS last_contribution_at",
+		}, ", "), AffiliateCommissionStatusPending).
+		Joins("LEFT JOIN affiliate_commissions ON affiliate_commissions.buyer_id = users.id AND affiliate_commissions.promoter_id = ?", promoterId).
+		Where("users.inviter_id = ?", promoterId).
+		Group("users.id, users.username, users.display_name, users.created_at").
+		Order("users.created_at desc, users.id desc")
+	if pageInfo != nil {
+		selectQuery = selectQuery.Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx())
+	}
+	err = selectQuery.Scan(&records).Error
+	return records, total, err
+}
+
 func enrichAffiliateCommissionRecords(records []*AffiliateCommissionRecord) {
 	for _, record := range records {
 		if record == nil {
@@ -686,7 +750,15 @@ func GetAffiliateCommissionSummary(query AffiliateCommissionQuery) (AffiliateCom
 	}
 
 	summary := AffiliateCommissionSummary{
-		Currency: operation_setting.NormalizeDistributionCurrency(operation_setting.GetDistributionSetting().Currency),
+		Currency:            operation_setting.NormalizeDistributionCurrency(operation_setting.GetDistributionSetting().Currency),
+		Level1RateBps:       operation_setting.GetDistributionSetting().Level1RateBps,
+		Level2RateBps:       operation_setting.GetDistributionSetting().Level2RateBps,
+		PointsPerAmountUnit: operation_setting.GetDistributionSetting().PointsPerAmountUnit,
+	}
+	if query.PromoterId > 0 {
+		if err := DB.Model(&User{}).Where("inviter_id = ?", query.PromoterId).Count(&summary.InviteCount).Error; err != nil {
+			return AffiliateCommissionSummary{}, err
+		}
 	}
 	for _, commission := range commissions {
 		pendingPoints := pendingAffiliateRewardPoints(commission)

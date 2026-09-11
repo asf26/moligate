@@ -90,6 +90,7 @@ function isDisabledChannelRow(channel: Channel) {
 
 export function ChannelsTable() {
   const { t } = useTranslation()
+  const { capability } = route.useSearch()
   const {
     enableTagMode,
     idSort,
@@ -237,6 +238,7 @@ export function ChannelsTable() {
         typeFilter.length > 0 && !typeFilter.includes('all')
           ? Number(typeFilter[0])
           : undefined,
+      capability,
       tag_mode: enableTagMode,
       id_sort: idSort,
       ...sortParams,
@@ -260,6 +262,7 @@ export function ChannelsTable() {
             typeFilter.length > 0 && !typeFilter.includes('all')
               ? Number(typeFilter[0])
               : undefined,
+          capability,
           tag_mode: enableTagMode,
           id_sort: idSort,
           ...sortParams,
@@ -280,6 +283,7 @@ export function ChannelsTable() {
             typeFilter.length > 0 && !typeFilter.includes('all')
               ? Number(typeFilter[0])
               : undefined,
+          capability,
           tag_mode: enableTagMode,
           id_sort: idSort,
           ...sortParams,

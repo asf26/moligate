@@ -45,10 +45,10 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { formatCurrencyFromUSD } from '@/lib/currency'
-import { formatNumber } from '@/lib/format'
+import { formatSystemCurrencyUSD } from '@/lib/currency'
 
 import { useBillingHistory } from '../../hooks/use-billing-history'
+import { formatLocalPaymentAmount } from '../../lib'
 import {
   getStatusConfig,
   getPaymentMethodName,
@@ -241,7 +241,7 @@ export function BillingHistoryDialog({
                             {t('Amount')}
                           </Label>
                           <div className='text-sm font-semibold'>
-                            {formatCurrencyFromUSD(record.amount, {
+                            {formatSystemCurrencyUSD(record.amount, {
                               digitsLarge: 2,
                               digitsSmall: 2,
                               abbreviate: false,
@@ -253,7 +253,7 @@ export function BillingHistoryDialog({
                             {t('Payment')}
                           </Label>
                           <div className='text-sm font-semibold text-red-600'>
-                            {formatNumber(record.money)}
+                            {formatLocalPaymentAmount(record.money)}
                           </div>
                         </div>
                       </div>

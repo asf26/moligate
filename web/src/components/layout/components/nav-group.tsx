@@ -131,6 +131,8 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
           <Link
             to={item.url}
             preload={isMobile ? false : undefined}
+            target={item.openInNewTab ? '_blank' : undefined}
+            rel={item.openInNewTab ? 'noopener noreferrer' : undefined}
             onClick={() => setOpenMobile(false)}
           />
         }

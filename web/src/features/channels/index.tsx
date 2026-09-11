@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { getRouteApi, Link } from '@tanstack/react-router'
 import { Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -37,8 +37,12 @@ import { ChannelsPrimaryButtons } from './components/channels-primary-buttons'
 import { ChannelsProvider } from './components/channels-provider'
 import { ChannelsTable } from './components/channels-table'
 
+const route = getRouteApi('/_authenticated/channels/')
+
 export function Channels() {
   const { t } = useTranslation()
+  const { capability } = route.useSearch()
+  const videoOnly = capability === 'video'
   const isRoot = useAuthStore(
     (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
   )
@@ -83,12 +87,14 @@ export function Channels() {
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>
           <span className='flex min-w-0 items-center gap-2'>
-            <span className='truncate'>{t('Channels')}</span>
+            <span className='truncate'>
+              {videoOnly ? t('Video Accounts') : t('Channels')}
+            </span>
             {retryBadge}
           </span>
         </SectionPageLayout.Title>
         <SectionPageLayout.Actions>
-          <ChannelsPrimaryButtons />
+          <ChannelsPrimaryButtons videoOnly={videoOnly} />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
           <ChannelsTable />
