@@ -16,17 +16,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
+import type { PricingModel } from '@/features/pricing/types'
 import { cn } from '@/lib/utils'
 
 interface ModelFamily {
   name: string
   models: string[]
-  tone: 'coral' | 'teal' | 'gold' | 'green'
+  tone: ModelTone
 }
 
-const modelFamilies: ModelFamily[] = [
+type ModelTone = 'coral' | 'teal' | 'gold' | 'green'
+
+const MODEL_TONES: ModelTone[] = ['coral', 'teal', 'gold', 'green']
+const MAX_MODEL_FAMILIES = 6
+const MAX_MODELS_PER_FAMILY = 8
+
+const fallbackModelFamilies: ModelFamily[] = [
   {
     name: 'Claude',
     tone: 'coral',
@@ -90,8 +99,42 @@ const modelFamilies: ModelFamily[] = [
   },
 ]
 
+function buildModelFamilies(models: PricingModel[]): ModelFamily[] {
+  const familyModels = new Map<string, string[]>()
+  const seenModels = new Set<string>()
+
+  for (const model of models) {
+    const modelName = model.model_name.trim()
+    if (!modelName || seenModels.has(modelName)) continue
+
+    seenModels.add(modelName)
+    const familyName =
+      model.vendor_name?.trim() || modelName.split(/[-_/]/)[0] || 'Other models'
+    const modelsInFamily = familyModels.get(familyName) ?? []
+
+    if (modelsInFamily.length < MAX_MODELS_PER_FAMILY) {
+      modelsInFamily.push(modelName)
+      familyModels.set(familyName, modelsInFamily)
+    }
+  }
+
+  return Array.from(familyModels, ([name, familyModels], index) => ({
+    name,
+    models: familyModels,
+    tone: MODEL_TONES[index % MODEL_TONES.length],
+  })).slice(0, MAX_MODEL_FAMILIES)
+}
+
 export function ModelDirectory() {
   const { t } = useTranslation()
+  const { models } = usePricingData()
+  const remoteModelFamilies = useMemo(
+    () => buildModelFamilies(models),
+    [models]
+  )
+  const modelFamilies =
+    remoteModelFamilies.length > 0 ? remoteModelFamilies : fallbackModelFamilies
+  const usesRemoteModels = remoteModelFamilies.length > 0
 
   return (
     <section id='models' className='home-reference-models px-4 pb-16'>
@@ -110,7 +153,7 @@ export function ModelDirectory() {
                 )}
                 aria-hidden='true'
               />
-              {t(family.name)}
+              {usesRemoteModels ? family.name : t(family.name)}
             </h3>
             <div className='flex flex-wrap gap-2'>
               {family.models.map((model) => (

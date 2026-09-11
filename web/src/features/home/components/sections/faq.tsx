@@ -24,8 +24,10 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion'
+import { useFAQ } from '@/features/dashboard/hooks/use-status-data'
+import type { FAQItem } from '@/features/dashboard/types'
 
-const faqDefinitions = [
+const fallbackFaqDefinitions: FAQItem[] = [
   {
     question: 'What is Moligate?',
     answer:
@@ -60,7 +62,13 @@ const faqDefinitions = [
 
 export function FAQ() {
   const { t } = useTranslation()
-  const defaultExpandedQuestion = faqDefinitions[0]?.question ?? ''
+  const { items: configuredFaq } = useFAQ()
+  const remoteFaq = configuredFaq.filter(
+    (item) => item.question.trim() && item.answer.trim()
+  )
+  const faqItems = remoteFaq.length > 0 ? remoteFaq : fallbackFaqDefinitions
+  const usesConfiguredFaq = remoteFaq.length > 0
+  const defaultExpandedQuestion = faqItems[0]?.question ?? ''
 
   return (
     <section
@@ -79,20 +87,27 @@ export function FAQ() {
           defaultValue={[defaultExpandedQuestion]}
           className='home-reference-faq mt-10'
         >
-          {faqDefinitions.map((item) => (
-            <AccordionItem
-              key={item.question}
-              value={item.question}
-              className='home-reference-faq-item'
-            >
-              <AccordionTrigger className='home-reference-faq-trigger hover:no-underline'>
-                {t(item.question)}
-              </AccordionTrigger>
-              <AccordionContent className='home-reference-faq-content'>
-                <p>{t(item.answer)}</p>
-              </AccordionContent>
-            </AccordionItem>
-          ))}
+          {faqItems.map((item) => {
+            const question = usesConfiguredFaq
+              ? item.question
+              : t(item.question)
+            const answer = usesConfiguredFaq ? item.answer : t(item.answer)
+
+            return (
+              <AccordionItem
+                key={item.id ?? item.question}
+                value={item.question}
+                className='home-reference-faq-item'
+              >
+                <AccordionTrigger className='home-reference-faq-trigger hover:no-underline'>
+                  {question}
+                </AccordionTrigger>
+                <AccordionContent className='home-reference-faq-content'>
+                  <p className='whitespace-pre-line'>{answer}</p>
+                </AccordionContent>
+              </AccordionItem>
+            )
+          })}
         </Accordion>
       </div>
     </section>

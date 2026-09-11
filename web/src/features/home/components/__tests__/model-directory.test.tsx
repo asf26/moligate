@@ -19,10 +19,25 @@ For commercial licensing, please contact support@quantumnous.com
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
+
 import { ModelDirectory } from '../sections/model-directory'
+
+vi.mock('@/features/pricing/hooks/use-pricing-data', () => ({
+  usePricingData: vi.fn(),
+}))
+
+const mockedUsePricingData = vi.mocked(usePricingData)
 
 describe('ModelDirectory', () => {
   beforeEach(() => {
+    mockedUsePricingData.mockReturnValue({
+      models: [
+        { model_name: 'gpt-live', vendor_name: 'OpenAI' },
+        { model_name: 'claude-live', vendor_name: 'Anthropic' },
+        { model_name: 'gemini-live', vendor_name: 'Google' },
+      ],
+    } as unknown as ReturnType<typeof usePricingData>)
     vi.stubGlobal(
       'IntersectionObserver',
       class IntersectionObserverMock {
@@ -33,37 +48,31 @@ describe('ModelDirectory', () => {
     )
   })
 
-  it('shows each supported model family and its key routes', () => {
+  it('shows the model families and models returned by the model catalog', () => {
     render(<ModelDirectory />)
 
     expect(
       screen.getByRole('heading', { name: 'Models directory' })
     ).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Claude' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'GPT' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Gemini' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'OpenAI' })).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: 'Chinese models' })
+      screen.getByRole('heading', { name: 'Anthropic' })
     ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('heading', { name: 'Codex' })
-    ).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Google' })).toBeInTheDocument()
+    expect(screen.getByText('gpt-live')).toBeInTheDocument()
+    expect(screen.getByText('claude-live')).toBeInTheDocument()
+    expect(screen.getByText('gemini-live')).toBeInTheDocument()
+    expect(screen.queryByText('claude-opus-5')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the curated directory when the model catalog is empty', () => {
+    mockedUsePricingData.mockReturnValue({
+      models: [],
+    } as unknown as ReturnType<typeof usePricingData>)
+
+    render(<ModelDirectory />)
+
+    expect(screen.getByRole('heading', { name: 'Claude' })).toBeInTheDocument()
     expect(screen.getByText('claude-opus-5')).toBeInTheDocument()
-    expect(screen.getByText('gpt-5.6-sol')).toBeInTheDocument()
-    expect(screen.getByText('gemini-2.5-pro')).toBeInTheDocument()
-    expect(screen.getByText('deepseek-v4-pro')).toBeInTheDocument()
-    expect(screen.getByText('qwen3.8-max')).toBeInTheDocument()
-    expect(screen.getByText('glm-5.3')).toBeInTheDocument()
-    expect(screen.getByText('kimi-k3')).toBeInTheDocument()
-    expect(screen.getByText('doubao-seed-2.0-pro')).toBeInTheDocument()
-    expect(screen.getByText('minimax-m3')).toBeInTheDocument()
-    expect(screen.queryByText('qwen-max')).not.toBeInTheDocument()
-    expect(screen.queryByText('GLM-4.5')).not.toBeInTheDocument()
-    expect(screen.queryByText('MiniMax-M2.5')).not.toBeInTheDocument()
-    expect(screen.queryByText('SparkDesk-v4.0')).not.toBeInTheDocument()
-    expect(
-      screen.queryByText(/ernie|hy4|hunyuan|stepfun/i)
-    ).not.toBeInTheDocument()
-    expect(screen.queryByText(/mimo|xiaomi/i)).not.toBeInTheDocument()
   })
 })
