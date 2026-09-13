@@ -1712,10 +1712,8 @@ For commercial licensing, please contact support@quantumnous.com
   gap: 0.75rem;
 }
 
-@media (min-width: 1251px) {
-  .home-reference-pricing-grid-count-6 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+.home-reference-pricing-grid-count-6 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .home-reference-plan-card {

@@ -51,10 +51,11 @@ const PLAN_DESCRIPTION_KEYS: Record<string, string> = {
   ultra: 'For high-demand users, $1 = 12x quota',
 }
 
+const HOME_PRICING_PLAN_LIMIT = 6
+
 function sortPlans(records: PlanRecord[]): PlanRecord[] {
   return records
     .filter((record) => record.plan.enabled !== false)
-    .slice()
     .sort((left, right) => {
       const priceDelta =
         Number(left.plan.price_amount) - Number(right.plan.price_amount)
@@ -97,9 +98,18 @@ export function PricingPreview(props: PricingProps) {
         : [],
     [plansQuery.data]
   )
-  const recommendedIndex = useMemo(() => getRecommendedIndex(plans), [plans])
-  const recommendedPlan = recommendedIndex >= 0 ? plans[recommendedIndex] : null
-  const highlightedPlan = plans.at(-1) ?? null
+  const previewPlans = useMemo(
+    () => plans.slice(0, HOME_PRICING_PLAN_LIMIT),
+    [plans]
+  )
+  const hasMorePlans = plans.length > previewPlans.length
+  const recommendedIndex = useMemo(
+    () => getRecommendedIndex(previewPlans),
+    [previewPlans]
+  )
+  const recommendedPlan =
+    recommendedIndex >= 0 ? previewPlans[recommendedIndex] : null
+  const highlightedPlan = hasMorePlans ? null : (previewPlans.at(-1) ?? null)
   const hasPlanError =
     plansQuery.isError || Boolean(plansQuery.data && !plansQuery.data.success)
 
@@ -172,11 +182,11 @@ export function PricingPreview(props: PricingProps) {
 
         {isLoading && (
           <div
-            className='home-reference-pricing-grid home-reference-pricing-grid-count-5 mt-8'
+            className='home-reference-pricing-grid home-reference-pricing-grid-count-6 mt-8'
             role='status'
             aria-label={t('Loading...')}
           >
-            {Array.from({ length: 5 }, (_, index) => (
+            {Array.from({ length: HOME_PRICING_PLAN_LIMIT }, (_, index) => (
               <div key={index} className='home-reference-plan-card'>
                 <Skeleton className='h-5 w-1/2' />
                 <Skeleton className='h-10 w-2/3' />
@@ -195,13 +205,16 @@ export function PricingPreview(props: PricingProps) {
           <div
             className={cn(
               'home-reference-pricing-grid mt-8',
-              `home-reference-pricing-grid-count-${Math.min(plans.length, 6)}`
+              `home-reference-pricing-grid-count-${previewPlans.length}`
             )}
           >
-            {plans.map((record, index) => {
+            {previewPlans.map((record, index) => {
               const plan = record.plan
               const isRecommended = index === recommendedIndex
-              const isUltra = plans.length > 1 && index === plans.length - 1
+              const isUltra =
+                !hasMorePlans &&
+                previewPlans.length > 1 &&
+                index === previewPlans.length - 1
               const quotaItems = [
                 ['Daily limit {{value}}', plan.daily_amount],
                 ['Weekly limit {{value}}', plan.weekly_amount],
@@ -291,6 +304,21 @@ export function PricingPreview(props: PricingProps) {
                 </AnimateInView>
               )
             })}
+          </div>
+        )}
+
+        {hasMorePlans && (
+          <div className='mt-8 flex justify-center'>
+            <Button
+              variant='outline'
+              size='lg'
+              className='min-w-44'
+              render={<Link to={planHref} />}
+              nativeButton={false}
+            >
+              {t('View more plans')}
+              <ArrowRight data-icon='inline-end' aria-hidden='true' />
+            </Button>
           </div>
         )}
 

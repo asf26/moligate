@@ -67,14 +67,27 @@ const configuredPlan: PlanRecord = {
   },
 }
 
+function makePlan(id: number): PlanRecord {
+  return {
+    plan: {
+      ...configuredPlan.plan,
+      id,
+      title: `Plan ${id}`,
+      subtitle: `Description ${id}`,
+      price_amount: id * 10,
+      sort_order: id,
+    },
+  }
+}
+
 describe('PricingPreview', () => {
-  function renderPricing() {
+  function renderPricing(props?: { isAuthenticated?: boolean }) {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
     return render(
       <QueryClientProvider client={queryClient}>
-        <PricingPreview />
+        <PricingPreview {...props} />
       </QueryClientProvider>
     )
   }
@@ -109,6 +122,42 @@ describe('PricingPreview', () => {
     expect(
       screen.queryByRole('heading', { name: 'Basic' })
     ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'View more plans' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('limits the homepage preview to six plans and links to the full catalog', async () => {
+    vi.mocked(getPublicPlans).mockResolvedValue({
+      success: true,
+      data: Array.from({ length: 7 }, (_, index) => makePlan(index + 1)),
+    })
+
+    renderPricing()
+
+    expect(await screen.findByRole('heading', { name: 'Plan 1' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Plan 6' })).toBeVisible()
+    expect(
+      screen.queryByRole('heading', { name: 'Plan 7' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('New', { exact: true })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(6)
+    expect(
+      screen.getByRole('link', { name: 'View more plans' })
+    ).toHaveAttribute('href', '/sign-up')
+  })
+
+  it('links authenticated visitors to the subscription plans page', async () => {
+    vi.mocked(getPublicPlans).mockResolvedValue({
+      success: true,
+      data: Array.from({ length: 7 }, (_, index) => makePlan(index + 1)),
+    })
+
+    renderPricing({ isAuthenticated: true })
+
+    expect(
+      await screen.findByRole('link', { name: 'View more plans' })
+    ).toHaveAttribute('href', '/subscription-plans')
   })
 
   it('shows an empty state when the backend has no enabled plans', async () => {
