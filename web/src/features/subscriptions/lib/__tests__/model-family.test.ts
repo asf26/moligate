@@ -66,7 +66,9 @@ describe('subscription model families', () => {
     })
 
     const family = getPlanModelFamily(plan)
-    expect(family.key).toBe('gpt')
+    expect(family?.key).toBe('gpt')
+    expect(family).toBeDefined()
+    if (!family) throw new Error('expected GPT family')
     expect(getIncludedModels(plan, family)).toEqual(['gpt-5.5', 'gpt-image-2'])
   })
 
@@ -75,24 +77,60 @@ describe('subscription model families', () => {
       applicable_groups: ['cn-premium'],
     })
 
-    expect(getPlanModelFamily(plan).key).toBe('chinese')
+    expect(getPlanModelFamily(plan)?.key).toBe('chinese')
     expect(plan.model_family).toBeUndefined()
   })
 
-  test('groups plans in a stable family order and falls back to all models', () => {
+  test('recognizes each configured family without a catch-all group', () => {
     const groups = groupPlansByModelFamily([
-      makePlan(1, 'GPT Pro', { model_family: 'gpt' }),
-      makePlan(2, 'General'),
-      makePlan(3, 'CC Max Basic', { model_family: 'ccmax' }),
+      makePlan(1, 'Banana pack', { model_family: 'banana' }),
+      makePlan(2, 'GPT Image pack', { model_family: 'gpt-image' }),
+      makePlan(3, 'Kiro Claude Basic', { model_family: 'kiro-claude' }),
+      makePlan(4, 'GPT Pro', { model_family: 'gpt' }),
+      makePlan(5, 'CC Max Basic', { model_family: 'ccmax' }),
     ])
 
     expect(groups.map((group) => group.family.key)).toEqual([
       'ccmax',
+      'kiro-claude',
       'gpt',
-      'all',
+      'gpt-image',
+      'banana',
     ])
-    expect(getIncludedModels(groups[2].plans[0], groups[2].family)).toContain(
-      'claude-opus-5'
-    )
+    expect(
+      groups.find((group) => group.family.key === 'kiro-claude')?.plans
+    ).toHaveLength(1)
+    expect(
+      groups.find((group) => group.family.key === 'gpt-image')?.plans
+    ).toHaveLength(1)
+    expect(
+      groups.find((group) => group.family.key === 'banana')?.plans
+    ).toHaveLength(1)
+  })
+
+  test('does not classify legacy all or unknown plans as Kiro or another family', () => {
+    const unknown = makePlan(1, 'General')
+    const legacyAll = makePlan(2, 'All access', { model_family: 'all' })
+
+    expect(getPlanModelFamily(unknown)).toBeUndefined()
+    expect(getPlanModelFamily(legacyAll)).toBeUndefined()
+    expect(groupPlansByModelFamily([unknown, legacyAll])).toEqual([])
+  })
+
+  test('infers image families from legacy metadata', () => {
+    expect(
+      getPlanModelFamily(
+        makePlan(1, 'GPT Image 3,000 pack', {
+          included_models: ['gpt-image-2'],
+        })
+      )?.key
+    ).toBe('gpt-image')
+    expect(
+      getPlanModelFamily(
+        makePlan(2, 'Nano Banana 3,000 pack', {
+          included_models: ['gemini-3-pro-image-preview'],
+        })
+      )?.key
+    ).toBe('banana')
   })
 })

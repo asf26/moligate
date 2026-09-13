@@ -41,6 +41,7 @@ import {
 } from '@/features/subscriptions/lib'
 import {
   getIncludedModels,
+  getPlanModelFamily,
   groupPlansByModelFamily,
   type ModelFamilyKey,
   type ModelFamilyPlanGroup,
@@ -74,7 +75,9 @@ function ModelFamilyHeader({
   headingId: string
 }) {
   const { t } = useTranslation()
-  const modelCount = group.family.models.length
+  const modelCount = new Set(
+    group.plans.flatMap((plan) => getIncludedModels(plan, group.family))
+  ).size
 
   return (
     <div className='subscription-model-family-header'>
@@ -127,6 +130,9 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
   const bonusResources = (plan.bonus_resources || []).filter(
     (resource) => Number(resource.amount) > 0 && resource.model_name?.trim()
   )
+  const imageAllowance = bonusResources
+    .filter((resource) => resource.resource_type === 'image_count')
+    .reduce((total, resource) => total + Number(resource.amount), 0)
   const badgeText =
     plan.badge_text?.trim() || (props.isPopular ? t('Hot recommendation') : '')
   const totalQuota = Number(plan.total_amount || 0)
@@ -134,11 +140,19 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
     currency?.quotaPerUnit > 0
       ? currency.quotaPerUnit
       : DEFAULT_CURRENCY_CONFIG.quotaPerUnit
-  const bonusPercent = getPlanBonusPercent(
+  const quotaMultiplier = getPlanQuotaMultiplier(
     totalQuota,
     priceAmount,
     quotaPerUnit
   )
+  const summaryLabel =
+    imageAllowance > 0 ? t('Image allowance') : t('Quota multiplier')
+  let summaryValue = '—'
+  if (imageAllowance > 0) {
+    summaryValue = `${imageAllowance.toLocaleString()} ${t('generations')}`
+  } else if (quotaMultiplier > 0) {
+    summaryValue = `${quotaMultiplier.toFixed(2)}x`
+  }
   const stockRemaining =
     limit > 0 ? Math.max(0, limit - props.purchaseCount) : 0
   const stockPercent =
@@ -211,9 +225,9 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
             {totalQuota > 0 ? formatWalletQuota(totalQuota) : t('Unlimited')}
           </strong>
         </div>
-        <div className='subscription-plan-summary-block subscription-plan-summary-block-bonus'>
-          <span>{t('Bonus ratio (%)')}</span>
-          <strong>{bonusPercent > 0 ? `+${bonusPercent}%` : '—'}</strong>
+        <div className='subscription-plan-summary-block subscription-plan-summary-block-multiplier'>
+          <span>{summaryLabel}</span>
+          <strong>{summaryValue}</strong>
         </div>
       </div>
 
@@ -366,7 +380,7 @@ function getPlanBenefits(
   ]
 }
 
-function getPlanBonusPercent(
+function getPlanQuotaMultiplier(
   totalQuota: number,
   priceAmount: number,
   quotaPerUnit: number
@@ -382,11 +396,7 @@ function getPlanBonusPercent(
     return 0
   }
 
-  const creditedAmount = totalQuota / quotaPerUnit
-  return Math.max(
-    0,
-    Math.round(((creditedAmount - priceAmount) / priceAmount) * 100)
-  )
+  return Math.max(0, totalQuota / quotaPerUnit / priceAmount)
 }
 
 function getEpayMethods(payMethods: PaymentMethod[] = []): PaymentMethod[] {
@@ -470,7 +480,11 @@ export function SubscriptionPlansCard({
 
   // The administrator controls every sellable plan. Keep all configured
   // durations visible together so a plan is never hidden behind a cycle toggle.
-  const visiblePlans = displayPlans
+  const visiblePlans = useMemo(
+    () =>
+      displayPlans.filter((record) => Boolean(getPlanModelFamily(record.plan))),
+    [displayPlans]
+  )
 
   const modelFamilyGroups = useMemo(
     () => groupPlansByModelFamily(visiblePlans.map((record) => record.plan)),
@@ -636,7 +650,7 @@ export function SubscriptionPlansCard({
           </section>
         )}
 
-        {displayPlans.length === 0 &&
+        {visiblePlans.length === 0 &&
           (!rechargeEnabled ? (
             <Alert variant='destructive'>
               <AlertDescription>

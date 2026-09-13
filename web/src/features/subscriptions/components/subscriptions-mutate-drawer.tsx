@@ -697,10 +697,12 @@ export function SubscriptionsMutateDrawer({
                           label: t('Automatically infer from plan metadata'),
                         },
                         { value: 'ccmax', label: t('CC Max') },
+                        { value: 'kiro-claude', label: t('Kiro Claude') },
                         { value: 'gpt', label: 'GPT' },
                         { value: 'gemini', label: 'Gemini' },
                         { value: 'chinese', label: t('Chinese models') },
-                        { value: 'all', label: t('All supported models') },
+                        { value: 'gpt-image', label: t('GPT Image') },
+                        { value: 'banana', label: t('Nano Banana') },
                       ]}
                       value={field.value || '__auto__'}
                       onValueChange={(value) =>
@@ -718,13 +720,19 @@ export function SubscriptionsMutateDrawer({
                             {t('Automatically infer from plan metadata')}
                           </SelectItem>
                           <SelectItem value='ccmax'>{t('CC Max')}</SelectItem>
+                          <SelectItem value='kiro-claude'>
+                            {t('Kiro Claude')}
+                          </SelectItem>
                           <SelectItem value='gpt'>GPT</SelectItem>
                           <SelectItem value='gemini'>Gemini</SelectItem>
                           <SelectItem value='chinese'>
                             {t('Chinese models')}
                           </SelectItem>
-                          <SelectItem value='all'>
-                            {t('All supported models')}
+                          <SelectItem value='gpt-image'>
+                            {t('GPT Image')}
+                          </SelectItem>
+                          <SelectItem value='banana'>
+                            {t('Nano Banana')}
                           </SelectItem>
                         </SelectGroup>
                       </SelectContent>
@@ -1072,7 +1080,7 @@ export function SubscriptionsMutateDrawer({
 
               <p className='text-muted-foreground text-xs leading-5'>
                 {t(
-                  'Price, estimated credit, bonus percentage, model count, and availability are calculated from the price, quota, model, and purchase-limit settings above.'
+                  'Price, estimated credit, quota multiplier, model count, and availability are calculated from the price, quota, model, and purchase-limit settings above.'
                 )}
               </p>
             </SideDrawerSection>

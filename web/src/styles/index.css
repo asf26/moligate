@@ -1845,7 +1845,11 @@ For commercial licensing, please contact support@quantumnous.com
   border: 1px solid #d7e1eb;
   border-radius: 0.75rem;
   background:
-    radial-gradient(circle at 77% 20%, rgb(243 111 70 / 0.16), transparent 23rem),
+    radial-gradient(
+      circle at 77% 20%,
+      rgb(243 111 70 / 0.16),
+      transparent 23rem
+    ),
     linear-gradient(115deg, #ffffff 0%, #fffdf9 48%, #f2f7fb 100%);
   box-shadow:
     0 26px 66px -48px rgb(37 47 61 / 0.54),
@@ -2374,7 +2378,8 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .app-shell-header-inner {
-  border-inline: 1px solid color-mix(in oklch, var(--foreground) 3%, transparent);
+  border-inline: 1px solid
+    color-mix(in oklch, var(--foreground) 3%, transparent);
 }
 
 .app-header-actions {
@@ -2649,6 +2654,14 @@ For commercial licensing, please contact support@quantumnous.com
   --subscription-family-color: #64748b;
 }
 
+.subscription-model-family-mark-violet {
+  --subscription-family-color: #7c3aed;
+}
+
+.subscription-model-family-mark-pink {
+  --subscription-family-color: #db2777;
+}
+
 .subscription-model-family-count,
 .subscription-model-family-tier-count {
   display: inline-flex;
@@ -2757,6 +2770,14 @@ For commercial licensing, please contact support@quantumnous.com
   background: #64748b;
 }
 
+.subscription-model-family-tab-dot-violet {
+  background: #7c3aed;
+}
+
+.subscription-model-family-tab-dot-pink {
+  background: #db2777;
+}
+
 .subscription-model-family-tab-count {
   min-width: 1.2rem;
   border-radius: 999px;
@@ -2836,6 +2857,18 @@ For commercial licensing, please contact support@quantumnous.com
   --subscription-plan-accent: #64748b;
   --subscription-plan-accent-strong: #475569;
   --subscription-plan-accent-soft: #f8fafc;
+}
+
+.subscription-billing-plan-card-tone-violet {
+  --subscription-plan-accent: #7c3aed;
+  --subscription-plan-accent-strong: #6d28d9;
+  --subscription-plan-accent-soft: #f5f3ff;
+}
+
+.subscription-billing-plan-card-tone-pink {
+  --subscription-plan-accent: #db2777;
+  --subscription-plan-accent-strong: #be185d;
+  --subscription-plan-accent-soft: #fdf2f8;
 }
 
 .subscription-billing-plan-card-with-badge {
@@ -2950,7 +2983,7 @@ For commercial licensing, please contact support@quantumnous.com
   vertical-align: baseline;
 }
 
-.subscription-plan-summary-block-bonus {
+.subscription-plan-summary-block-multiplier {
   border-color: transparent;
   background: linear-gradient(
     135deg,
@@ -2974,8 +3007,8 @@ For commercial licensing, please contact support@quantumnous.com
   color: var(--subscription-plan-accent-strong);
 }
 
-.subscription-plan-summary-block-bonus span,
-.subscription-plan-summary-block-bonus strong {
+.subscription-plan-summary-block-multiplier span,
+.subscription-plan-summary-block-multiplier strong {
   color: #ffffff;
 }
 

@@ -20,14 +20,23 @@ import type { SubscriptionPlan } from '../types'
 
 export const MODEL_FAMILY_KEYS = [
   'ccmax',
+  'kiro-claude',
   'gpt',
   'gemini',
   'chinese',
-  'all',
+  'gpt-image',
+  'banana',
 ] as const
 
 export type ModelFamilyKey = (typeof MODEL_FAMILY_KEYS)[number]
-export type ModelFamilyTone = 'orange' | 'green' | 'amber' | 'blue' | 'slate'
+export type ModelFamilyTone =
+  | 'orange'
+  | 'green'
+  | 'amber'
+  | 'blue'
+  | 'slate'
+  | 'violet'
+  | 'pink'
 
 export interface ModelFamilyDefinition {
   key: ModelFamilyKey
@@ -55,8 +64,11 @@ const GPT_MODELS = [
   'gpt-5.5',
   'gpt-5.4',
   'gpt-5.4-mini',
-  'gpt-image-2',
 ] as const
+
+const KIRO_CLAUDE_MODELS = CC_MAX_MODELS
+
+const GPT_IMAGE_MODELS = ['gpt-image-2'] as const
 
 const GEMINI_MODELS = [
   'gemini-2.5-pro',
@@ -87,11 +99,9 @@ const CHINESE_MODELS = [
   'minimax-m3',
 ] as const
 
-const ALL_MODELS = [
-  ...CC_MAX_MODELS,
-  ...GPT_MODELS,
-  ...GEMINI_MODELS,
-  ...CHINESE_MODELS,
+const BANANA_MODELS = [
+  'gemini-3-pro-image-preview',
+  'gemini-3.1-flash-image-preview',
 ] as const
 
 export const MODEL_FAMILY_DEFINITIONS: readonly ModelFamilyDefinition[] = [
@@ -102,6 +112,14 @@ export const MODEL_FAMILY_DEFINITIONS: readonly ModelFamilyDefinition[] = [
     tone: 'orange',
     models: CC_MAX_MODELS,
     matchers: ['ccmax', 'cc max', 'claude', 'anthropic'],
+  },
+  {
+    key: 'kiro-claude',
+    labelKey: 'Kiro Claude',
+    descriptionKey: 'Kiro Claude models for coding and agent workflows',
+    tone: 'slate',
+    models: KIRO_CLAUDE_MODELS,
+    matchers: ['kiro-claude', 'kiro claude', 'kiro'],
   },
   {
     key: 'gpt',
@@ -137,13 +155,26 @@ export const MODEL_FAMILY_DEFINITIONS: readonly ModelFamilyDefinition[] = [
     ],
   },
   {
-    key: 'all',
-    labelKey: 'All supported models',
-    descriptionKey:
-      'One subscription with access to every supported model family',
-    tone: 'slate',
-    models: ALL_MODELS,
-    matchers: ['all', 'unlimited', '通用', '全部'],
+    key: 'gpt-image',
+    labelKey: 'GPT Image',
+    descriptionKey: 'GPT Image models for image generation',
+    tone: 'violet',
+    models: GPT_IMAGE_MODELS,
+    matchers: ['gpt-image', 'gpt image', 'image generation', '图片生成'],
+  },
+  {
+    key: 'banana',
+    labelKey: 'Nano Banana',
+    descriptionKey: 'Nano Banana models for image generation',
+    tone: 'pink',
+    models: BANANA_MODELS,
+    matchers: [
+      'nano banana',
+      'banana',
+      '香蕉生图',
+      'gemini-3-pro-image-preview',
+      'gemini-3.1-flash-image-preview',
+    ],
   },
 ]
 
@@ -151,32 +182,31 @@ const MODEL_FAMILY_MAP = new Map(
   MODEL_FAMILY_DEFINITIONS.map((family) => [family.key, family])
 )
 
+const MODEL_FAMILY_ALIASES: Record<string, ModelFamilyKey> = {
+  kiro: 'kiro-claude',
+  'kiro claude': 'kiro-claude',
+  kiro_claude: 'kiro-claude',
+  'gpt image': 'gpt-image',
+  gpt_image: 'gpt-image',
+  'nano banana': 'banana',
+}
+
 function normalizeFamilyValue(value: string | undefined): string {
   return value?.trim().toLowerCase() || ''
 }
 
 export function getModelFamilyDefinition(
   key: string | undefined
-): ModelFamilyDefinition {
+): ModelFamilyDefinition | undefined {
   const normalized = normalizeFamilyValue(key)
-  if (MODEL_FAMILY_KEYS.includes(normalized as ModelFamilyKey)) {
-    const family = MODEL_FAMILY_MAP.get(normalized as ModelFamilyKey)
-    if (family) return family
-  }
-  const fallback = MODEL_FAMILY_MAP.get('all')
-  if (!fallback) {
-    throw new Error('The all-supported model family must be configured')
-  }
-  return fallback
+  const resolvedKey = MODEL_FAMILY_ALIASES[normalized] || normalized
+  return MODEL_FAMILY_MAP.get(resolvedKey as ModelFamilyKey)
 }
 
-export function getPlanModelFamily(
+function findFamilyByMetadata(
   plan: SubscriptionPlan
-): ModelFamilyDefinition {
-  const explicit = getModelFamilyDefinition(plan.model_family)
-  if (plan.model_family?.trim()) return explicit
-
-  const searchable = [
+): ModelFamilyDefinition | undefined {
+  const metadata = [
     plan.title,
     plan.subtitle,
     ...(plan.applicable_groups || []),
@@ -184,11 +214,45 @@ export function getPlanModelFamily(
     .join(' ')
     .toLowerCase()
 
-  return (
-    MODEL_FAMILY_DEFINITIONS.find((family) =>
-      family.matchers.some((matcher) => searchable.includes(matcher))
-    ) || explicit
+  const matches = MODEL_FAMILY_DEFINITIONS.flatMap((family) =>
+    family.matchers
+      .filter((matcher) => metadata.includes(matcher))
+      .map((matcher) => ({ family, matcher }))
   )
+  matches.sort((left, right) => right.matcher.length - left.matcher.length)
+  return matches[0]?.family
+}
+
+function findFamilyByIncludedModels(
+  plan: SubscriptionPlan
+): ModelFamilyDefinition | undefined {
+  const configured = [
+    ...new Set(
+      (plan.included_models || [])
+        .map((model) => model.trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  ]
+  if (configured.length === 0) return undefined
+
+  const matches = MODEL_FAMILY_DEFINITIONS.filter((family) =>
+    configured.every((model) =>
+      family.models.some((candidate) => candidate.toLowerCase() === model)
+    )
+  )
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+export function getPlanModelFamily(
+  plan: SubscriptionPlan
+): ModelFamilyDefinition | undefined {
+  const explicit = getModelFamilyDefinition(plan.model_family)
+  if (explicit) return explicit
+
+  // Legacy `all` and unknown values are inferred only when their metadata
+  // identifies one concrete family. Otherwise the plan stays hidden instead
+  // of being presented as a misleading catch-all or Kiro plan.
+  return findFamilyByMetadata(plan) || findFamilyByIncludedModels(plan)
 }
 
 export function getIncludedModels(
@@ -213,6 +277,7 @@ export function groupPlansByModelFamily(
   const grouped = new Map<ModelFamilyKey, SubscriptionPlan[]>()
   for (const plan of plans) {
     const family = getPlanModelFamily(plan)
+    if (!family) continue
     const current = grouped.get(family.key) || []
     current.push(plan)
     grouped.set(family.key, current)

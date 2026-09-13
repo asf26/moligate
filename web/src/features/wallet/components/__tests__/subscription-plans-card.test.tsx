@@ -73,6 +73,7 @@ function makePlan(
       upgrade_group: '',
       downgrade_group: '',
       applicable_groups: [],
+      model_family: 'kiro-claude',
       stripe_price_id: '',
       creem_product_id: '',
       waffo_pancake_product_id: '',
@@ -186,10 +187,10 @@ describe('subscription plans layout', () => {
     const card = await screen.findByRole('article', { name: 'Starter' })
     expect(within(card).getByText('Only 3 left')).toBeVisible()
     expect(
-      within(card).getByText('Supports the All supported models model family')
+      within(card).getByText('Supports the Kiro Claude model family')
     ).toBeVisible()
     expect(
-      within(card).getAllByText(/Includes \d+ models from All supported models/)
+      within(card).getAllByText(/Includes \d+ models from Kiro Claude/)
     ).toHaveLength(2)
     expect(within(card).getByText('Package benefits')).toBeVisible()
     expect(within(card).getByText(/Valid for 1 months?/)).toBeVisible()
@@ -207,7 +208,7 @@ describe('subscription plans layout', () => {
 
     renderPlans()
 
-    await screen.findByRole('tabpanel', { name: /All supported models/ })
+    await screen.findByRole('tabpanel', { name: /Kiro Claude/ })
 
     expect(screen.getAllByRole('article')).toHaveLength(3)
     expect(screen.getByRole('heading', { name: 'Starter' })).toBeVisible()
@@ -248,13 +249,14 @@ describe('subscription plans layout', () => {
     expect(gptTab).toHaveAttribute('aria-selected', 'false')
     const ccMaxFamily = screen.getByRole('tabpanel', { name: /CC Max/ })
     expect(ccMaxFamily).toBeVisible()
+    expect(within(ccMaxFamily).getByText('1 models')).toBeVisible()
     expect(
       screen.queryByRole('tabpanel', { name: /GPT/ })
     ).not.toBeInTheDocument()
     expect(screen.queryByText('claude-opus-5')).not.toBeInTheDocument()
     expect(screen.getAllByText('Estimated wallet credit')).toHaveLength(1)
-    expect(screen.getAllByText('Bonus ratio (%)')).toHaveLength(1)
-    expect(within(ccMaxFamily).getByText('+1%')).toBeVisible()
+    expect(screen.getAllByText('Quota multiplier')).toHaveLength(1)
+    expect(within(ccMaxFamily).getByText('1.01x')).toBeVisible()
     expect(within(ccMaxFamily).getAllByRole('progressbar')).toHaveLength(1)
 
     await user.click(gptTab)
@@ -264,8 +266,9 @@ describe('subscription plans layout', () => {
     expect(screen.queryByText('claude-opus-5')).not.toBeInTheDocument()
     const gptFamily = screen.getByRole('tabpanel', { name: /GPT/ })
     expect(gptFamily).toBeVisible()
+    expect(within(gptFamily).getByText('2 models')).toBeVisible()
     expect(within(gptFamily).getByText('Estimated wallet credit')).toBeVisible()
-    expect(within(gptFamily).getByText('Bonus ratio (%)')).toBeVisible()
+    expect(within(gptFamily).getByText('Quota multiplier')).toBeVisible()
     expect(within(gptFamily).queryByText('gpt-image-2')).not.toBeInTheDocument()
     expect(within(gptFamily).getAllByRole('article')).toHaveLength(1)
   })
@@ -328,8 +331,37 @@ describe('subscription plans layout', () => {
     const card = await screen.findByRole('article', { name: 'GPT Pro' })
     expect(within(card).getByText('Included extras')).toBeVisible()
     expect(within(card).getByText('Image pack')).toBeVisible()
-    expect(within(card).getByText('10 generations')).toBeVisible()
+    expect(within(card).getAllByText('10 generations')).toHaveLength(2)
     expect(within(card).getByText('Grok bonus')).toBeVisible()
     expect(within(card).queryByText('gpt-image-2')).not.toBeInTheDocument()
+  })
+
+  test('shows image allowance for image-count plans instead of a quota multiplier', async () => {
+    vi.mocked(getPublicPlans).mockResolvedValue({
+      success: true,
+      data: [
+        makePlan(1, 'GPT Image 3,000 pack', 'month', {
+          model_family: 'gpt-image',
+          total_amount: 1,
+          bonus_resources: [
+            {
+              resource_key: 'gpt-image-2',
+              resource_type: 'image_count',
+              model_name: 'gpt-image-2',
+              amount: 3000,
+            },
+          ],
+        }),
+      ],
+    })
+
+    renderPlans()
+
+    const card = await screen.findByRole('article', {
+      name: 'GPT Image 3,000 pack',
+    })
+    expect(within(card).getByText('Image allowance')).toBeVisible()
+    expect(within(card).getByText('3,000 generations')).toBeVisible()
+    expect(within(card).queryByText('Quota multiplier')).not.toBeInTheDocument()
   })
 })
