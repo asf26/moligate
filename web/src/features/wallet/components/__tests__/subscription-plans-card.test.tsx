@@ -157,6 +157,24 @@ describe('subscription plans layout', () => {
     expect(screen.getByText('Hot recommendation')).toBeVisible()
   })
 
+  test('renders all five tiers in the selected family', async () => {
+    vi.mocked(getPublicPlans).mockResolvedValue({
+      success: true,
+      data: [
+        makePlan(1, 'Starter', 'month', { model_family: 'ccmax' }),
+        makePlan(2, 'Growth', 'month', { model_family: 'ccmax' }),
+        makePlan(3, 'Professional', 'month', { model_family: 'ccmax' }),
+        makePlan(4, 'Business', 'month', { model_family: 'ccmax' }),
+        makePlan(5, 'Ultra', 'month', { model_family: 'ccmax' }),
+      ],
+    })
+
+    renderPlans()
+
+    const panel = await screen.findByRole('tabpanel', { name: /CC Max/ })
+    expect(within(panel).getAllByRole('article')).toHaveLength(5)
+  })
+
   test('renders reference-style entitlement details without decorative plan icons', async () => {
     vi.mocked(getPublicPlans).mockResolvedValue({
       success: true,
