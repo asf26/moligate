@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,6 +66,49 @@ func TestGeminiChatHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.
 	require.Equal(t, 2209, usage.CompletionTokens)
 	require.Equal(t, 20689, usage.TotalTokens)
 	require.Equal(t, 1120, usage.CompletionTokenDetails.ReasoningTokens)
+}
+
+func TestGeminiChatHandlerRecordsActualInlineImageCount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-3-pro-image:generateContent", nil)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "gemini-3-pro-image",
+		RelayFormat:     types.RelayFormatOpenAI,
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gemini-3-pro-image"},
+	}
+	payload := dto.GeminiChatResponse{Candidates: []dto.GeminiChatCandidate{{Content: dto.GeminiChatContent{
+		Parts: []dto.GeminiPart{{InlineData: &dto.GeminiInlineData{MimeType: "image/png", Data: "a"}}, {InlineData: &dto.GeminiInlineData{MimeType: "image/png", Data: "b"}}},
+	}}}}
+	body, err := common.Marshal(payload)
+	require.NoError(t, err)
+	usage, newAPIError := GeminiChatHandler(c, info, &http.Response{Body: io.NopCloser(bytes.NewReader(body))})
+	require.Nil(t, newAPIError)
+	require.NotNil(t, usage)
+	require.True(t, info.ActualImageCountSet)
+	require.EqualValues(t, 2, info.ActualImageCount)
+}
+
+func TestGeminiResponseImageCountExcludesThoughtAndNonImageParts(t *testing.T) {
+	response := &dto.GeminiChatResponse{Candidates: []dto.GeminiChatCandidate{{Content: dto.GeminiChatContent{
+		Parts: []dto.GeminiPart{
+			{InlineData: &dto.GeminiInlineData{MimeType: "image/png", Data: "thought"}, Thought: true},
+			{InlineData: &dto.GeminiInlineData{MimeType: "audio/wav", Data: "audio"}},
+			{InlineData: &dto.GeminiInlineData{MimeType: "image/png", Data: "actual"}},
+		},
+	}}}}
+	assert.Equal(t, 1, geminiResponseInlineImageCount(response))
+}
+
+func TestGeminiStreamImageCountKeepsRequestedCountOnAbort(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "gemini-3-pro-image",
+		StreamStatus:    &relaycommon.StreamStatus{},
+	}
+	info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, nil)
+	recordGeminiStreamImageCount(info, 0)
+	require.True(t, info.ActualImageCountSet)
+	assert.EqualValues(t, 1, info.ActualImageCount)
 }
 
 func TestGeminiStreamHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.T) {

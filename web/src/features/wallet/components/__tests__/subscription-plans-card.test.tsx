@@ -193,7 +193,7 @@ describe('subscription plans layout', () => {
       within(card).getAllByText(/Includes \d+ models from Kiro Claude/)
     ).toHaveLength(2)
     expect(within(card).getByText('Package benefits')).toBeVisible()
-    expect(within(card).getByText(/Valid for 1 months?/)).toBeVisible()
+    expect(within(card).getByText('Valid for 30 days')).toBeVisible()
   })
 
   test('renders configured annual and monthly plans together', async () => {
@@ -255,8 +255,8 @@ describe('subscription plans layout', () => {
     ).not.toBeInTheDocument()
     expect(screen.queryByText('claude-opus-5')).not.toBeInTheDocument()
     expect(screen.getAllByText('Estimated wallet credit')).toHaveLength(1)
-    expect(screen.getAllByText('Quota multiplier')).toHaveLength(1)
-    expect(within(ccMaxFamily).getByText('1.01x')).toBeVisible()
+    expect(screen.getAllByText('Validity Period')).toHaveLength(1)
+    expect(within(ccMaxFamily).getByText('30 days')).toBeVisible()
     expect(within(ccMaxFamily).getAllByRole('progressbar')).toHaveLength(1)
 
     await user.click(gptTab)
@@ -268,7 +268,7 @@ describe('subscription plans layout', () => {
     expect(gptFamily).toBeVisible()
     expect(within(gptFamily).getByText('2 models')).toBeVisible()
     expect(within(gptFamily).getByText('Estimated wallet credit')).toBeVisible()
-    expect(within(gptFamily).getByText('Quota multiplier')).toBeVisible()
+    expect(within(gptFamily).getByText('Validity Period')).toBeVisible()
     expect(within(gptFamily).queryByText('gpt-image-2')).not.toBeInTheDocument()
     expect(within(gptFamily).getAllByRole('article')).toHaveLength(1)
   })
@@ -330,8 +330,8 @@ describe('subscription plans layout', () => {
 
     const card = await screen.findByRole('article', { name: 'GPT Pro' })
     expect(within(card).getByText('Included extras')).toBeVisible()
-    expect(within(card).getByText('Image pack')).toBeVisible()
-    expect(within(card).getAllByText('10 generations')).toHaveLength(2)
+    expect(within(card).getByText('Image allowance')).toBeVisible()
+    expect(within(card).getAllByText('10 generations')).toHaveLength(1)
     expect(within(card).getByText('Grok bonus')).toBeVisible()
     expect(within(card).queryByText('gpt-image-2')).not.toBeInTheDocument()
   })
@@ -362,6 +362,7 @@ describe('subscription plans layout', () => {
     })
     expect(within(card).getByText('Image allowance')).toBeVisible()
     expect(within(card).getByText('3,000 generations')).toBeVisible()
-    expect(within(card).queryByText('Quota multiplier')).not.toBeInTheDocument()
+    expect(within(card).getByText('Validity Period')).toBeVisible()
+    expect(within(card).getByText('30 days')).toBeVisible()
   })
 })

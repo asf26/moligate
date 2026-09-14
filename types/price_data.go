@@ -29,6 +29,11 @@ type PriceData struct {
 	UsePrice             bool
 	Quota                int // 按次计费的最终额度（MJ / Task）
 	QuotaToPreConsume    int // 按量计费的预消耗额度
+	// BaseQuotaBeforeGroup is the estimated quota before applying GroupRatio.
+	// It lets subscription billing reprice a request after the funding source
+	// is selected, including requests that were initially routed through a
+	// zero-ratio/free group.
+	BaseQuotaBeforeGroup float64
 	GroupRatioInfo       GroupRatioInfo
 }
 

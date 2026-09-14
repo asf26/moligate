@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -35,6 +36,38 @@ func attachEstimatedGeminiBillingUsage(usage *dto.Usage) *dto.Usage {
 		usage.BillingUsage = dto.NewEstimatedGeminiChatBillingUsage(usage)
 	}
 	return usage
+}
+
+func recordGeminiImageCount(info *relaycommon.RelayInfo, count int) {
+	if info == nil || count < 0 {
+		return
+	}
+	modelName := strings.ToLower(strings.TrimSpace(info.OriginModelName))
+	if modelName == "" {
+		modelName = strings.ToLower(strings.TrimSpace(info.UpstreamModelName))
+	}
+	if count == 0 && !isGeminiImageGenerationModel(modelName) {
+		return
+	}
+	if count > dto.MaxImageN {
+		count = dto.MaxImageN
+	}
+	info.ActualImageCount = int64(count)
+	info.ActualImageCountSet = true
+	if count > 0 {
+		info.PriceData.AddOtherRatio("n", float64(count))
+	}
+}
+
+func isGeminiImageGenerationModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(modelName, "image") || strings.Contains(modelName, "banana") ||
+		modelName == "gemini-2.0-flash-exp" || modelName == "gemini-2.0-flash-exp-image-generation"
+}
+
+func geminiPartIsBillableImage(part dto.GeminiPart) bool {
+	return !part.Thought && part.InlineData != nil &&
+		strings.HasPrefix(strings.ToLower(strings.TrimSpace(part.InlineData.MimeType)), "image/")
 }
 
 // patchGeminiZeroCompletionUsage estimates completion tokens locally when upstream
@@ -89,6 +122,7 @@ func markGeminiGoogleSearchCall(c *gin.Context, response *dto.GeminiChatResponse
 }
 
 func buildUsageFromGeminiResponse(c *gin.Context, info *relaycommon.RelayInfo, response *dto.GeminiChatResponse) dto.Usage {
+	recordGeminiImageCount(info, geminiResponseInlineImageCount(response))
 	metadata := response.GetUsageMetadata()
 	if dto.HasGeminiUsageMetadataTokens(metadata) {
 		usage := buildUsageFromGeminiMetadata(metadata, info.GetEstimatePromptTokens())
@@ -107,12 +141,42 @@ func geminiResponseInlineImageCount(response *dto.GeminiChatResponse) int {
 	count := 0
 	for _, candidate := range response.Candidates {
 		for _, part := range candidate.Content.Parts {
-			if part.InlineData != nil && part.InlineData.MimeType != "" {
+			if geminiPartIsBillableImage(part) {
 				count++
 			}
 		}
 	}
 	return count
+}
+
+func geminiRequestedImageCount(info *relaycommon.RelayInfo) int {
+	if info == nil {
+		return 1
+	}
+	requested := int64(1)
+	if count, ok := info.PriceData.OtherRatios()["n"]; ok &&
+		count >= 1 && count <= float64(dto.MaxImageN) && !math.IsNaN(count) &&
+		!math.IsInf(count, 0) && math.Trunc(count) == count {
+		requested = int64(count)
+	}
+	if info.SubscriptionResourceAmount > requested && info.SubscriptionResourceAmount <= int64(dto.MaxImageN) {
+		requested = info.SubscriptionResourceAmount
+	}
+	return int(requested)
+}
+
+func recordGeminiStreamImageCount(info *relaycommon.RelayInfo, count int) {
+	if info == nil {
+		return
+	}
+	requested := geminiRequestedImageCount(info)
+	upstreamFinished := info.StreamStatus == nil ||
+		info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone ||
+		info.StreamStatus.EndReason == relaycommon.StreamEndReasonEOF
+	if !upstreamFinished && count < requested {
+		count = requested
+	}
+	recordGeminiImageCount(info, count)
 }
 
 func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse) *dto.OpenAITextResponse {
@@ -166,7 +230,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		// 统计图片数量
 		for _, candidate := range geminiResponse.Candidates {
 			for _, part := range candidate.Content.Parts {
-				if part.InlineData != nil && part.InlineData.MimeType != "" {
+				if geminiPartIsBillableImage(part) {
 					imageCount++
 				}
 				if part.Text != "" {
@@ -202,6 +266,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	} else {
 		patchGeminiZeroCompletionUsage(c, info, usage, responseText.String(), imageCount)
 	}
+	recordGeminiStreamImageCount(info, imageCount)
 
 	return usage, nil
 }
@@ -344,19 +409,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		}
 
 		service.ResetStatusCode(newAPIError, c.GetString("status_code_mapping"))
-
-		switch info.RelayFormat {
-		case types.RelayFormatClaude:
-			c.JSON(newAPIError.StatusCode, gin.H{
-				"type":  "error",
-				"error": newAPIError.ToClaudeError(),
-			})
-		default:
-			c.JSON(newAPIError.StatusCode, gin.H{
-				"error": newAPIError.ToOpenAIError(),
-			})
-		}
-		return &usage, nil
+		return &usage, newAPIError
 	}
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
 	fullTextResponse.Model = info.UpstreamModelName
@@ -478,6 +531,7 @@ func GeminiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	// each image has fixed 258 tokens
 	const imageTokens = 258
 	generatedImages := len(openAIResponse.Data)
+	recordGeminiImageCount(info, generatedImages)
 
 	usage := &dto.Usage{
 		PromptTokens:     imageTokens * generatedImages, // each generated image has fixed 258 tokens

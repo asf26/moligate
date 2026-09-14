@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
@@ -47,7 +48,9 @@ func TestMain(m *testing.M) {
 		&model.Channel{},
 		&model.Midjourney{},
 		&model.TopUp{},
+		&model.SubscriptionPlan{},
 		&model.UserSubscription{},
+		&model.SubscriptionPreConsumeRecord{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
 	); err != nil {
@@ -71,7 +74,9 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM midjourneys")
 		model.DB.Exec("DELETE FROM top_ups")
+		model.DB.Exec("DELETE FROM subscription_pre_consume_records")
 		model.DB.Exec("DELETE FROM user_subscriptions")
+		model.DB.Exec("DELETE FROM subscription_plans")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
 	})
@@ -696,6 +701,40 @@ func TestRefundTaskQuota_Subscription(t *testing.T) {
 	assert.Zero(t, getTaskQuota(t, task.ID))
 }
 
+func TestRefundTaskQuota_SubscriptionImageGrantUsesGenerationCount(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	const userID, channelID, subID = 21, 21, 21
+	const preConsumed = 2_000
+	seedUser(t, userID, 0)
+	seedChannel(t, channelID)
+	seedChargedAccounting(t, userID, channelID, 0, preConsumed, 1)
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		Id: subID, UserId: userID, AmountTotal: 100_000, AmountUsed: 12_345,
+		Status: "active", StartTime: time.Now().Add(-time.Hour).Unix(), EndTime: time.Now().Add(time.Hour).Unix(),
+		ResourceGrants: []model.SubscriptionResourceGrant{{
+			ResourceKey: "gpt-image-2", ResourceType: model.SubscriptionResourceTypeImageCount,
+			ModelName: "gpt-image-2", Amount: 10, Used: 3,
+		}},
+	}).Error)
+
+	task := makeTask(userID, channelID, preConsumed, 0, BillingSourceSubscription, subID)
+	task.PrivateData.SubscriptionResourceKey = "gpt-image-2"
+	task.PrivateData.SubscriptionResourceType = model.SubscriptionResourceTypeImageCount
+	task.PrivateData.SubscriptionResourceAmount = 3
+	require.NoError(t, model.DB.Create(task).Error)
+
+	assert.True(t, RefundTaskQuota(ctx, task, "image task failed"))
+
+	var subscription model.UserSubscription
+	require.NoError(t, model.DB.First(&subscription, subID).Error)
+	assert.EqualValues(t, 12_345, subscription.AmountUsed, "image refunds must not modify the package quota bucket")
+	require.Len(t, subscription.ResourceGrants, 1)
+	assert.Zero(t, subscription.ResourceGrants[0].Used, "the exact three reserved generations must be restored")
+	assert.Zero(t, getTaskQuota(t, task.ID))
+}
+
 func TestRefundTaskQuota_ZeroQuota(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
@@ -923,6 +962,98 @@ func TestRecalculate_Subscription_NegativeDelta(t *testing.T) {
 	log := getLastLog(t)
 	require.NotNil(t, log)
 	assert.Equal(t, model.LogTypeRefund, log.Type)
+}
+
+func TestRecalculateByTokens_SubscriptionUsesPersistedRatioSnapshots(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	const userID, channelID, subscriptionID = 15, 15, 15
+	const initialSubscriptionUsed int64 = 50_000
+	const preConsumed = 3_000
+
+	seedUser(t, userID, 0)
+	seedChannel(t, channelID)
+	seedSubscription(t, subscriptionID, userID, 100_000, initialSubscriptionUsed)
+	seedChargedAccounting(t, userID, channelID, 0, preConsumed, 1)
+
+	// Deliberately make the live settings differ from the ratios captured on
+	// the purchased subscription. The async poll must continue using the
+	// captured values even if an administrator changes these settings later.
+	originalModelRatios := ratio_setting.ModelRatio2JSONString()
+	originalGroupRatios := ratio_setting.GroupRatio2JSONString()
+	originalGroupGroupRatios := ratio_setting.GroupGroupRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatios))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatios))
+		require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(originalGroupGroupRatios))
+	})
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"test-model":9}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":3}`))
+	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{}`))
+
+	task := makeTask(userID, channelID, preConsumed, 0, BillingSourceSubscription, subscriptionID)
+	task.PrivateData.BillingContext.ModelRatio = 2
+	task.PrivateData.BillingContext.GroupRatio = 0.5
+	task.PrivateData.BillingContext.FixedGroupRatio = true
+	require.NoError(t, task.Insert())
+	var persisted model.Task
+	require.NoError(t, model.DB.First(&persisted, task.ID).Error)
+	task = &persisted
+
+	// Snapshot formula: 1,000 tokens × 2.0 model ratio × 0.5 package ratio.
+	RecalculateTaskQuotaByTokens(ctx, task, 1_000)
+
+	assert.Equal(t, 1_000, task.Quota)
+	assert.Equal(t, initialSubscriptionUsed-2_000, getSubscriptionUsed(t, subscriptionID))
+	usedQuota, requestCount := getUserUsageAccounting(t, userID)
+	assert.Equal(t, 1_000, usedQuota)
+	assert.Equal(t, 1, requestCount)
+	assert.Equal(t, int64(1_000), getChannelUsedQuota(t, channelID))
+}
+
+func TestRecalculateByTokens_WalletUsesLiveRatios(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	const userID, channelID = 16, 16
+	const initialUserQuota, preConsumed = 50_000, 3_000
+
+	seedUser(t, userID, initialUserQuota)
+	seedChannel(t, channelID)
+	seedChargedAccounting(t, userID, channelID, 0, preConsumed, 1)
+
+	originalModelRatios := ratio_setting.ModelRatio2JSONString()
+	originalGroupRatios := ratio_setting.GroupRatio2JSONString()
+	originalGroupGroupRatios := ratio_setting.GroupGroupRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatios))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatios))
+		require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(originalGroupGroupRatios))
+	})
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"test-model":9}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":3}`))
+	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{}`))
+
+	task := makeTask(userID, channelID, preConsumed, 0, BillingSourceWallet, 0)
+	// This value must be ignored for wallet-funded tasks; wallet settlement
+	// continues to follow the current live model/group settings.
+	task.PrivateData.BillingContext.ModelRatio = 2
+	task.PrivateData.BillingContext.GroupRatio = 0.5
+	require.NoError(t, task.Insert())
+	var persisted model.Task
+	require.NoError(t, model.DB.First(&persisted, task.ID).Error)
+	task = &persisted
+
+	// Live formula: 1,000 tokens × 9.0 model ratio × 3.0 group ratio.
+	RecalculateTaskQuotaByTokens(ctx, task, 1_000)
+
+	assert.Equal(t, 27_000, task.Quota)
+	assert.Equal(t, initialUserQuota-(27_000-preConsumed), getUserQuota(t, userID))
+	usedQuota, requestCount := getUserUsageAccounting(t, userID)
+	assert.Equal(t, 27_000, usedQuota)
+	assert.Equal(t, 1, requestCount)
+	assert.Equal(t, int64(27_000), getChannelUsedQuota(t, channelID))
 }
 
 // ===========================================================================

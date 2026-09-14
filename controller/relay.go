@@ -641,6 +641,9 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
+		task.PrivateData.SubscriptionResourceKey = relayInfo.SubscriptionResourceKey
+		task.PrivateData.SubscriptionResourceType = relayInfo.SubscriptionResourceType
+		task.PrivateData.SubscriptionResourceAmount = relayInfo.SubscriptionResourceAmount
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.NodeName = common.NodeName
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
@@ -650,6 +653,7 @@ func RelayTask(c *gin.Context) {
 			OtherRatios:     relayInfo.PriceData.OtherRatios(),
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			FixedGroupRatio: relayInfo.BillingSource == service.BillingSourceSubscription && relayInfo.SubscriptionBillingRatio > 0,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

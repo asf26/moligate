@@ -68,7 +68,11 @@ const GPT_MODELS = [
 
 const KIRO_CLAUDE_MODELS = CC_MAX_MODELS
 
-const GPT_IMAGE_MODELS = ['gpt-image-2'] as const
+const GPT_IMAGE_MODELS = [
+  'gpt-image-2',
+  'gpt-image-2.5-sunburst',
+  'gpt-image-2.5-flare',
+] as const
 
 const GEMINI_MODELS = [
   'gemini-2.5-pro',
@@ -81,27 +85,31 @@ const GEMINI_MODELS = [
 ] as const
 
 const CHINESE_MODELS = [
+  'DeepSeek-V4.1-Flash',
   'deepseek-v4-pro',
   'deepseek-v4-flash',
-  'qwen3.8-max',
-  'qwen3.8-flash',
-  'qwen3.7-max',
-  'qwen3-vl-235b-a22b-thinking',
+  'deepseek-v4-flash-0731',
+  'deepseek-v4-pro-0813',
+  'glm-5.2',
   'glm-5.3',
   'glm-5.3-flash',
   'kimi-k3',
   'kimi-k2.7-code',
   'kimi-k2.7-code-highspeed',
-  'doubao-seed-2.0-pro',
-  'doubao-seed-2.0-lite',
-  'doubao-seed-2.0-mini',
-  'doubao-seed-2.0-code',
-  'minimax-m3',
+  'MiniMax-M2.7',
+  'MiniMax-M2.7-highspeed',
+  'MiniMax-M3',
 ] as const
 
 const BANANA_MODELS = [
+  'gemini-2.0-flash-exp-image-generation',
+  'gemini-2.0-flash-exp',
+  'gemini-2.5-flash-image',
+  'gemini-3-pro-image',
   'gemini-3-pro-image-preview',
+  'gemini-3.1-flash-image',
   'gemini-3.1-flash-image-preview',
+  'nano-banana-pro-preview',
 ] as const
 
 export const MODEL_FAMILY_DEFINITIONS: readonly ModelFamilyDefinition[] = [
@@ -140,19 +148,10 @@ export const MODEL_FAMILY_DEFINITIONS: readonly ModelFamilyDefinition[] = [
   {
     key: 'chinese',
     labelKey: 'Chinese models',
-    descriptionKey: 'DeepSeek, Qwen, GLM, Kimi, Doubao and MiniMax models',
+    descriptionKey: 'GLM, DeepSeek, Kimi and MiniMax models',
     tone: 'blue',
     models: CHINESE_MODELS,
-    matchers: [
-      'chinese',
-      '国产',
-      'deepseek',
-      'qwen',
-      'glm',
-      'kimi',
-      'doubao',
-      'minimax',
-    ],
+    matchers: ['chinese', '国产', 'deepseek', 'glm', 'kimi', 'minimax'],
   },
   {
     key: 'gpt-image',
@@ -172,8 +171,14 @@ export const MODEL_FAMILY_DEFINITIONS: readonly ModelFamilyDefinition[] = [
       'nano banana',
       'banana',
       '香蕉生图',
+      'gemini-2.0-flash-exp-image-generation',
+      'gemini-2.0-flash-exp',
+      'gemini-2.5-flash-image',
+      'gemini-3-pro-image',
       'gemini-3-pro-image-preview',
+      'gemini-3.1-flash-image',
       'gemini-3.1-flash-image-preview',
+      'nano-banana-pro-preview',
     ],
   },
 ]

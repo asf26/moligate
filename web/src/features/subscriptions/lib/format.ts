@@ -44,6 +44,26 @@ export function formatDuration(
   return `${value} ${unitLabels[unit] || unit}`
 }
 
+/**
+ * Format the customer-facing validity for a subscription package.
+ * Monthly packages are sold as a 30-day term, so avoid exposing the
+ * implementation's calendar-month unit on the public package card.
+ */
+export function formatSubscriptionValidity(
+  plan: Partial<SubscriptionPlan>,
+  t: TFunction
+): string {
+  const unit = plan?.duration_unit || 'month'
+  const value = Number(plan?.duration_value || 1)
+  if (unit === 'month' && Number.isFinite(value) && value > 0) {
+    return `${Math.round(value * 30)} ${t('days')}`
+  }
+  if (unit === 'year' && Number.isFinite(value) && value > 0) {
+    return `${Math.round(value * 365)} ${t('days')}`
+  }
+  return formatDuration(plan, t)
+}
+
 export function formatResetPeriod(
   plan: Partial<SubscriptionPlan>,
   t: TFunction

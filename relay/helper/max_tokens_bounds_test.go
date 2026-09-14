@@ -63,6 +63,20 @@ func TestMaxTokensBounds(t *testing.T) {
 		require.Contains(t, err.Error(), "maxOutputTokens is invalid")
 	})
 
+	t.Run("gemini candidateCount overflow rejected", func(t *testing.T) {
+		c := newJSONContext(t, `{"contents":[{"parts":[{"text":"hi"}]}],"generationConfig":{"candidateCount":129}}`)
+		_, err := GetAndValidateGeminiRequest(c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "candidateCount")
+	})
+
+	t.Run("gemini negative candidateCount rejected", func(t *testing.T) {
+		c := newJSONContext(t, `{"contents":[{"parts":[{"text":"hi"}]}],"generationConfig":{"candidateCount":-1}}`)
+		_, err := GetAndValidateGeminiRequest(c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "candidateCount")
+	})
+
 	t.Run("responses max_output_tokens overflow rejected", func(t *testing.T) {
 		c := newJSONContext(t, `{"model":"gpt-4o","input":"hi","max_output_tokens":`+hugeN+`}`)
 		_, err := GetAndValidateResponsesRequest(c)

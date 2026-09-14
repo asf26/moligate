@@ -386,6 +386,7 @@ export function SubscriptionsMutateDrawer({
                           type='number'
                           step='0.01'
                           min={0}
+                          max={100}
                           onChange={(e) =>
                             field.onChange(
                               Number.parseFloat(e.target.value) || 0
@@ -396,6 +397,36 @@ export function SubscriptionsMutateDrawer({
                       <FormDescription>
                         {t(
                           'Amount the user pays to purchase this plan; the actual currency depends on the payment gateway.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='billing_ratio'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Subscription usage rate')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          step='0.01'
+                          min={0}
+                          max={100}
+                          onChange={(event) =>
+                            field.onChange(
+                              Number.parseFloat(event.target.value) || 0
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Fixed multiplier used by purchased subscriptions; 0 uses the family default.'
                         )}
                       </FormDescription>
                       <FormMessage />
@@ -1080,7 +1111,7 @@ export function SubscriptionsMutateDrawer({
 
               <p className='text-muted-foreground text-xs leading-5'>
                 {t(
-                  'Price, estimated credit, quota multiplier, model count, and availability are calculated from the price, quota, model, and purchase-limit settings above.'
+                  'Price, estimated credit, plan validity, model count, and availability are calculated from the price, quota, model, and purchase-limit settings above.'
                 )}
               </p>
             </SideDrawerSection>

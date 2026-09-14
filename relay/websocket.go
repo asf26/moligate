@@ -37,10 +37,23 @@ func WssHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.
 
 	usage, newAPIError := adaptor.DoResponse(c, nil, info)
 	if newAPIError != nil {
+		if realtimeUsage, ok := usage.(*dto.RealtimeUsage); ok && realtimeUsage != nil && realtimeUsage.TotalTokens > 0 {
+			if err := service.PostWssConsumeQuota(c, info, realtimeUsage, "realtime billing stopped before the final response"); err != nil {
+				if apiErr, ok := err.(*types.NewAPIError); ok {
+					return apiErr
+				}
+				return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+			}
+		}
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
 	}
-	service.PostWssConsumeQuota(c, info, info.UpstreamModelName, usage.(*dto.RealtimeUsage), "")
+	if err := service.PostWssConsumeQuota(c, info, usage.(*dto.RealtimeUsage), ""); err != nil {
+		if apiErr, ok := err.(*types.NewAPIError); ok {
+			return apiErr
+		}
+		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+	}
 	return nil
 }

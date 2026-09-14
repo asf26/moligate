@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 export {
   formatDuration,
   formatResetPeriod,
+  formatSubscriptionValidity,
   formatSubscriptionPrice,
   formatTimestamp,
 } from './format'

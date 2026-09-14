@@ -36,7 +36,7 @@ import {
 } from '@/features/subscriptions/api'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import {
-  formatDuration,
+  formatSubscriptionValidity,
   formatSubscriptionPrice,
 } from '@/features/subscriptions/lib'
 import {
@@ -52,10 +52,6 @@ import type {
   UserSubscriptionRecord,
 } from '@/features/subscriptions/types'
 import { cn } from '@/lib/utils'
-import {
-  DEFAULT_CURRENCY_CONFIG,
-  useSystemConfigStore,
-} from '@/stores/system-config-store'
 
 import { formatWalletQuota } from '../lib'
 import type { PaymentMethod, TopupInfo } from '../types'
@@ -120,10 +116,8 @@ interface SubscriptionPlanCardProps {
 
 function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
   const { t } = useTranslation()
-  const currency = useSystemConfigStore((state) => state.config.currency)
   const plan = props.record.plan
   const price = formatSubscriptionPrice(plan)
-  const priceAmount = Number(plan.price_amount || 0)
   const limit = Number(plan.max_purchase_per_user || 0)
   const reached = limit > 0 && props.purchaseCount >= limit
   const includedModels = getIncludedModels(plan, props.family)
@@ -133,25 +127,19 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
   const imageAllowance = bonusResources
     .filter((resource) => resource.resource_type === 'image_count')
     .reduce((total, resource) => total + Number(resource.amount), 0)
+  const displayBonusResources = bonusResources.filter(
+    (resource) => resource.resource_type !== 'image_count'
+  )
   const badgeText =
     plan.badge_text?.trim() || (props.isPopular ? t('Hot recommendation') : '')
   const totalQuota = Number(plan.total_amount || 0)
-  const quotaPerUnit =
-    currency?.quotaPerUnit > 0
-      ? currency.quotaPerUnit
-      : DEFAULT_CURRENCY_CONFIG.quotaPerUnit
-  const quotaMultiplier = getPlanQuotaMultiplier(
-    totalQuota,
-    priceAmount,
-    quotaPerUnit
-  )
-  const summaryLabel =
-    imageAllowance > 0 ? t('Image allowance') : t('Quota multiplier')
-  let summaryValue = '—'
-  if (imageAllowance > 0) {
-    summaryValue = `${imageAllowance.toLocaleString()} ${t('generations')}`
-  } else if (quotaMultiplier > 0) {
-    summaryValue = `${quotaMultiplier.toFixed(2)}x`
+  const isImagePlan = imageAllowance > 0
+  const validity = formatSubscriptionValidity(plan, t)
+  let summaryCredit = t('Unlimited')
+  if (isImagePlan) {
+    summaryCredit = `${imageAllowance.toLocaleString()} ${t('generations')}`
+  } else if (totalQuota > 0) {
+    summaryCredit = formatWalletQuota(totalQuota)
   }
   const stockRemaining =
     limit > 0 ? Math.max(0, limit - props.purchaseCount) : 0
@@ -213,21 +201,19 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
         <span className='font-[family-name:var(--font-geist-mono)] text-3xl font-bold tracking-tight tabular-nums'>
           {price}
         </span>
-        <span className='text-muted-foreground text-sm'>
-          / {formatDuration(plan, t)}
-        </span>
+        <span className='text-muted-foreground text-sm'>/ {validity}</span>
       </div>
 
       <div className='subscription-plan-summary-grid mt-4'>
         <div className='subscription-plan-summary-block subscription-plan-summary-block-credit'>
-          <span>{t('Estimated wallet credit')}</span>
-          <strong>
-            {totalQuota > 0 ? formatWalletQuota(totalQuota) : t('Unlimited')}
-          </strong>
+          <span>
+            {isImagePlan ? t('Image allowance') : t('Estimated wallet credit')}
+          </span>
+          <strong>{summaryCredit}</strong>
         </div>
         <div className='subscription-plan-summary-block subscription-plan-summary-block-multiplier'>
-          <span>{summaryLabel}</span>
-          <strong>{summaryValue}</strong>
+          <span>{t('Validity Period')}</span>
+          <strong>{validity}</strong>
         </div>
       </div>
 
@@ -249,7 +235,7 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
         </div>
       </div>
 
-      {bonusResources.length > 0 && (
+      {displayBonusResources.length > 0 && (
         <div className='subscription-plan-bonus-resources mt-3'>
           <div className='flex items-center gap-2 text-xs font-semibold'>
             <Gift
@@ -259,17 +245,13 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
             {t('Included extras')}
           </div>
           <div className='mt-2 flex flex-wrap gap-1.5'>
-            {bonusResources.map((resource) => (
+            {displayBonusResources.map((resource) => (
               <span
                 key={`${resource.resource_key}-${resource.resource_type}`}
                 className='subscription-plan-bonus-resource'
               >
                 {resource.display_name?.trim() || resource.model_name}
-                <strong>
-                  {resource.resource_type === 'image_count'
-                    ? `${resource.amount} ${t('generations')}`
-                    : formatWalletQuota(Number(resource.amount))}
-                </strong>
+                <strong>{formatWalletQuota(Number(resource.amount))}</strong>
               </span>
             ))}
           </div>
@@ -375,28 +357,9 @@ function getPlanBenefits(
       family: familyLabel,
     }),
     t('Valid for {{duration}}', {
-      duration: formatDuration(plan, t),
+      duration: formatSubscriptionValidity(plan, t),
     }),
   ]
-}
-
-function getPlanQuotaMultiplier(
-  totalQuota: number,
-  priceAmount: number,
-  quotaPerUnit: number
-): number {
-  if (
-    !Number.isFinite(totalQuota) ||
-    !Number.isFinite(priceAmount) ||
-    !Number.isFinite(quotaPerUnit) ||
-    totalQuota <= 0 ||
-    priceAmount <= 0 ||
-    quotaPerUnit <= 0
-  ) {
-    return 0
-  }
-
-  return Math.max(0, totalQuota / quotaPerUnit / priceAmount)
 }
 
 function getEpayMethods(payMethods: PaymentMethod[] = []): PaymentMethod[] {

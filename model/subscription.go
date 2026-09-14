@@ -52,6 +52,7 @@ const (
 	SubscriptionResourceTypeQuota      = "quota"
 	SubscriptionResourceTypeImageCount = "image_count"
 	SubscriptionMaxBonusResources      = 32
+	SubscriptionMaxBillingRatio        = 100
 )
 
 // SubscriptionBonusResource is the plan-side definition of an additional
@@ -84,6 +85,15 @@ type SubscriptionResourceRequest struct {
 	ResourceKey  string
 	ResourceType string
 	Amount       int64
+}
+
+// SubscriptionQuotaPricing lets the locked subscription transaction derive
+// the quota amount from the candidate subscription's purchased multiplier.
+// This prevents a read-only quote for one package from being reused when a
+// different package is selected under the row lock.
+type SubscriptionQuotaPricing struct {
+	BaseQuotaBeforeGroup float64
+	LiveQuota            int64
 }
 
 type AdminSubscriptionUsagePreview struct {
@@ -239,6 +249,10 @@ type SubscriptionPlan struct {
 	// Display money amount (follow existing code style: float64 for money)
 	PriceAmount float64 `json:"price_amount" gorm:"type:decimal(10,6);not null;default:0"`
 	Currency    string  `json:"currency" gorm:"type:varchar(8);not null;default:'CNY'"`
+	// BillingRatio is the fixed consumption multiplier for subscriptions.
+	// A zero value uses the product default for known model families. Plans
+	// without either an explicit ratio or a known-family default cannot be sold.
+	BillingRatio float64 `json:"billing_ratio" gorm:"type:decimal(10,6);not null;default:0"`
 
 	DurationUnit  string `json:"duration_unit" gorm:"type:varchar(16);not null;default:'month'"`
 	DurationValue int    `json:"duration_value" gorm:"type:int;not null;default:1"`
@@ -323,6 +337,36 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 	p.BadgeText = normalizeSubscriptionBadgeText(p.BadgeText)
 	p.Benefits = normalizeSubscriptionBenefits(p.Benefits)
 	p.BonusResources = normalizeSubscriptionBonusResources(p.BonusResources)
+}
+
+// EffectiveBillingRatio returns the fixed multiplier used by subscriptions
+// from this plan. Known model families have product defaults so a plan created
+// before billing_ratio was added is still protected from live group changes.
+func (p *SubscriptionPlan) EffectiveBillingRatio() float64 {
+	if p == nil {
+		return 0
+	}
+	if p.BillingRatio > 0 && p.BillingRatio <= SubscriptionMaxBillingRatio && !math.IsNaN(p.BillingRatio) && !math.IsInf(p.BillingRatio, 0) {
+		return p.BillingRatio
+	}
+	switch strings.TrimSpace(strings.ToLower(p.ModelFamily)) {
+	case "ccmax", "cc max":
+		return 0.9
+	case "kiro-claude", "kiro claude", "kiro":
+		return 0.17
+	case "gpt", "openai":
+		return 0.14
+	case "gemini", "google":
+		return 0.4
+	case "chinese", "国产", "cn":
+		return 0.35
+	case "gpt-image", "gpt image":
+		return 0.1
+	case "banana", "nano banana", "香蕉生图":
+		return 0.15
+	default:
+		return 0
+	}
 }
 
 func normalizeSubscriptionModelFamily(family string) string {
@@ -495,17 +539,43 @@ func subscriptionModelMatches(sub UserSubscription, modelName string) bool {
 	}
 	model := strings.ToLower(strings.TrimSpace(modelName))
 	switch family {
-	case "ccmax", "cc max", "claude", "anthropic":
+	case "ccmax", "cc max", "kiro-claude", "kiro claude", "kiro", "claude", "anthropic":
 		return strings.Contains(model, "claude") || strings.Contains(model, "anthropic")
 	case "gpt", "openai":
-		return strings.HasPrefix(model, "gpt") || strings.HasPrefix(model, "openai/")
+		return (strings.HasPrefix(model, "gpt") || strings.HasPrefix(model, "openai/")) && !strings.Contains(model, "gpt-image")
+	case "gpt-image", "gpt image":
+		return strings.HasPrefix(model, "gpt-image-")
 	case "gemini", "google":
-		return strings.HasPrefix(model, "gemini") || strings.HasPrefix(model, "google/")
+		return (strings.HasPrefix(model, "gemini") || strings.HasPrefix(model, "google/")) && !isSubscriptionImageModelName(model)
+	case "banana", "nano banana", "香蕉生图":
+		return isSubscriptionImageModelName(model)
 	case "chinese", "国产", "cn":
-		for _, prefix := range []string{"deepseek", "qwen", "glm", "kimi", "doubao", "minimax", "hunyuan", "ernie", "step"} {
+		for _, prefix := range []string{"deepseek", "glm", "kimi", "minimax"} {
 			if strings.HasPrefix(model, prefix) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func isSubscriptionImageModelName(model string) bool {
+	return strings.HasPrefix(model, "gpt-image-2") ||
+		strings.HasPrefix(model, "gemini-3-pro-image") ||
+		strings.HasPrefix(model, "gemini-3.1-flash-image") ||
+		model == "gemini-2.5-flash-image" ||
+		model == "gemini-2.0-flash-exp-image-generation" ||
+		model == "gemini-2.0-flash-exp" ||
+		model == "nano-banana-pro-preview"
+}
+
+func subscriptionCanServeModel(sub UserSubscription, modelName string) bool {
+	if subscriptionModelMatches(sub, modelName) {
+		return true
+	}
+	for _, grant := range sub.ResourceGrants {
+		if subscriptionResourceMatches(grant, modelName, modelName) && subscriptionUsageHasCapacity(grant.Amount, grant.Used, 1) {
+			return true
 		}
 	}
 	return false
@@ -593,8 +663,11 @@ type UserSubscription struct {
 	AllowWalletOverflow bool `json:"allow_wallet_overflow"`
 
 	// Model access and gifted resources are snapshots from the purchased plan.
-	ModelFamily    string                      `json:"model_family" gorm:"type:varchar(32);default:''"`
-	IncludedModels []string                    `json:"included_models" gorm:"type:text;serializer:json"`
+	ModelFamily    string   `json:"model_family" gorm:"type:varchar(32);default:''"`
+	IncludedModels []string `json:"included_models" gorm:"type:text;serializer:json"`
+	// BillingRatio is snapshotted at purchase time so later group-ratio edits do
+	// not change the consumption rate of an already purchased package.
+	BillingRatio   float64                     `json:"billing_ratio" gorm:"type:decimal(10,6);not null;default:0"`
 	ResourceGrants []SubscriptionResourceGrant `json:"resource_grants" gorm:"type:text;serializer:json"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
@@ -907,6 +980,10 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			Amount:       resource.Amount,
 		})
 	}
+	billingRatio := plan.EffectiveBillingRatio()
+	if billingRatio <= 0 || billingRatio > SubscriptionMaxBillingRatio || math.IsNaN(billingRatio) || math.IsInf(billingRatio, 0) {
+		return nil, errors.New("subscription plan has no valid fixed billing ratio")
+	}
 	sub := &UserSubscription{
 		UserId:                   userId,
 		PlanId:                   plan.Id,
@@ -935,6 +1012,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		AllowWalletOverflow:      allowWalletOverflow,
 		ModelFamily:              normalizeSubscriptionModelFamily(plan.ModelFamily),
 		IncludedModels:           normalizeSubscriptionModels(plan.IncludedModels),
+		BillingRatio:             billingRatio,
 		ResourceGrants:           resourceGrants,
 		CreatedAt:                common.GetTimestamp(),
 		UpdatedAt:                common.GetTimestamp(),
@@ -943,6 +1021,59 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		return nil, err
 	}
 	return sub, nil
+}
+
+// migrateActiveSubscriptionBillingRatios backfills the fixed-rate snapshot for
+// active subscriptions created before BillingRatio was introduced. New
+// purchases are populated by CreateUserSubscriptionFromPlanTx; this migration
+// keeps already purchased, still-valid packages from silently switching to a
+// live group ratio after an administrator edits pricing.
+func migrateActiveSubscriptionBillingRatios() error {
+	now := GetDBTimestamp()
+	var candidates []UserSubscription
+	if err := DB.Where(
+		"status = ? AND end_time > ? AND COALESCE(billing_ratio, 0) <= ?",
+		"active", now, 0,
+	).Order("id asc").Find(&candidates).Error; err != nil {
+		return err
+	}
+	for _, candidate := range candidates {
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			var sub UserSubscription
+			if err := lockForUpdate(tx).
+				Where("id = ? AND status = ? AND end_time > ? AND COALESCE(billing_ratio, 0) <= ?",
+					candidate.Id, "active", now, 0).
+				First(&sub).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return err
+			}
+
+			ratio := 0.0
+			if sub.PlanId > 0 {
+				plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+				if plan != nil {
+					ratio = plan.EffectiveBillingRatio()
+				}
+			}
+			if ratio <= 0 {
+				ratio = (&SubscriptionPlan{ModelFamily: sub.ModelFamily}).EffectiveBillingRatio()
+			}
+			if ratio <= 0 || ratio > SubscriptionMaxBillingRatio || math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+				return nil
+			}
+			return tx.Model(&UserSubscription{}).
+				Where("id = ? AND COALESCE(billing_ratio, 0) <= ?", sub.Id, 0).
+				Update("billing_ratio", ratio).Error
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Complete a subscription order (idempotent). Creates a UserSubscription snapshot from the plan.
@@ -1441,6 +1572,13 @@ func AdminUpdateUserSubscriptionApplicableGroups(subscriptionId int, groups []st
 // HasActiveUserSubscription returns whether the user has any active subscription.
 // This is a lightweight existence check to avoid heavy pre-consume transactions.
 func HasActiveUserSubscription(userId int, effectiveGroups ...string) (bool, error) {
+	return HasActiveUserSubscriptionForModel(userId, "", effectiveGroups...)
+}
+
+// HasActiveUserSubscriptionForModel scopes the existence check to subscriptions
+// that can serve modelName. An empty modelName preserves the legacy group-only
+// behavior for callers that are not preparing a relay request.
+func HasActiveUserSubscriptionForModel(userId int, modelName string, effectiveGroups ...string) (bool, error) {
 	if userId <= 0 {
 		return false, errors.New("invalid userId")
 	}
@@ -1457,16 +1595,54 @@ func HasActiveUserSubscription(userId int, effectiveGroups ...string) (bool, err
 	}
 	for _, sub := range subs {
 		if subscriptionGroupMatches(sub.ApplicableGroups, effectiveGroup) {
-			return true, nil
+			if strings.TrimSpace(modelName) == "" || subscriptionCanServeModel(sub, modelName) {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
+}
+
+// GetActiveSubscriptionBillingRatio returns the fixed consumption multiplier
+// for the first active subscription that can serve modelName in effectiveGroup.
+// A false result preserves legacy wallet/live-group billing behavior.
+func GetActiveSubscriptionBillingRatio(userId int, modelName string, effectiveGroups ...string) (float64, bool, error) {
+	if userId <= 0 || strings.TrimSpace(modelName) == "" {
+		return 0, false, nil
+	}
+	now := common.GetTimestamp()
+	var subs []UserSubscription
+	if err := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+		Order("end_time asc, id asc").Find(&subs).Error; err != nil {
+		return 0, false, err
+	}
+	effectiveGroup := ""
+	if len(effectiveGroups) > 0 {
+		effectiveGroup = effectiveGroups[0]
+	}
+	for _, sub := range subs {
+		if !subscriptionGroupMatches(sub.ApplicableGroups, effectiveGroup) || !subscriptionCanServeModel(sub, modelName) {
+			continue
+		}
+		ratio := sub.BillingRatio
+		if ratio <= 0 || ratio > SubscriptionMaxBillingRatio || math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+			continue
+		}
+		return ratio, true, nil
+	}
+	return 0, false, nil
 }
 
 // UserActiveSubscriptionsAllowWalletOverflow returns whether wallet balance may be used
 // after the user's subscription quota is exhausted. A single active subscription that
 // disallows wallet overflow (allow_wallet_overflow = false) blocks the fallback.
 func UserActiveSubscriptionsAllowWalletOverflow(userId int, effectiveGroups ...string) (bool, error) {
+	return UserActiveSubscriptionsAllowWalletOverflowForModel(userId, "", effectiveGroups...)
+}
+
+// UserActiveSubscriptionsAllowWalletOverflowForModel only considers packages
+// that can serve modelName. An unrelated package must not block wallet fallback.
+func UserActiveSubscriptionsAllowWalletOverflowForModel(userId int, modelName string, effectiveGroups ...string) (bool, error) {
 	if userId <= 0 {
 		return false, errors.New("invalid userId")
 	}
@@ -1481,7 +1657,8 @@ func UserActiveSubscriptionsAllowWalletOverflow(userId int, effectiveGroups ...s
 		effectiveGroup = effectiveGroups[0]
 	}
 	for _, sub := range subs {
-		if subscriptionGroupMatches(sub.ApplicableGroups, effectiveGroup) {
+		if subscriptionGroupMatches(sub.ApplicableGroups, effectiveGroup) &&
+			(strings.TrimSpace(modelName) == "" || subscriptionCanServeModel(sub, modelName)) {
 			return false, nil
 		}
 	}
@@ -1743,7 +1920,13 @@ func AdminResetPlanSubscriptions(planId int, advanceResetTime bool) (*Subscripti
 }
 
 type SubscriptionPreConsumeResult struct {
-	UserSubscriptionId  int
+	UserSubscriptionId int
+	// BillingRatio is the multiplier captured on the subscription that was
+	// actually selected by the pre-consume transaction.  Callers must use this
+	// value instead of the first matching subscription returned by a read-only
+	// quote, because an earlier subscription may be exhausted or otherwise
+	// ineligible when the row lock is acquired.
+	BillingRatio        float64
 	PreConsumed         int64
 	AmountTotal         int64
 	AmountUsedBefore    int64
@@ -2061,6 +2244,13 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 // is used first; when it is exhausted the subscription is not silently charged
 // against an unrelated model package.
 func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelName string, quotaType int, amount int64, resource *SubscriptionResourceRequest, effectiveGroups ...string) (*SubscriptionPreConsumeResult, error) {
+	return PreConsumeUserSubscriptionWithResourceAndPricing(requestId, userId, modelName, quotaType, amount, resource, nil, effectiveGroups...)
+}
+
+// PreConsumeUserSubscriptionWithResourceAndPricing is the fixed-package entry
+// point used by BillingSession. It calculates each candidate's amount inside
+// the same transaction that selects and reserves that subscription.
+func PreConsumeUserSubscriptionWithResourceAndPricing(requestId string, userId int, modelName string, quotaType int, amount int64, resource *SubscriptionResourceRequest, pricing *SubscriptionQuotaPricing, effectiveGroups ...string) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
@@ -2103,6 +2293,7 @@ func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelN
 				return err
 			}
 			returnValue.UserSubscriptionId = sub.Id
+			returnValue.BillingRatio = sub.BillingRatio
 			returnValue.PreConsumed = existing.PreConsumed
 			returnValue.AmountTotal = sub.AmountTotal
 			returnValue.AmountUsedBefore = sub.AmountUsed
@@ -2136,12 +2327,28 @@ func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelN
 			if !subscriptionGroupMatches(sub.ApplicableGroups, effectiveGroup) {
 				continue
 			}
+			if sub.BillingRatio <= 0 || sub.BillingRatio > SubscriptionMaxBillingRatio || math.IsNaN(sub.BillingRatio) || math.IsInf(sub.BillingRatio, 0) {
+				continue
+			}
 			plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
 			if err != nil {
 				return err
 			}
 			if err := maybeResetUserSubscriptionWithPlanTx(tx, &sub, plan, now); err != nil {
 				return err
+			}
+			candidateAmount := amount
+			if pricing != nil && pricing.BaseQuotaBeforeGroup > 0 && sub.BillingRatio > 0 && !math.IsNaN(sub.BillingRatio) && !math.IsInf(sub.BillingRatio, 0) {
+				pricedQuota, err := common.QuotaFromFloatStrict(pricing.BaseQuotaBeforeGroup * sub.BillingRatio)
+				if err != nil {
+					return err
+				}
+				candidateAmount = int64(pricedQuota)
+				if candidateAmount <= 0 {
+					candidateAmount = 1
+				}
+			} else if pricing != nil && pricing.LiveQuota > 0 {
+				candidateAmount = pricing.LiveQuota
 			}
 
 			resourceIndex := -1
@@ -2153,7 +2360,11 @@ func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelN
 						continue
 					}
 					resourceMatched = true
-					if subscriptionUsageHasCapacity(grant.Amount, grant.Used, resource.Amount) {
+					resourceAmount := resource.Amount
+					if resource.ResourceType == SubscriptionResourceTypeQuota {
+						resourceAmount = candidateAmount
+					}
+					if subscriptionUsageHasCapacity(grant.Amount, grant.Used, resourceAmount) {
 						resourceIndex = i
 						break
 					}
@@ -2169,16 +2380,16 @@ func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelN
 			}
 			usedBefore := sub.AmountUsed
 			if resourceIndex < 0 {
-				if !subscriptionUsageHasCapacity(sub.AmountTotal, sub.AmountUsed, amount) {
+				if !subscriptionUsageHasCapacity(sub.AmountTotal, sub.AmountUsed, candidateAmount) {
 					continue
 				}
-				if sub.DailyAmount > 0 && !subscriptionUsageHasCapacity(sub.DailyAmount, sub.DailyUsed, amount) {
+				if sub.DailyAmount > 0 && !subscriptionUsageHasCapacity(sub.DailyAmount, sub.DailyUsed, candidateAmount) {
 					continue
 				}
-				if sub.WeeklyAmount > 0 && !subscriptionUsageHasCapacity(sub.WeeklyAmount, sub.WeeklyUsed, amount) {
+				if sub.WeeklyAmount > 0 && !subscriptionUsageHasCapacity(sub.WeeklyAmount, sub.WeeklyUsed, candidateAmount) {
 					continue
 				}
-				if sub.MonthlyAmount > 0 && !subscriptionUsageHasCapacity(sub.MonthlyAmount, sub.MonthlyUsed, amount) {
+				if sub.MonthlyAmount > 0 && !subscriptionUsageHasCapacity(sub.MonthlyAmount, sub.MonthlyUsed, candidateAmount) {
 					continue
 				}
 			}
@@ -2186,18 +2397,22 @@ func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelN
 				RequestId:          requestId,
 				UserId:             userId,
 				UserSubscriptionId: sub.Id,
-				PreConsumed:        amount,
+				PreConsumed:        candidateAmount,
 				Status:             "consumed",
 			}
 			if resourceIndex >= 0 {
 				grant := &sub.ResourceGrants[resourceIndex]
-				grant.Used, err = applySubscriptionUsageDelta(grant.Used, resource.Amount)
+				resourceAmount := resource.Amount
+				if resource.ResourceType == SubscriptionResourceTypeQuota {
+					resourceAmount = candidateAmount
+				}
+				grant.Used, err = applySubscriptionUsageDelta(grant.Used, resourceAmount)
 				if err != nil {
 					return err
 				}
 				record.ResourceKey = grant.ResourceKey
 				record.ResourceType = grant.ResourceType
-				record.ResourceAmount = resource.Amount
+				record.ResourceAmount = resourceAmount
 			}
 			if err := tx.Create(record).Error; err != nil {
 				var dup SubscriptionPreConsumeRecord
@@ -2205,16 +2420,21 @@ func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelN
 					if dup.Status == "refunded" {
 						return errors.New("subscription pre-consume already refunded")
 					}
-					returnValue.UserSubscriptionId = sub.Id
+					var duplicateSub UserSubscription
+					if err2 := tx.Where("id = ?", dup.UserSubscriptionId).First(&duplicateSub).Error; err2 != nil {
+						return err2
+					}
+					returnValue.UserSubscriptionId = duplicateSub.Id
+					returnValue.BillingRatio = duplicateSub.BillingRatio
 					returnValue.PreConsumed = dup.PreConsumed
-					returnValue.AmountTotal = sub.AmountTotal
-					returnValue.AmountUsedBefore = sub.AmountUsed
-					returnValue.AmountUsedAfter = sub.AmountUsed
+					returnValue.AmountTotal = duplicateSub.AmountTotal
+					returnValue.AmountUsedBefore = duplicateSub.AmountUsed
+					returnValue.AmountUsedAfter = duplicateSub.AmountUsed
 					returnValue.ResourceKey = dup.ResourceKey
 					returnValue.ResourceType = dup.ResourceType
 					returnValue.ResourcePreConsumed = dup.ResourceAmount
 					if dup.ResourceKey != "" {
-						for _, grant := range sub.ResourceGrants {
+						for _, grant := range duplicateSub.ResourceGrants {
 							if grant.ResourceKey == dup.ResourceKey && grant.ResourceType == dup.ResourceType {
 								returnValue.ResourceUsedAfter = grant.Used
 								break
@@ -2226,24 +2446,24 @@ func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelN
 				return err
 			}
 			if resourceIndex < 0 {
-				sub.AmountUsed, err = applySubscriptionUsageDelta(sub.AmountUsed, amount)
+				sub.AmountUsed, err = applySubscriptionUsageDelta(sub.AmountUsed, candidateAmount)
 				if err != nil {
 					return err
 				}
 				if sub.DailyAmount > 0 {
-					sub.DailyUsed, err = applySubscriptionUsageDelta(sub.DailyUsed, amount)
+					sub.DailyUsed, err = applySubscriptionUsageDelta(sub.DailyUsed, candidateAmount)
 					if err != nil {
 						return err
 					}
 				}
 				if sub.WeeklyAmount > 0 {
-					sub.WeeklyUsed, err = applySubscriptionUsageDelta(sub.WeeklyUsed, amount)
+					sub.WeeklyUsed, err = applySubscriptionUsageDelta(sub.WeeklyUsed, candidateAmount)
 					if err != nil {
 						return err
 					}
 				}
 				if sub.MonthlyAmount > 0 {
-					sub.MonthlyUsed, err = applySubscriptionUsageDelta(sub.MonthlyUsed, amount)
+					sub.MonthlyUsed, err = applySubscriptionUsageDelta(sub.MonthlyUsed, candidateAmount)
 					if err != nil {
 						return err
 					}
@@ -2253,7 +2473,8 @@ func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelN
 				return err
 			}
 			returnValue.UserSubscriptionId = sub.Id
-			returnValue.PreConsumed = amount
+			returnValue.BillingRatio = sub.BillingRatio
+			returnValue.PreConsumed = candidateAmount
 			returnValue.AmountTotal = sub.AmountTotal
 			returnValue.AmountUsedBefore = usedBefore
 			returnValue.AmountUsedAfter = sub.AmountUsed
@@ -2261,7 +2482,7 @@ func PreConsumeUserSubscriptionWithResource(requestId string, userId int, modelN
 				grant := sub.ResourceGrants[resourceIndex]
 				returnValue.ResourceKey = grant.ResourceKey
 				returnValue.ResourceType = grant.ResourceType
-				returnValue.ResourcePreConsumed = resource.Amount
+				returnValue.ResourcePreConsumed = record.ResourceAmount
 				returnValue.ResourceUsedAfter = grant.Used
 			}
 			return nil
@@ -2433,6 +2654,28 @@ func PostConsumeUserSubscriptionResourceDelta(userSubscriptionId int, resourceKe
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		return postConsumeUserSubscriptionResourceDeltaTx(tx, userSubscriptionId, resourceKey, resourceType, delta)
+	})
+}
+
+// SettleUserSubscriptionImageResourceDelta applies the validated difference
+// between requested and actually returned image generations. Unlike the public
+// refund helper above, this path may consume additional generations, and the
+// locked update still enforces the purchased grant's capacity.
+func SettleUserSubscriptionImageResourceDelta(userSubscriptionId int, resourceKey string, delta int64) error {
+	if userSubscriptionId <= 0 {
+		return errors.New("invalid userSubscriptionId")
+	}
+	if strings.TrimSpace(resourceKey) == "" {
+		return errors.New("resource key is empty")
+	}
+	if delta == 0 {
+		return nil
+	}
+	if delta == math.MinInt64 || delta > int64(common.MaxQuota) || delta < -int64(common.MaxQuota) {
+		return errors.New("image resource delta exceeds limit")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return postConsumeUserSubscriptionResourceDeltaTx(tx, userSubscriptionId, resourceKey, SubscriptionResourceTypeImageCount, delta)
 	})
 }
 

@@ -41,6 +41,20 @@ func GeminiTextGenerationHandler(c *gin.Context, info *relaycommon.RelayInfo, re
 
 	// 计算使用量（优先上游 UsageMetadata，缺失时本地估算并保留 Gemini 计费语义）
 	usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)
+	if len(geminiResponse.Candidates) == 0 {
+		if geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
+			return &usage, types.NewOpenAIError(
+				fmt.Errorf("request blocked by Gemini API: %s", *geminiResponse.PromptFeedback.BlockReason),
+				types.ErrorCodePromptBlocked,
+				http.StatusBadRequest,
+			)
+		}
+		return &usage, types.NewOpenAIError(
+			fmt.Errorf("empty response from Gemini API"),
+			types.ErrorCodeEmptyResponse,
+			http.StatusInternalServerError,
+		)
+	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 

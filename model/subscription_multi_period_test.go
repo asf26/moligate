@@ -57,7 +57,8 @@ func TestAdminSubscriptionUsageImportFiltersGroupsAndRequiresOverLimitConfirmati
 	plan := &SubscriptionPlan{
 		Id: 9751, Title: "Imported Usage", PriceAmount: 10,
 		DurationUnit: SubscriptionDurationMonth, DurationValue: 1,
-		TotalAmount: 25, DailyAmount: 15, WeeklyAmount: 100, MonthlyAmount: 100,
+		BillingRatio: 1,
+		TotalAmount:  25, DailyAmount: 15, WeeklyAmount: 100, MonthlyAmount: 100,
 		ApplicableGroups: []string{"vip"}, QuotaResetPeriod: SubscriptionResetNever,
 	}
 	require.NoError(t, DB.Create(plan).Error)
@@ -112,7 +113,8 @@ func TestSubscriptionPreConsumeUsesEffectiveGroup(t *testing.T) {
 	require.NoError(t, DB.Create(plan).Error)
 	subscription := &UserSubscription{
 		Id: 9762, UserId: 9763, PlanId: plan.Id, AmountTotal: 100,
-		StartTime: now - 60, EndTime: now + 3600, Status: "active",
+		BillingRatio: 1,
+		StartTime:    now - 60, EndTime: now + 3600, Status: "active",
 		ApplicableGroups: []string{"vip"}, AllowWalletOverflow: false,
 	}
 	require.NoError(t, DB.Create(subscription).Error)
@@ -202,13 +204,13 @@ func TestCreateUserSubscriptionSnapshotsAllPeriodQuotas(t *testing.T) {
 	truncateTables(t)
 
 	plan := &SubscriptionPlan{
-		Id:               9701,
-		Title:            "Three Periods",
-		PriceAmount:      100,
-		DurationUnit:     SubscriptionDurationMonth,
-		DurationValue:    2,
-		ModelFamily:      "gpt",
-		IncludedModels:   []string{"gpt-5.5", "gpt-image-2"},
+		Id:             9701,
+		Title:          "Three Periods",
+		PriceAmount:    100,
+		DurationUnit:   SubscriptionDurationMonth,
+		DurationValue:  2,
+		ModelFamily:    "gpt",
+		IncludedModels: []string{"gpt-5.5", "gpt-image-2"},
 		BonusResources: []SubscriptionBonusResource{
 			{ResourceKey: "grok", ResourceType: SubscriptionResourceTypeQuota, ModelName: "grok-4", Amount: 500},
 			{ResourceKey: "gpt-image-2", ResourceType: SubscriptionResourceTypeImageCount, ModelName: "gpt-image-2", Amount: 10},
@@ -289,6 +291,7 @@ func TestPreConsumeAppliesAllPeriodQuotasAndRejectsWhenAnyIsExhausted(t *testing
 		EndTime:                  now + 30*24*3600,
 		Status:                   "active",
 		PeriodResetAnchorVersion: subscriptionPeriodResetAnchorVersion,
+		BillingRatio:             1,
 	}
 	require.NoError(t, DB.Create(subscription).Error)
 
@@ -348,6 +351,7 @@ func TestDueDailyResetKeepsWeeklyAndMonthlyUsage(t *testing.T) {
 		EndTime:                  now + 20*24*3600,
 		Status:                   "active",
 		PeriodResetAnchorVersion: subscriptionPeriodResetAnchorVersion,
+		BillingRatio:             1,
 	}
 	require.NoError(t, DB.Create(subscription).Error)
 
@@ -396,6 +400,7 @@ func TestRefundSubscriptionPreConsumeRestoresAllPeriodUsage(t *testing.T) {
 		EndTime:                  now + 30*24*3600,
 		Status:                   "active",
 		PeriodResetAnchorVersion: subscriptionPeriodResetAnchorVersion,
+		BillingRatio:             1,
 	}
 	require.NoError(t, DB.Create(subscription).Error)
 

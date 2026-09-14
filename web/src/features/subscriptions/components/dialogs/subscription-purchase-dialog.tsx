@@ -46,8 +46,8 @@ import {
   paySubscriptionBalance,
 } from '../../api'
 import {
-  formatDuration,
   formatResetPeriod,
+  formatSubscriptionValidity,
   formatSubscriptionPrice,
 } from '../../lib'
 import type { PlanRecord } from '../../types'
@@ -105,6 +105,21 @@ export function SubscriptionPurchaseDialog(props: Props) {
     selectedEpayMethod ||
     t('Select payment method')
   const totalAmount = Number(plan.total_amount || 0)
+  const imageAllowance = (plan.bonus_resources || [])
+    .filter(
+      (resource) =>
+        resource.resource_type === 'image_count' && Number(resource.amount) > 0
+    )
+    .reduce((total, resource) => total + Number(resource.amount), 0)
+  const validity = formatSubscriptionValidity(plan, t)
+  const planQuotaLabel =
+    imageAllowance > 0 ? t('Image allowance') : t('Plan Quota')
+  let planQuotaValue = t('Unlimited')
+  if (imageAllowance > 0) {
+    planQuotaValue = `${imageAllowance.toLocaleString()} ${t('generations')}`
+  } else if (totalAmount > 0) {
+    planQuotaValue = formatWalletQuota(totalAmount)
+  }
   const price = formatSubscriptionPrice(plan)
   const quotaPerUnit =
     currency?.quotaPerUnit && currency.quotaPerUnit > 0
@@ -298,7 +313,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
             </span>
             <span className='flex items-center gap-1 text-sm'>
               <CalendarClock className='h-3.5 w-3.5' />
-              {formatDuration(plan, t)}
+              {validity}
             </span>
           </div>
           {formatResetPeriod(plan, t) !== t('No Reset') && (
@@ -311,13 +326,11 @@ export function SubscriptionPurchaseDialog(props: Props) {
           )}
           <div className='flex items-center justify-between'>
             <span className='text-muted-foreground text-sm'>
-              {t('Plan Quota')}
+              {planQuotaLabel}
             </span>
             <span className='flex items-center gap-1 text-sm'>
               <Package className='h-3.5 w-3.5' />
-              {totalAmount > 0
-                ? formatWalletQuota(totalAmount)
-                : t('Unlimited')}
+              {planQuotaValue}
             </span>
           </div>
           {plan.upgrade_group && (
@@ -433,12 +446,10 @@ export function SubscriptionPurchaseDialog(props: Props) {
             {hasEpay && (
               <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
                 <Select
-                  items={[
-                    ...(props.epayMethods || []).map((m) => ({
-                      value: m.type,
-                      label: m.name || m.type,
-                    })),
-                  ]}
+                  items={(props.epayMethods || []).map((m) => ({
+                    value: m.type,
+                    label: m.name || m.type,
+                  }))}
                   value={selectedEpayMethod}
                   onValueChange={(v) => v !== null && setSelectedEpayMethod(v)}
                   disabled={!rechargeEnabled || limitReached}

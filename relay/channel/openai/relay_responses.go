@@ -3,6 +3,7 @@ package openai
 import (
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 
@@ -67,7 +68,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			imageCounter.Observe(&responsesResponse.Output[i], &idx)
 		}
 	}
-	imageCounter.Commit(info)
+	imageCounter.CommitWithMinimum(info, 0)
 
 	return &usage, nil
 }
@@ -116,25 +117,25 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				if !imageCommitted {
 					if relaycommon.IsNonBillableResponsesStatus(streamResponse.Response.Status) {
 						imageCounter.Reset()
-						imageCounter.Commit(info)
+						imageCounter.CommitWithMinimum(info, 0)
 						imageCommitted = true
 					} else {
 						for i := range streamResponse.Response.Output {
 							idx := i
 							imageCounter.Observe(&streamResponse.Response.Output[i], &idx)
 						}
-						imageCounter.Commit(info)
+						imageCounter.CommitWithMinimum(info, 0)
 						imageCommitted = true
 					}
 				}
 			} else if !imageCommitted {
-				imageCounter.Commit(info)
+				imageCounter.CommitWithMinimum(info, 0)
 				imageCommitted = true
 			}
 		case "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
 			if !imageCommitted {
 				imageCounter.Reset()
-				imageCounter.Commit(info)
+				imageCounter.CommitWithMinimum(info, 0)
 				imageCommitted = true
 			}
 		case "response.output_text.delta":
@@ -157,6 +158,14 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		}
 	})
+	if !imageCommitted {
+		minimum := 0
+		if info.StreamStatus != nil && info.StreamStatus.EndReason != relaycommon.StreamEndReasonDone && info.StreamStatus.EndReason != relaycommon.StreamEndReasonEOF {
+			minimum = requestedResponsesImageCount(info)
+		}
+		imageCounter.CommitWithMinimum(info, minimum)
+		imageCommitted = true
+	}
 
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量
@@ -175,4 +184,23 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+func requestedResponsesImageCount(info *relaycommon.RelayInfo) int {
+	if info == nil {
+		return 0
+	}
+	modelName := strings.ToLower(strings.TrimSpace(info.OriginModelName))
+	if info.SubscriptionResourceType != "image_count" &&
+		!strings.Contains(modelName, "image") && !strings.Contains(modelName, "banana") {
+		return 0
+	}
+	requested := int64(1)
+	if count, ok := info.PriceData.OtherRatios()["n"]; ok && count >= 1 && count <= float64(dto.MaxImageN) && !math.IsNaN(count) && !math.IsInf(count, 0) && math.Trunc(count) == count {
+		requested = int64(count)
+	}
+	if info.SubscriptionResourceAmount > requested && info.SubscriptionResourceAmount <= int64(dto.MaxImageN) {
+		requested = info.SubscriptionResourceAmount
+	}
+	return int(requested)
 }

@@ -214,7 +214,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 				imageRequest.Image, _ = common.Marshal(imageValue)
 			}
 
-			if imageRequest.Model == "gpt-image-1" || imageRequest.Model == "gpt-image-2" {
+			if isGPTImageModel(imageRequest.Model) {
 				if imageRequest.Quality == "" {
 					imageRequest.Quality = "standard"
 				}
@@ -268,7 +268,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if imageRequest.Size == "" {
 				imageRequest.Size = "1024x1024"
 			}
-		} else if imageRequest.Model == "gpt-image-1" || imageRequest.Model == "gpt-image-2" {
+		} else if isGPTImageModel(imageRequest.Model) {
 			if imageRequest.Quality == "" {
 				imageRequest.Quality = "auto"
 			}
@@ -284,6 +284,10 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 	}
 
 	return imageRequest, nil
+}
+
+func isGPTImageModel(model string) bool {
+	return strings.HasPrefix(model, "gpt-image-")
 }
 
 func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest, err error) {
@@ -378,6 +382,16 @@ func GetAndValidateGeminiRequest(c *gin.Context) (*dto.GeminiChatRequest, error)
 	}
 	if exceedsMaxTokensLimit(request.GenerationConfig.MaxOutputTokens) {
 		return nil, errors.New("maxOutputTokens is invalid")
+	}
+	if request.GenerationConfig.CandidateCount != nil &&
+		(*request.GenerationConfig.CandidateCount < 0 || *request.GenerationConfig.CandidateCount > dto.MaxImageN) {
+		return nil, fmt.Errorf("candidateCount must be between 0 and %d", dto.MaxImageN)
+	}
+	for _, batchRequest := range request.Requests {
+		if batchRequest.GenerationConfig.CandidateCount != nil &&
+			(*batchRequest.GenerationConfig.CandidateCount < 0 || *batchRequest.GenerationConfig.CandidateCount > dto.MaxImageN) {
+			return nil, fmt.Errorf("candidateCount must be between 0 and %d", dto.MaxImageN)
+		}
 	}
 
 	//if c.Query("alt") == "sse" {

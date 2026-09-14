@@ -43,6 +43,7 @@ const configuredPlan: PlanRecord = {
     subtitle: 'Configured in the admin console',
     price_amount: 40,
     currency: 'CNY',
+    billing_ratio: 0,
     duration_unit: 'month',
     duration_value: 1,
     quota_reset_period: 'monthly',

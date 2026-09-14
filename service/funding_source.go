@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
 // ---------------------------------------------------------------------------
@@ -84,25 +85,39 @@ type SubscriptionFunding struct {
 	effectiveGroup      string
 	amount              int64 // 预扣的订阅额度（subConsume）
 	resource            *model.SubscriptionResourceRequest
+	pricing             *model.SubscriptionQuotaPricing
 	subscriptionId      int
 	preConsumed         int64
 	resourcePreConsumed int64
+	imageCountSettled   bool
 	// 以下字段在 PreConsume 成功后填充，供 RelayInfo 同步使用
 	AmountTotal     int64
 	AmountUsedAfter int64
 	PlanId          int
 	PlanTitle       string
+	// BillingRatio is copied from the subscription selected by the locked
+	// pre-consume transaction. It must not be inferred from the first active
+	// subscription seen during the earlier quote step.
+	BillingRatio float64
+}
+
+func (s *SubscriptionFunding) ResourceIdentity() (string, string, int64) {
+	if s == nil || s.resource == nil {
+		return "", "", 0
+	}
+	return s.resource.ResourceKey, s.resource.ResourceType, s.resourcePreConsumed
 }
 
 func (s *SubscriptionFunding) Source() string { return BillingSourceSubscription }
 
 func (s *SubscriptionFunding) PreConsume(_ int) error {
 	// amount 参数被忽略，使用内部 s.amount（已在构造时根据 preConsumedQuota 计算）
-	res, err := model.PreConsumeUserSubscriptionWithResource(s.requestId, s.userId, s.modelName, 0, s.amount, s.resource, s.effectiveGroup)
+	res, err := model.PreConsumeUserSubscriptionWithResourceAndPricing(s.requestId, s.userId, s.modelName, 0, s.amount, s.resource, s.pricing, s.effectiveGroup)
 	if err != nil {
 		return err
 	}
 	s.subscriptionId = res.UserSubscriptionId
+	s.BillingRatio = res.BillingRatio
 	s.preConsumed = res.PreConsumed
 	s.resourcePreConsumed = res.ResourcePreConsumed
 	if res.ResourceKey != "" {
@@ -137,14 +152,36 @@ func (s *SubscriptionFunding) adjust(delta int64) error {
 		return nil
 	}
 	if s.resource != nil && s.resource.ResourceType == model.SubscriptionResourceTypeImageCount {
-		// Image-count grants are consumed as whole generations during pre-consume;
-		// the quota-price delta is settled against the token quota only.
+		// Realtime/text quota deltas do not represent image generations. Image
+		// responses settle through SettleImageCount once their actual count is
+		// known, while quota-price deltas remain on the token side.
 		return nil
 	}
 	if s.resource != nil && s.resource.ResourceKey != "" {
 		return model.PostConsumeUserSubscriptionResourceDelta(s.subscriptionId, s.resource.ResourceKey, s.resource.ResourceType, delta)
 	}
 	return model.PostConsumeUserSubscriptionDelta(s.subscriptionId, int64(delta))
+}
+
+func (s *SubscriptionFunding) settleImageCount(actual int64) error {
+	if s == nil || s.resource == nil || s.resource.ResourceType != model.SubscriptionResourceTypeImageCount {
+		return nil
+	}
+	if actual < 0 || actual > int64(dto.MaxImageN) {
+		return errors.New("invalid image generation count")
+	}
+	if s.imageCountSettled {
+		return nil
+	}
+	delta := actual - s.resourcePreConsumed
+	if delta != 0 {
+		if err := model.SettleUserSubscriptionImageResourceDelta(s.subscriptionId, s.resource.ResourceKey, delta); err != nil {
+			return err
+		}
+	}
+	s.imageCountSettled = true
+	s.resourcePreConsumed = actual
+	return nil
 }
 
 func (s *SubscriptionFunding) Refund() error {

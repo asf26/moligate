@@ -36,6 +36,7 @@ function makePlan(
     subtitle: '',
     price_amount: 10,
     currency: 'CNY',
+    billing_ratio: 0,
     duration_unit: 'month',
     duration_value: 1,
     quota_reset_period: 'never',

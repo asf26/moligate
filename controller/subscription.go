@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -172,6 +173,12 @@ func validateSubscriptionApplicableGroups(groups, legacyGroups []string) error {
 }
 
 func validateSubscriptionPlanPresentation(plan model.SubscriptionPlan) error {
+	if plan.BillingRatio < 0 || plan.BillingRatio > model.SubscriptionMaxBillingRatio || math.IsNaN(plan.BillingRatio) || math.IsInf(plan.BillingRatio, 0) {
+		return fmt.Errorf("套餐固定扣费倍率必须是0到%d之间的有限数字", model.SubscriptionMaxBillingRatio)
+	}
+	if plan.EffectiveBillingRatio() <= 0 {
+		return errors.New("该模型系列没有默认扣费倍率，请填写大于0的套餐固定扣费倍率")
+	}
 	if len(strings.TrimSpace(plan.BadgeText)) > 64 {
 		return errors.New("卡片标签不能超过64个字符")
 	}
@@ -411,6 +418,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"subtitle":                   req.Plan.Subtitle,
 			"price_amount":               req.Plan.PriceAmount,
 			"currency":                   req.Plan.Currency,
+			"billing_ratio":              req.Plan.BillingRatio,
 			"duration_unit":              req.Plan.DurationUnit,
 			"duration_value":             req.Plan.DurationValue,
 			"custom_seconds":             req.Plan.CustomSeconds,

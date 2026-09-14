@@ -67,6 +67,9 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		// normal group ratio
 		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	}
+	if relayInfo != nil && relayInfo.BillingSource == "subscription" {
+		applySubscriptionBillingRatio(ctx, relayInfo, &groupRatioInfo)
+	}
 
 	return groupRatioInfo
 }
@@ -92,8 +95,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var audioRatio float64
 	var audioCompletionRatio float64
 	var freeModel bool
+	var preConsumedTokens int
 	if !usePrice {
-		preConsumedTokens := common.Max(promptTokens, common.PreConsumedQuota)
+		preConsumedTokens = common.Max(promptTokens, common.PreConsumedQuota)
 		if meta.MaxTokens != 0 {
 			preConsumedTokens += meta.MaxTokens
 		}
@@ -148,6 +152,17 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			}
 		}
 	}
+	baseQuotaBeforeGroup := float64(preConsumedTokens) * modelRatio
+	if usePrice {
+		baseQuotaBeforeGroup = modelPrice * common.QuotaPerUnit
+	}
+	if freeModel && baseQuotaBeforeGroup > 0 {
+		if _, ok, _ := model.GetActiveSubscriptionBillingRatio(info.UserId, info.OriginModelName, info.UsingGroup); ok {
+			// Keep the billing session active so a purchased package can use its
+			// fixed multiplier even when the live routing group is free.
+			freeModel = false
+		}
+	}
 
 	priceData := hosttypes.PriceData{
 		FreeModel:            freeModel,
@@ -164,11 +179,13 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		CacheCreation5mRatio: cacheCreationRatio5m,
 		CacheCreation1hRatio: cacheCreationRatio1h,
 		QuotaToPreConsume:    preConsumedQuota,
+		BaseQuotaBeforeGroup: baseQuotaBeforeGroup,
 	}
 	if usePrice {
 		for name, ratio := range meta.BillingRatios {
 			priceData.AddOtherRatio(name, ratio)
 		}
+		priceData.BaseQuotaBeforeGroup = priceData.ApplyOtherRatiosToFloat(baseQuotaBeforeGroup)
 		quotaToPreConsume := priceData.ApplyOtherRatiosToFloat(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
 		quota, err := common.QuotaFromFloatStrict(quotaToPreConsume)
 		if err != nil {
@@ -243,14 +260,43 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 	}
 
 	priceData := hosttypes.PriceData{
-		FreeModel:      freeModel,
-		ModelPrice:     modelPrice,
-		ModelRatio:     modelRatio,
-		UsePrice:       usePrice,
-		Quota:          quota,
+		FreeModel:  freeModel,
+		ModelPrice: modelPrice,
+		ModelRatio: modelRatio,
+		UsePrice:   usePrice,
+		Quota:      quota,
+		BaseQuotaBeforeGroup: func() float64 {
+			if usePrice {
+				return modelPrice * common.QuotaPerUnit
+			}
+			return modelRatio / 2 * common.QuotaPerUnit
+		}(),
 		GroupRatioInfo: groupRatioInfo,
 	}
+	if freeModel && priceData.BaseQuotaBeforeGroup > 0 {
+		if _, ok, _ := model.GetActiveSubscriptionBillingRatio(info.UserId, info.OriginModelName, info.UsingGroup); ok {
+			priceData.FreeModel = false
+		}
+	}
 	return priceData, nil
+}
+
+func applySubscriptionBillingRatio(ctx *gin.Context, info *relaycommon.RelayInfo, groupRatioInfo *hosttypes.GroupRatioInfo) {
+	if info == nil || groupRatioInfo == nil {
+		return
+	}
+	// Once pre-consume has selected a subscription, RelayInfo carries the
+	// locked snapshot. Retries must keep using that value; querying active
+	// subscriptions again could select a different package (or turn a legacy
+	// zero snapshot into a different package's rate).
+	fixedRatio := info.SubscriptionBillingRatio
+	ok := fixedRatio > 0 && fixedRatio <= model.SubscriptionMaxBillingRatio && !math.IsNaN(fixedRatio) && !math.IsInf(fixedRatio, 0)
+	if ok {
+		groupRatioInfo.GroupRatio = fixedRatio
+		groupRatioInfo.GroupSpecialRatio = fixedRatio
+		groupRatioInfo.HasSpecialRatio = true
+		info.SubscriptionBillingRatio = fixedRatio
+	}
 }
 
 // VideoAccountPriceHelper builds a task price from the selected CTMOAI
@@ -280,13 +326,20 @@ func VideoAccountPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, amount
 		return hosttypes.PriceData{}, err
 	}
 	freeModel := !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && (effectiveGroupRatio == 0 || amount == 0)
-	return hosttypes.PriceData{
-		FreeModel:      freeModel,
-		ModelPrice:     amount,
-		UsePrice:       true,
-		Quota:          quota,
-		GroupRatioInfo: groupRatioInfo,
-	}, nil
+	priceData := hosttypes.PriceData{
+		FreeModel:            freeModel,
+		ModelPrice:           amount,
+		UsePrice:             true,
+		Quota:                quota,
+		GroupRatioInfo:       groupRatioInfo,
+		BaseQuotaBeforeGroup: amount * common.QuotaPerUnit * accountGroupRatio,
+	}
+	if freeModel && priceData.BaseQuotaBeforeGroup > 0 {
+		if _, ok, _ := model.GetActiveSubscriptionBillingRatio(info.UserId, info.OriginModelName, info.UsingGroup); ok {
+			priceData.FreeModel = false
+		}
+	}
+	return priceData, nil
 }
 
 func normalizeVideoAccountPriceToUSD(amount float64, currency string) (float64, error) {
@@ -377,9 +430,15 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 	info.BillingRequestInput = &requestInput
 
 	priceData := hosttypes.PriceData{
-		FreeModel:         freeModel,
-		GroupRatioInfo:    groupRatioInfo,
-		QuotaToPreConsume: preConsumedQuota,
+		FreeModel:            freeModel,
+		GroupRatioInfo:       groupRatioInfo,
+		QuotaToPreConsume:    preConsumedQuota,
+		BaseQuotaBeforeGroup: quotaBeforeGroup,
+	}
+	if freeModel && quotaBeforeGroup > 0 {
+		if _, ok, _ := model.GetActiveSubscriptionBillingRatio(info.UserId, info.OriginModelName, info.UsingGroup); ok {
+			priceData.FreeModel = false
+		}
 	}
 
 	logger.LogDebug(c, "model_price_helper_tiered result: model=%s preConsume=%d quotaBeforeGroup=%.2f groupRatio=%.2f tier=%s", info.OriginModelName, preConsumedQuota, quotaBeforeGroup, groupRatioInfo.GroupRatio, trace.MatchedTier)

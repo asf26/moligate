@@ -319,6 +319,34 @@ func TestImageGenerationCallCounterCommitCapsAtMaxImageN(t *testing.T) {
 	assert.Equal(t, dto.MaxImageN, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
 }
 
+func TestImageGenerationCallCounterCommitUpdatesRelayImageCount(t *testing.T) {
+	counter := &ImageGenerationCallCounter{}
+	idx := 0
+	counter.Observe(&dto.ResponsesOutput{
+		Type:   dto.ResponsesOutputTypeImageGenerationCall,
+		Status: "completed",
+		Result: "image-bytes",
+	}, &idx)
+	info := &RelayInfo{
+		OriginModelName:          "gpt-image-2",
+		SubscriptionResourceType: "image_count",
+	}
+	counter.Commit(info)
+	require.True(t, info.ActualImageCountSet)
+	assert.EqualValues(t, 1, info.ActualImageCount)
+	assert.Equal(t, 1.0, info.PriceData.OtherRatios()["n"])
+}
+
+func TestImageGenerationCallCounterCommitWithMinimumPreservesAbortedRequest(t *testing.T) {
+	info := &RelayInfo{
+		OriginModelName:          "gpt-image-2",
+		SubscriptionResourceType: "image_count",
+	}
+	(&ImageGenerationCallCounter{}).CommitWithMinimum(info, 1)
+	require.True(t, info.ActualImageCountSet)
+	assert.EqualValues(t, 1, info.ActualImageCount)
+}
+
 func TestImageGenerationCallCounterCommitDoesNotBillDeclarationsAlone(t *testing.T) {
 	t.Parallel()
 

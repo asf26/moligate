@@ -145,6 +145,14 @@ func (c *ImageGenerationCallCounter) Count() int {
 // Commit writes the capped completed-output count into RelayInfo once.
 // Request tool declarations alone must not become billable calls.
 func (c *ImageGenerationCallCounter) Commit(info *RelayInfo) {
+	c.CommitWithMinimum(info, 0)
+}
+
+// CommitWithMinimum records the completed image count while optionally keeping
+// a caller-supplied minimum. Streaming callers use the minimum on an aborted
+// response so disconnecting after partial output cannot lower the requested
+// generation charge.
+func (c *ImageGenerationCallCounter) CommitWithMinimum(info *RelayInfo, minimum int) {
 	if info == nil {
 		return
 	}
@@ -163,6 +171,25 @@ func (c *ImageGenerationCallCounter) Commit(info *RelayInfo) {
 	}
 	if count > dto.MaxImageN {
 		count = dto.MaxImageN
+	}
+	if minimum < 0 {
+		minimum = 0
+	}
+	if minimum > dto.MaxImageN {
+		minimum = dto.MaxImageN
+	}
+	if count < minimum {
+		count = minimum
+	}
+	isImageRequest := info.SubscriptionResourceType == "image_count" ||
+		strings.Contains(strings.ToLower(info.OriginModelName), "image") ||
+		strings.Contains(strings.ToLower(info.OriginModelName), "banana")
+	if isImageRequest && (count > 0 || info.SubscriptionResourceType == "image_count") {
+		info.ActualImageCount = int64(count)
+		info.ActualImageCountSet = true
+		if count > 0 {
+			info.PriceData.AddOtherRatio("n", float64(count))
+		}
 	}
 
 	if existing, ok := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration]; ok && existing != nil {

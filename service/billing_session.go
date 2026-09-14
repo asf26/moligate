@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
@@ -47,16 +49,34 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		return nil
 	}
 	delta := actualQuota - s.preConsumedQuota
+	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
+	if !s.fundingSettled {
+		if subscriptionFunding, ok := s.funding.(*SubscriptionFunding); ok &&
+			subscriptionFunding.resource != nil &&
+			subscriptionFunding.resource.ResourceType == model.SubscriptionResourceTypeImageCount {
+			actualCount := subscriptionFunding.resourcePreConsumed
+			if s.relayInfo.ActualImageCountSet {
+				actualCount = s.relayInfo.ActualImageCount
+			} else if count, ok := s.relayInfo.PriceData.OtherRatios()["n"]; ok {
+				if count < 0 || count > float64(dto.MaxImageN) || math.IsNaN(count) || math.IsInf(count, 0) || math.Trunc(count) != count {
+					return errors.New("invalid settled image generation count")
+				}
+				actualCount = int64(count)
+			}
+			if err := subscriptionFunding.settleImageCount(actualCount); err != nil {
+				return err
+			}
+			s.relayInfo.SubscriptionResourceAmount = actualCount
+		} else if delta != 0 {
+			if err := s.funding.Settle(delta); err != nil {
+				return err
+			}
+		}
+		s.fundingSettled = true
+	}
 	if delta == 0 {
 		s.settled = true
 		return nil
-	}
-	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
-	if !s.fundingSettled {
-		if err := s.funding.Settle(delta); err != nil {
-			return err
-		}
-		s.fundingSettled = true
 	}
 	// 2) 调整令牌额度
 	var tokenErr error
@@ -239,6 +259,54 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
 
+	// A locked subscription transaction may skip an exhausted package and pick
+	// a later package with a different purchased multiplier. Reconcile the token
+	// reservation to that selected package before exposing the session.
+	if subscriptionFunding, ok := s.funding.(*SubscriptionFunding); ok {
+		selectedQuota := int(subscriptionFunding.preConsumed)
+		if selectedQuota <= 0 {
+			if refundErr := s.funding.Refund(); refundErr != nil {
+				common.SysLog("error refunding invalid subscription reservation: " + refundErr.Error())
+			}
+			if s.tokenConsumed > 0 && !s.relayInfo.IsPlayground {
+				_ = model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, s.tokenConsumed)
+			}
+			s.tokenConsumed = 0
+			return types.NewError(errors.New("subscription returned an invalid reservation"), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+		}
+		delta := selectedQuota - effectiveQuota
+		if delta > 0 && !s.relayInfo.IsPlayground {
+			if err := PreConsumeTokenQuota(s.relayInfo, delta); err != nil {
+				if refundErr := s.funding.Refund(); refundErr != nil {
+					common.SysLog("error refunding subscription after token reserve failure: " + refundErr.Error())
+				}
+				if s.tokenConsumed > 0 {
+					if rollbackErr := model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, s.tokenConsumed); rollbackErr != nil {
+						common.SysLog("error rolling back token quota after subscription repricing failure: " + rollbackErr.Error())
+					}
+				}
+				s.tokenConsumed = 0
+				return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			}
+			s.tokenConsumed += delta
+		} else if delta < 0 && !s.relayInfo.IsPlayground {
+			if err := model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, -delta); err != nil {
+				if refundErr := s.funding.Refund(); refundErr != nil {
+					common.SysLog("error refunding subscription after token release failure: " + refundErr.Error())
+				}
+				if s.tokenConsumed > 0 {
+					if rollbackErr := model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, s.tokenConsumed); rollbackErr != nil {
+						common.SysLog("error rolling back token quota after subscription repricing failure: " + rollbackErr.Error())
+					}
+				}
+				s.tokenConsumed = 0
+				return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+			}
+			s.tokenConsumed += delta
+		}
+		effectiveQuota = selectedQuota
+	}
+
 	s.preConsumedQuota = effectiveQuota
 
 	// ---- 同步 RelayInfo 兼容字段 ----
@@ -344,6 +412,8 @@ func (s *BillingSession) syncRelayInfo() {
 
 	if sub, ok := s.funding.(*SubscriptionFunding); ok {
 		info.SubscriptionId = sub.subscriptionId
+		info.SubscriptionBillingRatio = sub.BillingRatio
+		info.SubscriptionResourceKey, info.SubscriptionResourceType, info.SubscriptionResourceAmount = sub.ResourceIdentity()
 		info.SubscriptionPreConsumed = sub.preConsumed + int64(s.extraReserved)
 		info.SubscriptionPostDelta = 0
 		info.SubscriptionAmountTotal = sub.AmountTotal
@@ -352,8 +422,138 @@ func (s *BillingSession) syncRelayInfo() {
 		info.SubscriptionPlanTitle = sub.PlanTitle
 	} else {
 		info.SubscriptionId = 0
+		info.SubscriptionBillingRatio = 0
+		info.SubscriptionResourceKey = ""
+		info.SubscriptionResourceType = ""
+		info.SubscriptionResourceAmount = 0
 		info.SubscriptionPreConsumed = 0
 	}
+}
+
+// subscriptionPreConsumeQuota converts the live-group estimate into the
+// purchased plan's snapshotted multiplier. The live estimate is retained for
+// wallet fallback; only a successfully selected subscription uses this value.
+func subscriptionPreConsumeQuota(relayInfo *relaycommon.RelayInfo, liveQuota int) (int, float64, bool) {
+	if relayInfo == nil {
+		return liveQuota, 0, false
+	}
+	ratio, ok, err := model.GetActiveSubscriptionBillingRatio(
+		relayInfo.UserId,
+		relayInfo.OriginModelName,
+		relayInfo.UsingGroup,
+	)
+	if err != nil || !ok {
+		return liveQuota, 0, false
+	}
+	quota, err := subscriptionQuotaForRatio(relayInfo, liveQuota, ratio)
+	if err != nil || quota < 0 {
+		return liveQuota, 0, false
+	}
+	return quota, ratio, true
+}
+
+// subscriptionQuotaForRatio converts the current request estimate to a
+// package multiplier. The pre-consume quote may use one active subscription,
+// while the locked transaction can select another (for example when the first
+// package is exhausted), so this conversion is also used after pre-consume
+// with the ratio returned by the selected subscription.
+func subscriptionQuotaForRatio(relayInfo *relaycommon.RelayInfo, liveQuota int, ratio float64) (int, error) {
+	if relayInfo == nil || ratio <= 0 {
+		return liveQuota, nil
+	}
+	if ratio > model.SubscriptionMaxBillingRatio || math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+		return 0, errors.New("invalid subscription billing ratio")
+	}
+	if relayInfo.PriceData.BaseQuotaBeforeGroup > 0 {
+		return common.QuotaFromFloatStrict(relayInfo.PriceData.BaseQuotaBeforeGroup * ratio)
+	}
+	liveRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
+	raw := float64(liveQuota) * ratio
+	if liveRatio > 0 {
+		raw /= liveRatio
+	} else {
+		raw = relayInfo.PriceData.BaseQuotaBeforeGroup * ratio
+	}
+	return common.QuotaFromFloatStrict(raw)
+}
+
+// applySubscriptionPriceSnapshot updates the in-flight price only after the
+// subscription funding source has successfully reserved quota. This keeps
+// wallet fallback on the live group ratio while making all subsequent settle
+// calculations use the purchased plan's fixed ratio.
+func applySubscriptionPriceSnapshot(relayInfo *relaycommon.RelayInfo, liveQuota int, fixedQuota int, ratio float64) {
+	if relayInfo == nil || ratio <= 0 || ratio > model.SubscriptionMaxBillingRatio || math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+		return
+	}
+	if relayInfo.PriceData.GroupRatioInfo.GroupRatio != ratio {
+		relayInfo.PriceData.GroupRatioInfo.GroupRatio = ratio
+		relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio = ratio
+		relayInfo.PriceData.GroupRatioInfo.HasSpecialRatio = true
+	}
+	if relayInfo.PriceData.QuotaToPreConsume == liveQuota {
+		relayInfo.PriceData.QuotaToPreConsume = fixedQuota
+	}
+	if relayInfo.PriceData.Quota == liveQuota {
+		relayInfo.PriceData.Quota = fixedQuota
+	}
+	if snap := relayInfo.TieredBillingSnapshot; snap != nil {
+		snap.GroupRatio = ratio
+		if quota, err := common.QuotaFromFloatStrict(snap.EstimatedQuotaBeforeGroup * ratio); err == nil {
+			snap.EstimatedQuotaAfterGroup = quota
+		}
+	}
+}
+
+func liveGroupRatio(relayInfo *relaycommon.RelayInfo) float64 {
+	if relayInfo == nil {
+		return 1
+	}
+	if ratio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup); ok {
+		return ratio
+	}
+	return ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
+}
+
+// restoreWalletPriceSnapshot switches an initially subscription-priced request
+// back to the live group price when subscription funding is unavailable and
+// wallet overflow is allowed.
+func restoreWalletPriceSnapshot(relayInfo *relaycommon.RelayInfo, preConsumed int, fixedRatio float64) int {
+	if relayInfo == nil || fixedRatio <= 0 {
+		return preConsumed
+	}
+	liveRatio := liveGroupRatio(relayInfo)
+	walletQuota := preConsumed
+	if relayInfo.PriceData.BaseQuotaBeforeGroup > 0 {
+		if quota, err := common.QuotaFromFloatStrict(relayInfo.PriceData.BaseQuotaBeforeGroup * liveRatio); err == nil {
+			walletQuota = quota
+		}
+	} else if liveRatio <= 0 {
+		walletQuota = 0
+	} else if quota, err := common.QuotaFromFloatStrict(float64(preConsumed) * liveRatio / fixedRatio); err == nil {
+		walletQuota = quota
+	}
+	relayInfo.PriceData.GroupRatioInfo.GroupRatio = liveRatio
+	if special, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup); ok {
+		relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio = special
+		relayInfo.PriceData.GroupRatioInfo.HasSpecialRatio = true
+	} else {
+		relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio = -1
+		relayInfo.PriceData.GroupRatioInfo.HasSpecialRatio = false
+	}
+	relayInfo.SubscriptionBillingRatio = 0
+	relayInfo.SubscriptionResourceKey = ""
+	relayInfo.SubscriptionResourceType = ""
+	relayInfo.SubscriptionResourceAmount = 0
+	if relayInfo.PriceData.QuotaToPreConsume == preConsumed {
+		relayInfo.PriceData.QuotaToPreConsume = walletQuota
+	}
+	if relayInfo.PriceData.Quota == preConsumed {
+		relayInfo.PriceData.Quota = walletQuota
+	}
+	if liveRatio <= 0 {
+		relayInfo.PriceData.FreeModel = true
+	}
+	return walletQuota
 }
 
 // ---------------------------------------------------------------------------
@@ -367,22 +567,30 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)
+	subscriptionQuota, fixedRatio, hasFixedRatio := preConsumedQuota, 0.0, false
+	if pref != "wallet_first" && pref != "wallet_only" {
+		subscriptionQuota, fixedRatio, hasFixedRatio = subscriptionPreConsumeQuota(relayInfo, preConsumedQuota)
+	}
+	walletQuota := preConsumedQuota
 
 	// 钱包路径需要先检查用户额度
 	tryWallet := func() (*BillingSession, *types.NewAPIError) {
+		if hasFixedRatio {
+			walletQuota = restoreWalletPriceSnapshot(relayInfo, preConsumedQuota, fixedRatio)
+		}
 		userQuota, err := model.GetUserQuota(relayInfo.UserId, false)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 		}
-		if userQuota <= 0 {
+		if walletQuota > 0 && userQuota <= 0 {
 			return nil, types.NewErrorWithStatusCode(
 				fmt.Errorf("用户额度不足, 剩余额度: %s", logger.FormatQuota(userQuota)),
 				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
-		if userQuota-preConsumedQuota < 0 {
+		if userQuota-walletQuota < 0 {
 			return nil, types.NewErrorWithStatusCode(
-				fmt.Errorf("预扣费额度失败, 用户剩余额度: %s, 需要预扣费额度: %s", logger.FormatQuota(userQuota), logger.FormatQuota(preConsumedQuota)),
+				fmt.Errorf("预扣费额度失败, 用户剩余额度: %s, 需要预扣费额度: %s", logger.FormatQuota(userQuota), logger.FormatQuota(walletQuota)),
 				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
@@ -392,14 +600,22 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			relayInfo: relayInfo,
 			funding:   &WalletFunding{userId: relayInfo.UserId},
 		}
-		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
+		if apiErr := session.preConsume(c, walletQuota); apiErr != nil {
 			return nil, apiErr
 		}
 		return session, nil
 	}
 
 	trySubscription := func() (*BillingSession, *types.NewAPIError) {
-		subConsume := int64(preConsumedQuota)
+		// wallet_first intentionally leaves the first attempt on live pricing;
+		// recompute the fixed snapshot only after that wallet attempt fails.
+		subQuota, subRatio, subHasFixed := subscriptionPreConsumeQuota(relayInfo, preConsumedQuota)
+		if !subHasFixed {
+			subQuota = subscriptionQuota
+			subRatio = fixedRatio
+			subHasFixed = hasFixedRatio
+		}
+		subConsume := int64(subQuota)
 		if subConsume <= 0 {
 			subConsume = 1
 		}
@@ -413,12 +629,29 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 				effectiveGroup: relayInfo.UsingGroup,
 				amount:         subConsume,
 				resource:       resource,
+				pricing: &model.SubscriptionQuotaPricing{
+					BaseQuotaBeforeGroup: relayInfo.PriceData.BaseQuotaBeforeGroup,
+					LiveQuota:            int64(preConsumedQuota),
+				},
 			},
 		}
 		// 必须传 subConsume 而非 preConsumedQuota，保证 SubscriptionFunding.amount、
 		// preConsume 参数和 FinalPreConsumedQuota 三者一致，避免订阅多扣费。
 		if apiErr := session.preConsume(c, int(subConsume)); apiErr != nil {
 			return nil, apiErr
+		}
+		// Use the ratio returned by the locked pre-consume transaction. The
+		// earlier read-only quote can point at an exhausted subscription with a
+		// different multiplier, or miss a plan reached through a resource grant.
+		actualRatio := subRatio
+		if funding, ok := session.funding.(*SubscriptionFunding); ok {
+			// The locked transaction is authoritative because it may skip an
+			// exhausted package that had a different fixed multiplier.
+			actualRatio = funding.BillingRatio
+		}
+		if actualRatio > 0 {
+			fixedQuota := session.preConsumedQuota
+			applySubscriptionPriceSnapshot(relayInfo, preConsumedQuota, fixedQuota, actualRatio)
 		}
 		return session, nil
 	}
@@ -440,7 +673,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	case "subscription_first":
 		fallthrough
 	default:
-		hasSub, subCheckErr := model.HasActiveUserSubscription(relayInfo.UserId, relayInfo.UsingGroup)
+		hasSub, subCheckErr := model.HasActiveUserSubscriptionForModel(relayInfo.UserId, relayInfo.OriginModelName, relayInfo.UsingGroup)
 		if subCheckErr != nil {
 			return nil, types.NewError(subCheckErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 		}
@@ -451,7 +684,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		if apiErr != nil {
 			if apiErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
 				// 仅当用户的活跃订阅允许钱包回退时才回退到钱包，否则返回订阅额度不足错误
-				allowOverflow, overflowErr := model.UserActiveSubscriptionsAllowWalletOverflow(relayInfo.UserId, relayInfo.UsingGroup)
+				allowOverflow, overflowErr := model.UserActiveSubscriptionsAllowWalletOverflowForModel(relayInfo.UserId, relayInfo.OriginModelName, relayInfo.UsingGroup)
 				if overflowErr != nil {
 					return nil, types.NewError(overflowErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 				}
@@ -474,16 +707,22 @@ func subscriptionResourceRequest(relayInfo *relaycommon.RelayInfo, quotaAmount i
 	if modelName == "" {
 		return nil
 	}
-	if imageRequest, ok := relayInfo.Request.(*dto.ImageRequest); ok && modelName == "gpt-image-2" {
+	if isSubscriptionImageModel(modelName) {
 		count := int64(1)
-		if imageRequest.N != nil && *imageRequest.N > 0 {
-			count = int64(*imageRequest.N)
+		if imageRequest, ok := relayInfo.Request.(*dto.ImageRequest); ok {
+			if imageRequest.N != nil && *imageRequest.N > 0 {
+				count = int64(*imageRequest.N)
+			}
+		} else if geminiRequest, ok := relayInfo.Request.(*dto.GeminiChatRequest); ok {
+			if candidateCount := geminiRequest.GenerationConfig.CandidateCount; candidateCount != nil && *candidateCount > 0 {
+				count = int64(*candidateCount)
+			}
 		}
 		if count > int64(dto.MaxImageN) {
 			count = int64(dto.MaxImageN)
 		}
 		return &model.SubscriptionResourceRequest{
-			ResourceKey:  modelName,
+			ResourceKey:  subscriptionImageResourceKey(modelName),
 			ResourceType: model.SubscriptionResourceTypeImageCount,
 			Amount:       count,
 		}
@@ -493,4 +732,21 @@ func subscriptionResourceRequest(relayInfo *relaycommon.RelayInfo, quotaAmount i
 		ResourceType: model.SubscriptionResourceTypeQuota,
 		Amount:       quotaAmount,
 	}
+}
+
+func isSubscriptionImageModel(modelName string) bool {
+	return strings.HasPrefix(modelName, "gpt-image-2") ||
+		strings.HasPrefix(modelName, "gemini-3-pro-image") ||
+		strings.HasPrefix(modelName, "gemini-3.1-flash-image") ||
+		modelName == "gemini-2.5-flash-image" ||
+		modelName == "gemini-2.0-flash-exp-image-generation" ||
+		modelName == "gemini-2.0-flash-exp" ||
+		modelName == "nano-banana-pro-preview"
+}
+
+func subscriptionImageResourceKey(modelName string) string {
+	if strings.HasPrefix(modelName, "gpt-image-2") {
+		return "gpt-image-2"
+	}
+	return "nano-banana"
 }

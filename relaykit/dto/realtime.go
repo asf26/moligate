@@ -15,6 +15,7 @@ const (
 	RealtimeEventTypeSessionUpdated                 = "session.updated"
 	RealtimeEventTypeSessionCreated                 = "session.created"
 	RealtimeEventResponseAudioDelta                 = "response.audio.delta"
+	RealtimeEventResponseOutputTextDelta            = "response.output_text.delta"
 	RealtimeEventResponseAudioTranscriptionDelta    = "response.audio_transcript.delta"
 	RealtimeEventResponseFunctionCallArgumentsDelta = "response.function_call_arguments.delta"
 	RealtimeEventResponseFunctionCallArgumentsDone  = "response.function_call_arguments.done"

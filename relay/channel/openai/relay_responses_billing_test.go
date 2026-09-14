@@ -141,7 +141,10 @@ func TestOaiResponsesHandlerCountsCompletedImageGenerationOutputs(t *testing.T) 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	info := &relaycommon.RelayInfo{OriginModelName: "gpt-5.1"}
+	info := &relaycommon.RelayInfo{
+		OriginModelName:          "gpt-image-2",
+		SubscriptionResourceType: "image_count",
+	}
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(bytes.NewReader(body)),
@@ -152,6 +155,9 @@ func TestOaiResponsesHandlerCountsCompletedImageGenerationOutputs(t *testing.T) 
 	require.Nil(t, apiErr)
 	require.Contains(t, info.ResponsesUsageInfo.BuiltInTools, dto.BuildInToolImageGeneration)
 	assert.Equal(t, 2, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
+	assert.True(t, info.ActualImageCountSet)
+	assert.EqualValues(t, 2, info.ActualImageCount)
+	assert.Equal(t, 2.0, info.PriceData.OtherRatios()["n"])
 	assert.False(t, c.GetBool("image_generation_call"))
 }
 

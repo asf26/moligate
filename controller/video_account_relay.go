@@ -56,6 +56,9 @@ func RelayVideoAccountTask(c *gin.Context, info *relaycommon.RelayInfo) {
 	task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 	task.PrivateData.BillingSource = info.BillingSource
 	task.PrivateData.SubscriptionId = info.SubscriptionId
+	task.PrivateData.SubscriptionResourceKey = info.SubscriptionResourceKey
+	task.PrivateData.SubscriptionResourceType = info.SubscriptionResourceType
+	task.PrivateData.SubscriptionResourceAmount = info.SubscriptionResourceAmount
 	task.PrivateData.TokenId = info.TokenId
 	task.PrivateData.NodeName = common.NodeName
 	pricing := info.VideoAccount.Models[info.OriginModelName]
@@ -68,6 +71,7 @@ func RelayVideoAccountTask(c *gin.Context, info *relaycommon.RelayInfo) {
 		PerCallBilling:  !strings.EqualFold(strings.TrimSpace(pricing.PricingMode), "per_second"),
 		PricingMode:     pricing.PricingMode,
 		PricingCurrency: pricing.PricingCurrency,
+		FixedGroupRatio: info.BillingSource == service.BillingSourceSubscription && info.SubscriptionBillingRatio > 0,
 	}
 	task.Quota = result.Quota
 	task.Data = result.TaskData

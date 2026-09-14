@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -89,18 +91,49 @@ func resolveTokenKey(ctx context.Context, tokenId int, taskID string) string {
 
 // taskIsSubscription 判断任务是否通过订阅计费。
 func taskIsSubscription(task *model.Task) bool {
-	return task.PrivateData.BillingSource == BillingSourceSubscription && task.PrivateData.SubscriptionId > 0
+	return task != nil && task.PrivateData.BillingSource == BillingSourceSubscription && task.PrivateData.SubscriptionId > 0
 }
 
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
 func taskAdjustFunding(task *model.Task, delta int) error {
 	if taskIsSubscription(task) {
+		if task.PrivateData.SubscriptionResourceKey != "" {
+			if task.PrivateData.SubscriptionResourceType == model.SubscriptionResourceTypeImageCount {
+				// Image grants are consumed once, by generation count, at submit time.
+				// Quota-price reconciliation must not reinterpret its delta as images.
+				return nil
+			}
+			return model.PostConsumeUserSubscriptionResourceDelta(
+				task.PrivateData.SubscriptionId,
+				task.PrivateData.SubscriptionResourceKey,
+				task.PrivateData.SubscriptionResourceType,
+				int64(delta),
+			)
+		}
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}
 	if delta > 0 {
 		return model.DecreaseUserQuota(task.UserId, delta, false)
 	}
 	return model.IncreaseUserQuota(task.UserId, -delta, false)
+}
+
+func taskRefundFunding(task *model.Task, quota int) error {
+	if taskIsSubscription(task) &&
+		task.PrivateData.SubscriptionResourceKey != "" &&
+		task.PrivateData.SubscriptionResourceType == model.SubscriptionResourceTypeImageCount {
+		amount := task.PrivateData.SubscriptionResourceAmount
+		if amount <= 0 {
+			return errors.New("missing subscription image resource amount")
+		}
+		return model.PostConsumeUserSubscriptionResourceDelta(
+			task.PrivateData.SubscriptionId,
+			task.PrivateData.SubscriptionResourceKey,
+			task.PrivateData.SubscriptionResourceType,
+			-amount,
+		)
+	}
+	return taskAdjustFunding(task, -quota)
 }
 
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
@@ -129,6 +162,11 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 	other := make(map[string]interface{})
 	if task != nil && task.VideoAccountId > 0 {
 		other["video_account_id"] = task.VideoAccountId
+	}
+	if task != nil && task.PrivateData.SubscriptionResourceKey != "" {
+		other["subscription_resource_key"] = task.PrivateData.SubscriptionResourceKey
+		other["subscription_resource_type"] = task.PrivateData.SubscriptionResourceType
+		other["subscription_resource_amount"] = task.PrivateData.SubscriptionResourceAmount
 	}
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		other["model_price"] = bc.ModelPrice
@@ -163,10 +201,36 @@ func taskBillingContextPriceData(bc *model.TaskBillingContext) *types.PriceData 
 
 // taskModelName 从 BillingContext 或 Properties 中获取模型名称。
 func taskModelName(task *model.Task) string {
+	if task == nil {
+		return ""
+	}
 	if bc := task.PrivateData.BillingContext; bc != nil && bc.OriginModelName != "" {
 		return bc.OriginModelName
 	}
 	return task.Properties.OriginModelName
+}
+
+// taskBillingSnapshotRatios returns the pricing ratios captured when an
+// asynchronous task was submitted through a subscription. A task paid from
+// the wallet intentionally returns no snapshot so its token reconciliation
+// keeps using the current live settings. The two ratios are independent:
+// older tasks may have a group snapshot without a model snapshot (or vice
+// versa), and each valid value should still be honored.
+func taskBillingSnapshotRatios(task *model.Task) (modelRatio float64, hasModelRatio bool, groupRatio float64, hasGroupRatio bool) {
+	if task == nil || !taskIsSubscription(task) {
+		return 0, false, 0, false
+	}
+	billingContext := task.PrivateData.BillingContext
+	if billingContext == nil || !billingContext.FixedGroupRatio {
+		return 0, false, 0, false
+	}
+	if billingContext.ModelRatio > 0 && !math.IsNaN(billingContext.ModelRatio) && !math.IsInf(billingContext.ModelRatio, 0) {
+		modelRatio, hasModelRatio = billingContext.ModelRatio, true
+	}
+	if billingContext.GroupRatio > 0 && billingContext.GroupRatio <= model.SubscriptionMaxBillingRatio && !math.IsNaN(billingContext.GroupRatio) && !math.IsInf(billingContext.GroupRatio, 0) {
+		groupRatio, hasGroupRatio = billingContext.GroupRatio, true
+	}
+	return modelRatio, hasModelRatio, groupRatio, hasGroupRatio
 }
 
 // RefundTaskQuota 统一的任务失败退款逻辑。
@@ -179,7 +243,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	}
 
 	// 1. 退还资金来源（钱包或订阅）
-	if err := taskAdjustFunding(task, -quota); err != nil {
+	if err := taskRefundFunding(task, quota); err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
 		return false
 	}
@@ -223,7 +287,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 // reason 用于日志记录（例如 "token重算" 或 "adaptor调整"）。
 // clamps 可选：若计算 actualQuota 时发生额度饱和，将其记入日志 admin_info（仅管理员可见）。
 func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int, reason string, clamps ...*common.QuotaClamp) {
-	if actualQuota <= 0 {
+	if task == nil || actualQuota <= 0 {
 		return
 	}
 	preConsumedQuota := task.Quota
@@ -297,39 +361,50 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 // 当任务成功且返回了 totalTokens 时，根据模型倍率和分组倍率重新计算实际扣费额度，
 // 与预扣费的差额进行补扣或退还。支持钱包和订阅计费来源。
 func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTokens int) {
-	if totalTokens <= 0 {
+	if task == nil || totalTokens <= 0 {
 		return
 	}
 
 	modelName := taskModelName(task)
 
-	// 获取模型价格和倍率
-	modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)
+	// Newly submitted subscription tasks carry both ratios in their billing
+	// context.  Use those snapshots so changing a live model/group setting
+	// while the upstream task is running cannot change the purchased package's
+	// eventual charge.  Wallet tasks (and legacy tasks without a snapshot)
+	// continue to use the live settings.
+	modelRatio, hasModelSnapshot, groupRatio, hasGroupSnapshot := taskBillingSnapshotRatios(task)
+	hasRatioSetting := hasModelSnapshot
+	if !hasModelSnapshot {
+		modelRatio, hasRatioSetting, _ = ratio_setting.GetModelRatio(modelName)
+	}
 	// 只有配置了倍率(非固定价格)时才按 token 重新计费
 	if !hasRatioSetting || modelRatio <= 0 {
 		return
 	}
 
-	// 获取用户和组的倍率信息
-	group := task.Group
-	if group == "" {
-		user, err := model.GetUserById(task.UserId, false)
-		if err == nil {
-			group = user.Group
+	finalGroupRatio := groupRatio
+	if !hasGroupSnapshot {
+		// Live wallet pricing needs the task's group. A subscription task with
+		// a persisted group snapshot does not: the package ratio is complete
+		// on its own and should remain usable even if the user/group record is
+		// unavailable during a later poll.
+		group := task.Group
+		if group == "" {
+			user, err := model.GetUserById(task.UserId, false)
+			if err == nil {
+				group = user.Group
+			}
 		}
-	}
-	if group == "" {
-		return
-	}
-
-	groupRatio := ratio_setting.GetGroupRatio(group)
-	userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
-
-	var finalGroupRatio float64
-	if hasUserGroupRatio {
-		finalGroupRatio = userGroupRatio
-	} else {
-		finalGroupRatio = groupRatio
+		if group == "" {
+			return
+		}
+		liveGroupRatio := ratio_setting.GetGroupRatio(group)
+		userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
+		if hasUserGroupRatio {
+			finalGroupRatio = userGroupRatio
+		} else {
+			finalGroupRatio = liveGroupRatio
+		}
 	}
 
 	// 计算 OtherRatios 乘积（视频折扣、时长等）

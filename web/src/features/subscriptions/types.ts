@@ -40,6 +40,7 @@ export const subscriptionPlanSchema = z.object({
   subtitle: z.string().optional(),
   price_amount: z.number(),
   currency: z.string().default('CNY'),
+  billing_ratio: z.number().optional(),
   duration_unit: z.enum(['year', 'month', 'day', 'hour', 'custom']),
   duration_value: z.number(),
   custom_seconds: z.number().optional(),

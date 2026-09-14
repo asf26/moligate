@@ -243,6 +243,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		for k, v := range estimatedRatios {
 			info.PriceData.AddOtherRatio(k, v)
 		}
+		// Per-call task pricing is initially built before request-specific
+		// multipliers (duration, resolution, batch count) are known. Keep the
+		// pre-group base in sync so a fixed subscription ratio can be applied
+		// after the funding source is selected, including zero-ratio groups.
+		info.PriceData.BaseQuotaBeforeGroup = info.PriceData.ApplyOtherRatiosToFloat(info.PriceData.BaseQuotaBeforeGroup)
 	}
 
 	// 6. 将 OtherRatios 应用到基础额度（饱和转换，防止溢出成负数）

@@ -172,6 +172,21 @@ type RelayInfo struct {
 	// SubscriptionPlanId / SubscriptionPlanTitle are used for logging/UI display.
 	SubscriptionPlanId    int
 	SubscriptionPlanTitle string
+	// SubscriptionBillingRatio is the fixed package multiplier applied while
+	// subscription funding is selected. It is cleared when billing falls back
+	// to the wallet so wallet requests retain the live group price.
+	SubscriptionBillingRatio float64
+	// SubscriptionResourceKey/Type/Amount identify a model-specific entitlement selected
+	// during pre-consume. Async tasks persist this metadata so later settlement or
+	// refunds adjust the same entitlement instead of the package's primary quota.
+	SubscriptionResourceKey    string
+	SubscriptionResourceType   string
+	SubscriptionResourceAmount int64
+	// ActualImageCount is populated by native image relays when the upstream
+	// response reveals how many images were actually returned. The explicit
+	// boolean preserves a legitimate zero-image response for refund settlement.
+	ActualImageCount    int64
+	ActualImageCountSet bool
 	// RequestId is used for idempotent pre-consume/refund
 	RequestId string
 	// SubscriptionAmountTotal / SubscriptionAmountUsedAfterPreConsume are used to compute remaining in logs.

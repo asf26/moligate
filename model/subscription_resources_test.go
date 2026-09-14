@@ -18,6 +18,7 @@ func TestSubscriptionBonusResourcesPreConsumeAndRefund(t *testing.T) {
 		DurationValue:  1,
 		ModelFamily:    "gpt",
 		IncludedModels: []string{"gpt-5.5"},
+		BillingRatio:   0.14,
 		TotalAmount:    1000,
 		BonusResources: []SubscriptionBonusResource{
 			{ResourceKey: "grok", ResourceType: SubscriptionResourceTypeQuota, ModelName: "grok", Amount: 100},
@@ -27,7 +28,7 @@ func TestSubscriptionBonusResourcesPreConsumeAndRefund(t *testing.T) {
 	require.NoError(t, DB.Create(plan).Error)
 	subscription := &UserSubscription{
 		Id: 9852, UserId: 9853, PlanId: plan.Id, AmountTotal: plan.TotalAmount,
-		ModelFamily: "gpt", IncludedModels: []string{"gpt-5.5"},
+		ModelFamily: "gpt", IncludedModels: []string{"gpt-5.5"}, BillingRatio: 0.14,
 		ResourceGrants: []SubscriptionResourceGrant{
 			{ResourceKey: "grok", ResourceType: SubscriptionResourceTypeQuota, ModelName: "grok", Amount: 100},
 			{ResourceKey: "gpt-image-2", ResourceType: SubscriptionResourceTypeImageCount, ModelName: "gpt-image-2", Amount: 3},

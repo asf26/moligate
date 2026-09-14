@@ -326,6 +326,9 @@ func migrateDB() error {
 	if err := migrateSubscriptionPlanCurrencyToCNY(); err != nil {
 		return err
 	}
+	if err := migrateActiveSubscriptionBillingRatios(); err != nil {
+		return err
+	}
 	if err := migrateDisableExistingUserDistribution(); err != nil {
 		return err
 	}
@@ -434,6 +437,9 @@ func migrateDBFast() error {
 		}
 	}
 	if err := migrateSubscriptionPlanCurrencyToCNY(); err != nil {
+		return err
+	}
+	if err := migrateActiveSubscriptionBillingRatios(); err != nil {
 		return err
 	}
 	if err := migrateDisableExistingUserDistribution(); err != nil {
@@ -647,6 +653,7 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`subtitle`" + ` varchar(255) DEFAULT '',
 ` + "`price_amount`" + ` decimal(10,6) NOT NULL,
 ` + "`currency`" + ` varchar(8) NOT NULL DEFAULT 'CNY',
+` + "`billing_ratio`" + ` decimal(10,6) NOT NULL DEFAULT 0,
 ` + "`duration_unit`" + ` varchar(16) NOT NULL DEFAULT 'month',
 ` + "`duration_value`" + ` integer NOT NULL DEFAULT 1,
 ` + "`custom_seconds`" + ` bigint NOT NULL DEFAULT 0,
@@ -694,6 +701,7 @@ PRIMARY KEY (` + "`id`" + `)
 		{Name: "subtitle", DDL: "`subtitle` varchar(255) DEFAULT ''"},
 		{Name: "price_amount", DDL: "`price_amount` decimal(10,6) NOT NULL"},
 		{Name: "currency", DDL: "`currency` varchar(8) NOT NULL DEFAULT 'CNY'"},
+		{Name: "billing_ratio", DDL: "`billing_ratio` decimal(10,6) NOT NULL DEFAULT 0"},
 		{Name: "duration_unit", DDL: "`duration_unit` varchar(16) NOT NULL DEFAULT 'month'"},
 		{Name: "duration_value", DDL: "`duration_value` integer NOT NULL DEFAULT 1"},
 		{Name: "custom_seconds", DDL: "`custom_seconds` bigint NOT NULL DEFAULT 0"},

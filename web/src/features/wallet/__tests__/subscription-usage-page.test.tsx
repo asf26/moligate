@@ -53,6 +53,7 @@ const plan: PlanRecord = {
     subtitle: 'GPT configured plan',
     price_amount: 79,
     currency: 'CNY',
+    billing_ratio: 0,
     duration_unit: 'month',
     duration_value: 1,
     quota_reset_period: 'monthly',
