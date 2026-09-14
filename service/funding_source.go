@@ -2,10 +2,13 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/shopspring/decimal"
 )
 
 // ---------------------------------------------------------------------------
@@ -90,6 +93,7 @@ type SubscriptionFunding struct {
 	preConsumed         int64
 	resourcePreConsumed int64
 	imageCountSettled   bool
+	imageQuotaSettled   int64
 	// 以下字段在 PreConsume 成功后填充，供 RelayInfo 同步使用
 	AmountTotal     int64
 	AmountUsedAfter int64
@@ -163,25 +167,43 @@ func (s *SubscriptionFunding) adjust(delta int64) error {
 	return model.PostConsumeUserSubscriptionDelta(s.subscriptionId, int64(delta))
 }
 
-func (s *SubscriptionFunding) settleImageCount(actual int64) error {
+func (s *SubscriptionFunding) settleImageCount(actual int64) (int64, error) {
 	if s == nil || s.resource == nil || s.resource.ResourceType != model.SubscriptionResourceTypeImageCount {
-		return nil
+		return 0, nil
 	}
 	if actual < 0 || actual > int64(dto.MaxImageN) {
-		return errors.New("invalid image generation count")
+		return 0, errors.New("invalid image generation count")
 	}
 	if s.imageCountSettled {
-		return nil
+		return s.imageQuotaSettled, nil
 	}
 	delta := actual - s.resourcePreConsumed
-	if delta != 0 {
-		if err := model.SettleUserSubscriptionImageResourceDelta(s.subscriptionId, s.resource.ResourceKey, delta); err != nil {
-			return err
+	if delta == 0 {
+		s.imageCountSettled = true
+		return 0, nil
+	}
+	quotaPerImage := int64(0)
+	if delta > 0 {
+		if s.resourcePreConsumed <= 0 || s.preConsumed <= 0 {
+			return 0, fmt.Errorf("%w: missing image unit quota", model.ErrSubscriptionImageOverageUnsettled)
 		}
+		unit := decimal.NewFromInt(s.preConsumed).Div(decimal.NewFromInt(s.resourcePreConsumed))
+		minimum, err := common.QuotaFromDecimalStrict(unit.Mul(decimal.NewFromInt(delta)))
+		if err != nil {
+			return 0, err
+		}
+		quotaPerImage = int64(minimum)
+	}
+	appliedQuota, err := model.SettleUserSubscriptionImageResourceDeltaWithQuota(
+		s.subscriptionId, s.resource.ResourceKey, delta, quotaPerImage,
+	)
+	if err != nil {
+		return 0, err
 	}
 	s.imageCountSettled = true
 	s.resourcePreConsumed = actual
-	return nil
+	s.imageQuotaSettled = appliedQuota
+	return appliedQuota, nil
 }
 
 func (s *SubscriptionFunding) Refund() error {

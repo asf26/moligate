@@ -42,6 +42,7 @@ var (
 	ErrSubscriptionOrderNotFound          = errors.New("subscription order not found")
 	ErrSubscriptionOrderStatusInvalid     = errors.New("subscription order status invalid")
 	ErrSubscriptionImportedUsageOverLimit = errors.New("imported subscription usage exceeds plan limits")
+	ErrSubscriptionImageOverageUnsettled  = errors.New("subscription image overage cannot be settled")
 )
 
 // Subscription resource grants are optional entitlements attached to a plan.
@@ -2679,6 +2680,91 @@ func SettleUserSubscriptionImageResourceDelta(userSubscriptionId int, resourceKe
 	})
 }
 
+// SettleUserSubscriptionImageResourceDeltaWithQuota settles an image grant and
+// charges a fixed-ratio fallback against the subscription's primary quota when
+// the upstream returns more images than the grant can cover. quotaPerImage is
+// captured from the purchased subscription snapshot. Both updates are
+// performed under one row lock so a failed fallback rolls back the grant
+// update as well. The returned value is the primary-quota amount applied.
+func SettleUserSubscriptionImageResourceDeltaWithQuota(userSubscriptionId int, resourceKey string, resourceDelta, quotaPerImage int64) (int64, error) {
+	if userSubscriptionId <= 0 {
+		return 0, errors.New("invalid userSubscriptionId")
+	}
+	if strings.TrimSpace(resourceKey) == "" {
+		return 0, errors.New("resource key is empty")
+	}
+	if resourceDelta == math.MinInt64 || resourceDelta > int64(common.MaxQuota) || resourceDelta < -int64(common.MaxQuota) {
+		return 0, errors.New("image resource delta exceeds limit")
+	}
+	if quotaPerImage < 0 || quotaPerImage > int64(common.MaxQuota) {
+		return 0, errors.New("image unit quota exceeds limit")
+	}
+	if resourceDelta == 0 {
+		return 0, nil
+	}
+
+	var appliedQuota int64
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var sub UserSubscription
+		if err := lockForUpdate(tx).Where("id = ?", userSubscriptionId).First(&sub).Error; err != nil {
+			return err
+		}
+		if sub.PlanId > 0 {
+			plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if plan != nil {
+				if err := maybeResetUserSubscriptionWithPlanTx(tx, &sub, plan, getDBTimestampTx(tx)); err != nil {
+					return err
+				}
+			}
+		}
+
+		normalizedKey := strings.TrimSpace(strings.ToLower(resourceKey))
+		for i := range sub.ResourceGrants {
+			grant := &sub.ResourceGrants[i]
+			if grant.ResourceType != SubscriptionResourceTypeImageCount || grant.ResourceKey != normalizedKey {
+				continue
+			}
+
+			grantDelta := resourceDelta
+			overage := int64(0)
+			if resourceDelta > 0 && grant.Amount > 0 {
+				available := int64(0)
+				if grant.Used < grant.Amount {
+					available = grant.Amount - grant.Used
+				}
+				if grantDelta > available {
+					grantDelta = available
+					overage = resourceDelta - available
+				}
+			}
+			newUsed, err := applySubscriptionUsageDelta(grant.Used, grantDelta)
+			if err != nil {
+				return fmt.Errorf("subscription image resource usage update failed: %w", err)
+			}
+			grant.Used = newUsed
+			if overage > 0 {
+				if quotaPerImage <= 0 || overage > int64(common.MaxQuota)/quotaPerImage {
+					return fmt.Errorf("%w: image_count=%d", ErrSubscriptionImageOverageUnsettled, overage)
+				}
+				quotaDelta := quotaPerImage * overage
+				if err := applySubscriptionQuotaDeltaTx(&sub, quotaDelta); err != nil {
+					return fmt.Errorf("%w: %v", ErrSubscriptionImageOverageUnsettled, err)
+				}
+				appliedQuota = quotaDelta
+			}
+			return tx.Save(&sub).Error
+		}
+		return errors.New("subscription image resource grant not found")
+	})
+	if err != nil {
+		return 0, err
+	}
+	return appliedQuota, nil
+}
+
 func postConsumeUserSubscriptionResourceDeltaTx(tx *gorm.DB, userSubscriptionId int, resourceKey, resourceType string, delta int64) error {
 	normalizedType := normalizeSubscriptionResourceType(resourceType)
 	var sub UserSubscription
@@ -2720,6 +2806,16 @@ func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, del
 				return err
 			}
 		}
+	}
+	if err := applySubscriptionQuotaDeltaTx(&sub, delta); err != nil {
+		return err
+	}
+	return tx.Save(&sub).Error
+}
+
+func applySubscriptionQuotaDeltaTx(sub *UserSubscription, delta int64) error {
+	if sub == nil {
+		return errors.New("subscription is nil")
 	}
 	newUsed, err := applySubscriptionUsageDelta(sub.AmountUsed, delta)
 	if err != nil {
@@ -2764,5 +2860,5 @@ func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, del
 	sub.DailyUsed = newDailyUsed
 	sub.WeeklyUsed = newWeeklyUsed
 	sub.MonthlyUsed = newMonthlyUsed
-	return tx.Save(&sub).Error
+	return nil
 }

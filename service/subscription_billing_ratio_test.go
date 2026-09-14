@@ -221,3 +221,52 @@ func TestBillingSessionSettlesActualImageGenerationCount(t *testing.T) {
 		})
 	}
 }
+
+func TestBillingSessionChargesImageOverageWithPurchasedRatio(t *testing.T) {
+	truncate(t)
+	now := time.Now().Unix()
+	const userID = 9940
+	const planID = 9941
+	const subscriptionID = 9942
+	seedUser(t, userID, 0)
+	plan := &model.SubscriptionPlan{
+		Id: planID, Title: "Image package with overage", DurationUnit: model.SubscriptionDurationDay,
+		DurationValue: 30, ModelFamily: "gpt-image", BillingRatio: 0.1, TotalAmount: 1_000,
+	}
+	require.NoError(t, model.DB.Create(plan).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		Id: subscriptionID, UserId: userID, PlanId: planID, ModelFamily: "gpt-image",
+		IncludedModels: []string{"gpt-image-2"}, BillingRatio: 0.1,
+		AmountTotal: 1_000, Status: "active", StartTime: now - 60, EndTime: now + 3600,
+		ResourceGrants: []model.SubscriptionResourceGrant{{
+			ResourceKey: "gpt-image-2", ResourceType: model.SubscriptionResourceTypeImageCount,
+			ModelName: "gpt-image-2", Amount: 1,
+		}},
+	}).Error)
+
+	requested := uint(1)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := &relaycommon.RelayInfo{
+		RequestId: "settle-image-overage", UserId: userID, OriginModelName: "gpt-image-2",
+		UsingGroup: "default", IsPlayground: true, Request: &dto.ImageRequest{N: &requested},
+		UserSetting: dto.UserSetting{BillingPreference: "subscription_only"},
+		PriceData: types.PriceData{
+			UsePrice: true, ModelPrice: 1, BaseQuotaBeforeGroup: 1_000,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 9},
+		},
+	}
+	session, apiErr := NewBillingSession(ctx, info, 9_000)
+	require.Nil(t, apiErr)
+	info.ActualImageCount = 2
+	info.ActualImageCountSet = true
+	// Keep the actual quota equal to the pre-consumed amount. The session must
+	// still charge one extra image using the purchased snapshot, not the live
+	// group ratio (9).
+	require.NoError(t, session.Settle(session.GetPreConsumedQuota()))
+
+	var subscription model.UserSubscription
+	require.NoError(t, model.DB.First(&subscription, subscriptionID).Error)
+	assert.EqualValues(t, 100, subscription.AmountUsed)
+	assert.EqualValues(t, 1, subscription.ResourceGrants[0].Used)
+	assert.EqualValues(t, 100, info.SubscriptionPostDelta)
+}

@@ -70,3 +70,59 @@ func TestSubscriptionBonusResourcesPreConsumeAndRefund(t *testing.T) {
 	)
 	assert.Error(t, err)
 }
+
+func TestSubscriptionImageOverageFallsBackToPrimaryQuotaAtomically(t *testing.T) {
+	truncateTables(t)
+	now := GetDBTimestamp()
+	plan := &SubscriptionPlan{
+		Id: 9861, Title: "Image overage", DurationUnit: SubscriptionDurationDay,
+		DurationValue: 30, ModelFamily: "gpt-image", BillingRatio: 0.1,
+		TotalAmount: 1000,
+	}
+	require.NoError(t, DB.Create(plan).Error)
+	subscription := &UserSubscription{
+		Id: 9862, UserId: 9863, PlanId: plan.Id, ModelFamily: "gpt-image", BillingRatio: 0.1,
+		AmountTotal: 1000, StartTime: now - 60, EndTime: now + 3600, Status: "active",
+		ResourceGrants: []SubscriptionResourceGrant{{
+			ResourceKey: "gpt-image-2", ResourceType: SubscriptionResourceTypeImageCount,
+			ModelName: "gpt-image-2", Amount: 1, Used: 1,
+		}},
+	}
+	require.NoError(t, DB.Create(subscription).Error)
+
+	applied, err := SettleUserSubscriptionImageResourceDeltaWithQuota(subscription.Id, "gpt-image-2", 1, 100)
+	require.NoError(t, err)
+	assert.EqualValues(t, 100, applied)
+	var updated UserSubscription
+	require.NoError(t, DB.First(&updated, subscription.Id).Error)
+	assert.EqualValues(t, 1, updated.ResourceGrants[0].Used, "the included grant remains capped")
+	assert.EqualValues(t, 100, updated.AmountUsed, "the extra image is charged to the primary quota")
+}
+
+func TestSubscriptionImageOverageRollsBackWhenPrimaryQuotaIsExhausted(t *testing.T) {
+	truncateTables(t)
+	now := GetDBTimestamp()
+	plan := &SubscriptionPlan{
+		Id: 9864, Title: "Exhausted image package", DurationUnit: SubscriptionDurationDay,
+		DurationValue: 30, ModelFamily: "gpt-image", BillingRatio: 0.1,
+		TotalAmount: 100,
+	}
+	require.NoError(t, DB.Create(plan).Error)
+	subscription := &UserSubscription{
+		Id: 9865, UserId: 9866, PlanId: plan.Id, ModelFamily: "gpt-image", BillingRatio: 0.1,
+		AmountTotal: 100, AmountUsed: 100, StartTime: now - 60, EndTime: now + 3600, Status: "active",
+		ResourceGrants: []SubscriptionResourceGrant{{
+			ResourceKey: "gpt-image-2", ResourceType: SubscriptionResourceTypeImageCount,
+			ModelName: "gpt-image-2", Amount: 1, Used: 1,
+		}},
+	}
+	require.NoError(t, DB.Create(subscription).Error)
+
+	_, err := SettleUserSubscriptionImageResourceDeltaWithQuota(subscription.Id, "gpt-image-2", 1, 100)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSubscriptionImageOverageUnsettled)
+	var unchanged UserSubscription
+	require.NoError(t, DB.First(&unchanged, subscription.Id).Error)
+	assert.EqualValues(t, 1, unchanged.ResourceGrants[0].Used)
+	assert.EqualValues(t, 100, unchanged.AmountUsed)
+}
