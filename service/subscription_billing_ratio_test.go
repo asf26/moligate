@@ -257,7 +257,9 @@ func TestBillingSessionChargesImageOverageWithPurchasedRatio(t *testing.T) {
 	}
 	session, apiErr := NewBillingSession(ctx, info, 9_000)
 	require.Nil(t, apiErr)
-	info.ActualImageCount = 2
+	// The grant covers one image, while the upstream returned three.  The two
+	// image overage must be charged at one purchased-quota unit per image.
+	info.ActualImageCount = 3
 	info.ActualImageCountSet = true
 	// Keep the actual quota equal to the pre-consumed amount. The session must
 	// still charge one extra image using the purchased snapshot, not the live
@@ -266,7 +268,7 @@ func TestBillingSessionChargesImageOverageWithPurchasedRatio(t *testing.T) {
 
 	var subscription model.UserSubscription
 	require.NoError(t, model.DB.First(&subscription, subscriptionID).Error)
-	assert.EqualValues(t, 100, subscription.AmountUsed)
+	assert.EqualValues(t, 200, subscription.AmountUsed)
 	assert.EqualValues(t, 1, subscription.ResourceGrants[0].Used)
-	assert.EqualValues(t, 100, info.SubscriptionPostDelta)
+	assert.EqualValues(t, 200, info.SubscriptionPostDelta)
 }

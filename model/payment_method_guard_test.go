@@ -159,6 +159,83 @@ func TestCompleteSubscriptionOrder_RejectsMismatchedPaymentProvider(t *testing.T
 	assert.Nil(t, topUp)
 }
 
+func TestCompleteSubscriptionOrderUsesCapturedPlanConfiguration(t *testing.T) {
+	truncateTables(t)
+
+	user := insertUserForPaymentGuardTest(t, 203, 0)
+	plan := &SubscriptionPlan{
+		Id:             302,
+		Title:          "Captured GPT plan",
+		PriceAmount:    42,
+		Currency:       SubscriptionCurrencyCNY,
+		BillingRatio:   0.14,
+		DurationUnit:   SubscriptionDurationDay,
+		DurationValue:  30,
+		Enabled:        true,
+		SaleEnabled:    true,
+		TotalAmount:    3_000,
+		ModelFamily:    "gpt",
+		IncludedModels: []string{"gpt-5.5"},
+	}
+	require.NoError(t, DB.Create(plan).Error)
+	insertSubscriptionOrderForPaymentGuardTest(t, "sub-captured-plan", user.Id, plan.Id, PaymentProviderEpay)
+
+	require.NoError(t, DB.Model(plan).Updates(map[string]interface{}{
+		"billing_ratio":   0.4,
+		"total_amount":    9_000,
+		"model_family":    "gemini",
+		"included_models": `["gemini-3.5-flash"]`,
+	}).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+
+	require.NoError(t, CompleteSubscriptionOrder(
+		"sub-captured-plan", `{"provider":"epay"}`, PaymentProviderEpay, "alipay",
+	))
+	var subscription UserSubscription
+	require.NoError(t, DB.Where("user_id = ?", user.Id).First(&subscription).Error)
+	assert.InDelta(t, 0.14, subscription.BillingRatio, 0.000001)
+	assert.EqualValues(t, 3_000, subscription.AmountTotal)
+	assert.Equal(t, "gpt", subscription.ModelFamily)
+	assert.Equal(t, []string{"gpt-5.5"}, subscription.IncludedModels)
+}
+
+func TestCompleteSubscriptionOrderSupportsLegacyPendingOrderWithoutSnapshot(t *testing.T) {
+	truncateTables(t)
+
+	user := insertUserForPaymentGuardTest(t, 204, 0)
+	plan := &SubscriptionPlan{
+		Id:            303,
+		Title:         "Legacy pending plan",
+		PriceAmount:   51,
+		Currency:      SubscriptionCurrencyCNY,
+		BillingRatio:  0.17,
+		DurationUnit:  SubscriptionDurationDay,
+		DurationValue: 30,
+		Enabled:       true,
+		TotalAmount:   6_400,
+		ModelFamily:   "kiro-claude",
+	}
+	require.NoError(t, DB.Create(plan).Error)
+	require.NoError(t, DB.Create(&SubscriptionOrder{
+		UserId:          user.Id,
+		PlanId:          plan.Id,
+		Money:           plan.PriceAmount,
+		TradeNo:         "sub-legacy-pending",
+		PaymentMethod:   "wxpay",
+		PaymentProvider: PaymentProviderEpay,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      time.Now().Unix(),
+	}).Error)
+
+	require.NoError(t, CompleteSubscriptionOrder(
+		"sub-legacy-pending", `{"provider":"epay"}`, PaymentProviderEpay, "wxpay",
+	))
+	var subscription UserSubscription
+	require.NoError(t, DB.Where("user_id = ?", user.Id).First(&subscription).Error)
+	assert.InDelta(t, 0.17, subscription.BillingRatio, 0.000001)
+	assert.EqualValues(t, 6_400, subscription.AmountTotal)
+}
+
 func TestExpireSubscriptionOrder_RejectsMismatchedPaymentProvider(t *testing.T) {
 	truncateTables(t)
 

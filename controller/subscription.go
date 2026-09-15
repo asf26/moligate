@@ -423,6 +423,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"duration_value":             req.Plan.DurationValue,
 			"custom_seconds":             req.Plan.CustomSeconds,
 			"enabled":                    req.Plan.Enabled,
+			"sale_enabled":               req.Plan.SaleEnabled,
 			"sort_order":                 req.Plan.SortOrder,
 			"stripe_price_id":            req.Plan.StripePriceId,
 			"creem_product_id":           req.Plan.CreemProductId,

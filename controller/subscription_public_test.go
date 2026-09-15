@@ -48,6 +48,7 @@ func TestGetSubscriptionPlansReturnsEnabledPlansForAnonymousRequests(t *testing.
 		DurationUnit:  model.SubscriptionDurationMonth,
 		DurationValue: 1,
 		Enabled:       true,
+		SaleEnabled:   false,
 		SortOrder:     20,
 		TotalAmount:   200,
 		ModelFamily:   "gpt",
@@ -75,6 +76,7 @@ func TestGetSubscriptionPlansReturnsEnabledPlansForAnonymousRequests(t *testing.
 	assert.Equal(t, "gpt", response.Data[0].Plan.ModelFamily)
 	assert.Equal(t, []string{"gpt-5.5", "gpt-image-2"}, response.Data[0].Plan.IncludedModels)
 	assert.Equal(t, "Popular", response.Data[0].Plan.BadgeText)
+	assert.False(t, response.Data[0].Plan.SaleEnabled, "preview plans remain visible in the catalog")
 	assert.True(t, response.Data[0].Plan.IsRecommended)
 	assert.Equal(t, []string{"Priority capacity", "Extended context"}, response.Data[0].Plan.Benefits)
 }

@@ -49,6 +49,7 @@ const configuredPlan: PlanRecord = {
     quota_reset_period: 'monthly',
     quota_reset_custom_seconds: 0,
     enabled: true,
+    sale_enabled: true,
     sort_order: 10,
     allow_balance_pay: true,
     allow_wallet_overflow: true,
@@ -159,6 +160,34 @@ describe('PricingPreview', () => {
     expect(
       await screen.findByRole('link', { name: 'View more plans' })
     ).toHaveAttribute('href', '/subscription-plans')
+  })
+
+  it('shows preview plans without an active purchase link', async () => {
+    vi.mocked(getPublicPlans).mockResolvedValue({
+      success: true,
+      data: [
+        {
+          plan: {
+            ...configuredPlan.plan,
+            sale_enabled: false,
+            badge_text: 'Popular preview',
+          },
+        },
+      ],
+    })
+
+    renderPricing({ isAuthenticated: true })
+
+    const previewButtons = await screen.findAllByRole('button', {
+      name: 'Not for sale yet',
+    })
+    expect(previewButtons).not.toHaveLength(0)
+    for (const previewButton of previewButtons) {
+      expect(previewButton).toBeDisabled()
+    }
+    expect(
+      screen.queryByRole('link', { name: 'Subscribe Now' })
+    ).not.toBeInTheDocument()
   })
 
   it('shows an empty state when the backend has no enabled plans', async () => {

@@ -169,14 +169,20 @@ export function PricingPreview(props: PricingProps) {
                 </span>
               </p>
             </div>
-            <Button
-              className='home-reference-banner-button'
-              render={<Link to={planHref} />}
-              nativeButton={false}
-            >
-              {t('Subscribe Now')}
-              <ArrowRight data-icon='inline-end' aria-hidden='true' />
-            </Button>
+            {highlightedPlan.plan.sale_enabled === true ? (
+              <Button
+                className='home-reference-banner-button'
+                render={<Link to={planHref} />}
+                nativeButton={false}
+              >
+                {t('Subscribe Now')}
+                <ArrowRight data-icon='inline-end' aria-hidden='true' />
+              </Button>
+            ) : (
+              <Button className='home-reference-banner-button' disabled>
+                {t('Not for sale yet')}
+              </Button>
+            )}
           </AnimateInView>
         )}
 
@@ -210,6 +216,7 @@ export function PricingPreview(props: PricingProps) {
           >
             {previewPlans.map((record, index) => {
               const plan = record.plan
+              const saleEnabled = plan.sale_enabled === true
               const isRecommended = index === recommendedIndex
               const isUltra =
                 !hasMorePlans &&
@@ -291,16 +298,26 @@ export function PricingPreview(props: PricingProps) {
                       <span>{t('Claude and GPT model families')}</span>
                     </li>
                   </ul>
-                  <Button
-                    variant={isRecommended || isUltra ? 'default' : 'outline'}
-                    className='home-reference-plan-button'
-                    render={<Link to={planHref} />}
-                    nativeButton={false}
-                  >
-                    {isUltra && plan.title.trim().toLowerCase() === 'ultra'
-                      ? t('Subscribe to Ultra')
-                      : t('Subscribe Now')}
-                  </Button>
+                  {saleEnabled ? (
+                    <Button
+                      variant={isRecommended || isUltra ? 'default' : 'outline'}
+                      className='home-reference-plan-button'
+                      render={<Link to={planHref} />}
+                      nativeButton={false}
+                    >
+                      {isUltra && plan.title.trim().toLowerCase() === 'ultra'
+                        ? t('Subscribe to Ultra')
+                        : t('Subscribe Now')}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant='outline'
+                      className='home-reference-plan-button'
+                      disabled
+                    >
+                      {t('Not for sale yet')}
+                    </Button>
+                  )}
                 </AnimateInView>
               )
             })}

@@ -90,13 +90,15 @@ func TestSubscriptionImageOverageFallsBackToPrimaryQuotaAtomically(t *testing.T)
 	}
 	require.NoError(t, DB.Create(subscription).Error)
 
-	applied, err := SettleUserSubscriptionImageResourceDeltaWithQuota(subscription.Id, "gpt-image-2", 1, 100)
+	// Two images exceed the one-image grant.  The fixed quota is per image, so
+	// the primary package must absorb 2 * 100 rather than a squared overage.
+	applied, err := SettleUserSubscriptionImageResourceDeltaWithQuota(subscription.Id, "gpt-image-2", 2, 100)
 	require.NoError(t, err)
-	assert.EqualValues(t, 100, applied)
+	assert.EqualValues(t, 200, applied)
 	var updated UserSubscription
 	require.NoError(t, DB.First(&updated, subscription.Id).Error)
 	assert.EqualValues(t, 1, updated.ResourceGrants[0].Used, "the included grant remains capped")
-	assert.EqualValues(t, 100, updated.AmountUsed, "the extra image is charged to the primary quota")
+	assert.EqualValues(t, 200, updated.AmountUsed, "the extra images are charged to the primary quota")
 }
 
 func TestSubscriptionImageOverageRollsBackWhenPrimaryQuotaIsExhausted(t *testing.T) {

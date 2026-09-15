@@ -62,6 +62,7 @@ function makePlan(
       quota_reset_period: 'monthly',
       quota_reset_custom_seconds: 0,
       enabled: true,
+      sale_enabled: true,
       sort_order: id,
       allow_balance_pay: true,
       allow_wallet_overflow: true,
@@ -298,6 +299,26 @@ describe('subscription plans layout', () => {
     expect(within(card).getByText('适合个人开发')).toBeVisible()
     expect(within(card).getByText('包含专属额度')).toBeVisible()
     expect(within(card).queryByText(/Supports the/)).not.toBeInTheDocument()
+  })
+
+  test('keeps preview plans visible while disabling new purchases', async () => {
+    vi.mocked(getPublicPlans).mockResolvedValue({
+      success: true,
+      data: [
+        makePlan(1, 'Preview Plan', 'month', {
+          sale_enabled: false,
+          badge_text: 'Custom marketing badge',
+        }),
+      ],
+    })
+
+    renderPlans()
+
+    const card = await screen.findByRole('article', { name: 'Preview Plan' })
+    expect(within(card).getByText('Custom marketing badge')).toBeVisible()
+    expect(
+      within(card).getByRole('button', { name: 'Not for sale yet' })
+    ).toBeDisabled()
   })
 
   test('renders configured bonus resources without exposing a model catalog', async () => {

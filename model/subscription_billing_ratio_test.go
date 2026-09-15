@@ -63,12 +63,15 @@ func TestCreateUserSubscriptionRejectsPlanWithoutFixedBillingRatio(t *testing.T)
 	require.ErrorContains(t, err, "subscription quota insufficient")
 }
 
-func TestSubscriptionPlanPreviewBadgeBlocksNewPurchases(t *testing.T) {
-	plan := &SubscriptionPlan{Enabled: true, BadgeText: SubscriptionPlanPreviewBadge}
+func TestSubscriptionPlanSaleStateBlocksNewPurchasesIndependentlyOfBadge(t *testing.T) {
+	plan := &SubscriptionPlan{Enabled: true, SaleEnabled: false, BadgeText: "Popular"}
 	assert.False(t, plan.IsPurchasable())
 
-	plan.BadgeText = ""
+	plan.SaleEnabled = true
 	assert.True(t, plan.IsPurchasable())
+
+	plan.BadgeText = SubscriptionPlanPreviewBadge
+	assert.True(t, plan.IsPurchasable(), "presentation copy must not change payment authorization")
 
 	plan.Enabled = false
 	assert.False(t, plan.IsPurchasable())

@@ -54,8 +54,9 @@ const (
 	SubscriptionResourceTypeImageCount = "image_count"
 	SubscriptionMaxBonusResources      = 32
 	SubscriptionMaxBillingRatio        = 100
-	// SubscriptionPlanPreviewBadge marks a plan that is visible for review but
-	// intentionally not available for purchase yet.
+	// SubscriptionPlanPreviewBadge is kept as a presentation convention for
+	// existing plan cards. SaleEnabled is the authoritative purchase switch;
+	// changing a badge must never change payment permissions.
 	SubscriptionPlanPreviewBadge = "暂不售卖"
 )
 
@@ -262,8 +263,9 @@ type SubscriptionPlan struct {
 	DurationValue int    `json:"duration_value" gorm:"type:int;not null;default:1"`
 	CustomSeconds int64  `json:"custom_seconds" gorm:"type:bigint;not null;default:0"`
 
-	Enabled   bool `json:"enabled" gorm:"default:true"`
-	SortOrder int  `json:"sort_order" gorm:"type:int;default:0"`
+	Enabled     bool `json:"enabled" gorm:"default:true"`
+	SaleEnabled bool `json:"sale_enabled" gorm:"not null"`
+	SortOrder   int  `json:"sort_order" gorm:"type:int;default:0"`
 
 	AllowBalancePay *bool `json:"allow_balance_pay"`
 
@@ -374,11 +376,11 @@ func (p *SubscriptionPlan) EffectiveBillingRatio() float64 {
 }
 
 // IsPurchasable reports whether a plan may be used by a new payment request.
-// A preview plan remains enabled so it can be displayed in the catalog, but
-// its explicit preview badge keeps every payment path closed until an
-// administrator changes the badge.
+// Enabled controls catalog visibility; SaleEnabled independently controls new
+// purchases. Existing payment callbacks and administrator grants intentionally
+// do not call this method.
 func (p *SubscriptionPlan) IsPurchasable() bool {
-	return p != nil && p.Enabled && strings.TrimSpace(p.BadgeText) != SubscriptionPlanPreviewBadge
+	return p != nil && p.Enabled && p.SaleEnabled
 }
 
 func normalizeSubscriptionModelFamily(family string) string {
@@ -608,11 +610,57 @@ type SubscriptionOrder struct {
 	CompleteTime    int64  `json:"complete_time"`
 
 	ProviderPayload string `json:"provider_payload" gorm:"type:text"`
+	// PlanSnapshot freezes the purchased configuration when the checkout is
+	// created. Payment callbacks must not reprice an order from a plan that an
+	// administrator edited while the buyer was completing payment.
+	PlanSnapshot string `json:"plan_snapshot" gorm:"type:text"`
+}
+
+func (o *SubscriptionOrder) CapturePlanSnapshot(plan *SubscriptionPlan) error {
+	if o == nil || plan == nil || plan.Id <= 0 {
+		return errors.New("invalid subscription plan snapshot")
+	}
+	if o.PlanId > 0 && o.PlanId != plan.Id {
+		return errors.New("subscription plan snapshot does not match order")
+	}
+	copyPlan := *plan
+	copyPlan.NormalizeDefaults()
+	data, err := common.Marshal(copyPlan)
+	if err != nil {
+		return err
+	}
+	o.PlanId = copyPlan.Id
+	o.PlanSnapshot = string(data)
+	return nil
+}
+
+func (o *SubscriptionOrder) CapturedPlan() (*SubscriptionPlan, error) {
+	if o == nil || strings.TrimSpace(o.PlanSnapshot) == "" {
+		return nil, nil
+	}
+	var plan SubscriptionPlan
+	if err := common.UnmarshalJsonStr(o.PlanSnapshot, &plan); err != nil {
+		return nil, fmt.Errorf("invalid subscription plan snapshot: %w", err)
+	}
+	if plan.Id <= 0 || (o.PlanId > 0 && plan.Id != o.PlanId) {
+		return nil, errors.New("subscription plan snapshot does not match order")
+	}
+	plan.NormalizeDefaults()
+	return &plan, nil
 }
 
 func (o *SubscriptionOrder) Insert() error {
 	if o.CreateTime == 0 {
 		o.CreateTime = common.GetTimestamp()
+	}
+	if strings.TrimSpace(o.PlanSnapshot) == "" && o.PlanId > 0 {
+		plan, err := GetSubscriptionPlanById(o.PlanId)
+		if err != nil {
+			return err
+		}
+		if err := o.CapturePlanSnapshot(plan); err != nil {
+			return err
+		}
 	}
 	return DB.Create(o).Error
 }
@@ -1118,12 +1166,17 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if order.Status != common.TopUpStatusPending {
 			return ErrSubscriptionOrderStatusInvalid
 		}
-		plan, err := GetSubscriptionPlanById(order.PlanId)
+		plan, err := order.CapturedPlan()
 		if err != nil {
 			return err
 		}
-		if !plan.Enabled {
-			// still allow completion for already purchased orders
+		if plan == nil {
+			// Orders created before plan snapshots were introduced remain
+			// completable, including payments already pending during rollout.
+			plan, err = getSubscriptionPlanByIdTx(tx, order.PlanId)
+			if err != nil {
+				return err
+			}
 		}
 		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
 		_, err = CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
@@ -1525,6 +1578,9 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			CreateTime:      now,
 			CompleteTime:    now,
 			ProviderPayload: fmt.Sprintf("charged_quota=%d", requiredQuota),
+		}
+		if err := order.CapturePlanSnapshot(plan); err != nil {
+			return err
 		}
 		if err := tx.Create(order).Error; err != nil {
 			return err

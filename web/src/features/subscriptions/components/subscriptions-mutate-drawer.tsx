@@ -670,6 +670,31 @@ export function SubscriptionsMutateDrawer({
 
                 <FormField
                   control={form.control}
+                  name='sale_enabled'
+                  render={({ field }) => (
+                    <FormItem className={sideDrawerSwitchItemClassName()}>
+                      <div>
+                        <FormLabel className='!mt-0'>
+                          {t('Open for sale')}
+                        </FormLabel>
+                        <FormDescription>
+                          {t(
+                            'Accept new purchases for this plan. Catalog visibility is controlled by Enabled Status.'
+                          )}
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name='allow_balance_pay'
                   render={({ field }) => (
                     <FormItem className={sideDrawerSwitchItemClassName()}>

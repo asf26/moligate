@@ -187,8 +187,11 @@ func (s *SubscriptionFunding) settleImageCount(actual int64) (int64, error) {
 		if s.resourcePreConsumed <= 0 || s.preConsumed <= 0 {
 			return 0, fmt.Errorf("%w: missing image unit quota", model.ErrSubscriptionImageOverageUnsettled)
 		}
+		// The model settlement helper multiplies quotaPerImage by the image
+		// delta itself.  Convert the purchased reservation to one-image quota
+		// here; passing unit*delta would multiply the overage a second time.
 		unit := decimal.NewFromInt(s.preConsumed).Div(decimal.NewFromInt(s.resourcePreConsumed))
-		minimum, err := common.QuotaFromDecimalStrict(unit.Mul(decimal.NewFromInt(delta)))
+		minimum, err := common.QuotaFromDecimalStrict(unit)
 		if err != nil {
 			return 0, err
 		}

@@ -32,7 +32,7 @@ func setupSubscriptionControllerTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	model.DB = db
 	model.LOG_DB = db
-	require.NoError(t, db.AutoMigrate(&model.SubscriptionPlan{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.SubscriptionPlan{}))
 
 	return db
 }
@@ -57,6 +57,7 @@ func subscriptionPlanPayload(t *testing.T, currency string) []byte {
 			"duration_unit":         model.SubscriptionDurationDay,
 			"duration_value":        1,
 			"enabled":               true,
+			"sale_enabled":          true,
 			"sort_order":            0,
 			"max_purchase_per_user": 0,
 			"total_amount":          1000,
@@ -94,6 +95,7 @@ func TestAdminCreateSubscriptionPlanForcesCNY(t *testing.T) {
 	assert.Equal(t, "gpt", plan.ModelFamily)
 	assert.Equal(t, []string{"gpt-5.5", "gpt-image-2"}, plan.IncludedModels)
 	assert.Equal(t, "Popular", plan.BadgeText)
+	assert.True(t, plan.SaleEnabled)
 	assert.True(t, plan.IsRecommended)
 	assert.Equal(t, []string{"Priority capacity", "Extended context"}, plan.Benefits)
 }
@@ -108,7 +110,8 @@ func TestSubscriptionPlanPreviewCannotBePurchasedWithBalance(t *testing.T) {
 		DurationUnit:  model.SubscriptionDurationDay,
 		DurationValue: 30,
 		Enabled:       true,
-		BadgeText:     model.SubscriptionPlanPreviewBadge,
+		SaleEnabled:   false,
+		BadgeText:     "Preview",
 		ModelFamily:   "gpt",
 		BillingRatio:  0.14,
 		TotalAmount:   1000,
@@ -120,6 +123,60 @@ func TestSubscriptionPlanPreviewCannotBePurchasedWithBalance(t *testing.T) {
 	err := model.PurchaseSubscriptionWithBalance(1, plan.Id)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "暂未开放售卖")
+}
+
+func TestSubscriptionPlanPreviewRejectsEveryNewPaymentRoute(t *testing.T) {
+	db := setupSubscriptionControllerTestDB(t)
+	confirmPaymentComplianceForTest(t)
+
+	user := &model.User{
+		Id:           1,
+		Username:     "preview-plan-buyer",
+		Status:       common.UserStatusEnabled,
+		TopUpEnabled: true,
+	}
+	require.NoError(t, db.Create(user).Error)
+	plan := &model.SubscriptionPlan{
+		Title:         "Preview Plan",
+		PriceAmount:   10,
+		DurationUnit:  model.SubscriptionDurationDay,
+		DurationValue: 30,
+		Enabled:       true,
+		SaleEnabled:   false,
+		ModelFamily:   "gpt",
+		BillingRatio:  0.14,
+		TotalAmount:   1000,
+	}
+	require.NoError(t, db.Create(plan).Error)
+
+	tests := []struct {
+		name string
+		body map[string]any
+		call func(*gin.Context)
+	}{
+		{name: "balance", body: map[string]any{"plan_id": plan.Id}, call: SubscriptionRequestBalancePay},
+		{name: "epay", body: map[string]any{"plan_id": plan.Id, "payment_method": "alipay"}, call: SubscriptionRequestEpay},
+		{name: "stripe", body: map[string]any{"plan_id": plan.Id}, call: SubscriptionRequestStripePay},
+		{name: "creem", body: map[string]any{"plan_id": plan.Id}, call: SubscriptionRequestCreemPay},
+		{name: "waffo pancake", body: map[string]any{"plan_id": plan.Id}, call: SubscriptionRequestWaffoPancakePay},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := common.Marshal(test.body)
+			require.NoError(t, err)
+			c, w := subscriptionControllerTestContext(http.MethodPost, "/api/subscription/pay", body)
+			c.Set("id", user.Id)
+			test.call(c)
+
+			var response struct {
+				Success bool   `json:"success"`
+				Message string `json:"message"`
+			}
+			require.NoError(t, common.Unmarshal(w.Body.Bytes(), &response))
+			assert.False(t, response.Success)
+			assert.Contains(t, response.Message, "暂未开放售卖")
+		})
+	}
 }
 
 func TestAdminUpdateSubscriptionPlanForcesCNY(t *testing.T) {
@@ -152,6 +209,7 @@ func TestAdminUpdateSubscriptionPlanForcesCNY(t *testing.T) {
 	assert.Equal(t, "gpt", updated.ModelFamily)
 	assert.Equal(t, []string{"gpt-5.5", "gpt-image-2"}, updated.IncludedModels)
 	assert.Equal(t, "Popular", updated.BadgeText)
+	assert.True(t, updated.SaleEnabled)
 	assert.True(t, updated.IsRecommended)
 	assert.Equal(t, []string{"Priority capacity", "Extended context"}, updated.Benefits)
 }

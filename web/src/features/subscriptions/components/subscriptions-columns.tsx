@@ -151,6 +151,29 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
         size: 80,
       },
       {
+        accessorFn: (row) => row.plan.sale_enabled,
+        id: 'sale_enabled',
+        header: t('Sale Status'),
+        meta: { mobileBadge: true },
+        cell: ({ row }) =>
+          row.original.plan.sale_enabled === true ? (
+            <StatusBadge
+              label={t('On sale')}
+              variant='success'
+              copyable={false}
+              className='-ml-1.5'
+            />
+          ) : (
+            <StatusBadge
+              label={t('Preview only')}
+              variant='neutral'
+              copyable={false}
+              className='-ml-1.5'
+            />
+          ),
+        size: 100,
+      },
+      {
         id: 'payment',
         header: t('Payment Channel'),
         meta: { mobileHidden: true },

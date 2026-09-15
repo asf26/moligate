@@ -254,6 +254,12 @@ func InitLogDB() (err error) {
 func migrateDB() error {
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
+	// Add the independent sale switch before AutoMigrate inspects an existing
+	// plan table. Existing plans fail closed until an operator explicitly opens
+	// them for sale.
+	if err := ensureSubscriptionPlanSaleEnabledColumn(); err != nil {
+		return err
+	}
 	// Migrate model_limits column from varchar to text for existing tables
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
@@ -348,6 +354,9 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
+	if err := ensureSubscriptionPlanSaleEnabledColumn(); err != nil {
+		return err
+	}
 
 	var wg sync.WaitGroup
 
@@ -658,6 +667,7 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`duration_value`" + ` integer NOT NULL DEFAULT 1,
 ` + "`custom_seconds`" + ` bigint NOT NULL DEFAULT 0,
 ` + "`enabled`" + ` numeric DEFAULT 1,
+` + "`sale_enabled`" + ` numeric NOT NULL DEFAULT 0,
 ` + "`sort_order`" + ` integer DEFAULT 0,
 ` + "`allow_balance_pay`" + ` numeric DEFAULT 1,
 ` + "`allow_wallet_overflow`" + ` numeric DEFAULT 1,
@@ -706,6 +716,7 @@ PRIMARY KEY (` + "`id`" + `)
 		{Name: "duration_value", DDL: "`duration_value` integer NOT NULL DEFAULT 1"},
 		{Name: "custom_seconds", DDL: "`custom_seconds` bigint NOT NULL DEFAULT 0"},
 		{Name: "enabled", DDL: "`enabled` numeric DEFAULT 1"},
+		{Name: "sale_enabled", DDL: "`sale_enabled` numeric NOT NULL DEFAULT 0"},
 		{Name: "sort_order", DDL: "`sort_order` integer DEFAULT 0"},
 		{Name: "allow_balance_pay", DDL: "`allow_balance_pay` numeric DEFAULT 1"},
 		{Name: "allow_wallet_overflow", DDL: "`allow_wallet_overflow` numeric DEFAULT 1"},
@@ -740,6 +751,31 @@ PRIMARY KEY (` + "`id`" + `)
 		}
 	}
 	return nil
+}
+
+// ensureSubscriptionPlanSaleEnabledColumn adds the purchase switch with a
+// fail-closed default on existing databases. The plan model intentionally has
+// no GORM boolean default tag: explicit SQL keeps the migration stable across
+// SQLite, MySQL, and PostgreSQL while request normalization owns new-plan
+// behavior.
+func ensureSubscriptionPlanSaleEnabledColumn() error {
+	const tableName = "subscription_plans"
+	if !DB.Migrator().HasTable(tableName) || DB.Migrator().HasColumn(&SubscriptionPlan{}, "sale_enabled") {
+		return nil
+	}
+
+	var sql string
+	switch {
+	case common.UsingMainDatabase(common.DatabaseTypeSQLite):
+		sql = "ALTER TABLE `subscription_plans` ADD COLUMN `sale_enabled` numeric NOT NULL DEFAULT 0"
+	case common.UsingMainDatabase(common.DatabaseTypeMySQL):
+		sql = "ALTER TABLE `subscription_plans` ADD COLUMN `sale_enabled` tinyint(1) NOT NULL DEFAULT 0"
+	case common.UsingMainDatabase(common.DatabaseTypePostgreSQL):
+		sql = `ALTER TABLE "subscription_plans" ADD COLUMN "sale_enabled" boolean NOT NULL DEFAULT false`
+	default:
+		return nil
+	}
+	return DB.Exec(sql).Error
 }
 
 // migrateTokenModelLimitsToText migrates model_limits column from varchar(1024) to text

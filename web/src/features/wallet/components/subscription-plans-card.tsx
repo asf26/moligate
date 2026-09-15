@@ -132,7 +132,7 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
   )
   const badgeText =
     plan.badge_text?.trim() || (props.isPopular ? t('Hot recommendation') : '')
-  const previewOnly = plan.badge_text?.trim() === '暂不售卖'
+  const previewOnly = plan.sale_enabled !== true
   const canPurchase = props.rechargeEnabled && !previewOnly
   let ctaLabel = t('Subscribe Now')
   if (previewOnly) {
