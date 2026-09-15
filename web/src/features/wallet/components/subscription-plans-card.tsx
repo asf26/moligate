@@ -132,6 +132,14 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
   )
   const badgeText =
     plan.badge_text?.trim() || (props.isPopular ? t('Hot recommendation') : '')
+  const previewOnly = plan.badge_text?.trim() === '暂不售卖'
+  const canPurchase = props.rechargeEnabled && !previewOnly
+  let ctaLabel = t('Subscribe Now')
+  if (previewOnly) {
+    ctaLabel = t('Not for sale yet')
+  } else if (!props.rechargeEnabled) {
+    ctaLabel = t('Recharge permission required')
+  }
   const totalQuota = Number(plan.total_amount || 0)
   const isImagePlan = imageAllowance > 0
   const validity = formatSubscriptionValidity(plan, t)
@@ -312,13 +320,11 @@ function SubscriptionPlanCard(props: SubscriptionPlanCardProps) {
             size='sm'
             className='subscription-plan-cta h-10 w-full text-xs'
             onClick={() => {
-              if (props.rechargeEnabled) props.onSelect(props.record)
+              if (canPurchase) props.onSelect(props.record)
             }}
-            disabled={!props.rechargeEnabled}
+            disabled={!canPurchase}
           >
-            {props.rechargeEnabled
-              ? t('Subscribe Now')
-              : t('Recharge permission required')}
+            {ctaLabel}
           </Button>
         )}
       </div>

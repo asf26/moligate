@@ -63,6 +63,17 @@ func TestCreateUserSubscriptionRejectsPlanWithoutFixedBillingRatio(t *testing.T)
 	require.ErrorContains(t, err, "subscription quota insufficient")
 }
 
+func TestSubscriptionPlanPreviewBadgeBlocksNewPurchases(t *testing.T) {
+	plan := &SubscriptionPlan{Enabled: true, BadgeText: SubscriptionPlanPreviewBadge}
+	assert.False(t, plan.IsPurchasable())
+
+	plan.BadgeText = ""
+	assert.True(t, plan.IsPurchasable())
+
+	plan.Enabled = false
+	assert.False(t, plan.IsPurchasable())
+}
+
 func TestGetActiveSubscriptionBillingRatioMatchesSnapshotAndScope(t *testing.T) {
 	truncateTables(t)
 	now := GetDBTimestamp()

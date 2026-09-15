@@ -54,6 +54,9 @@ const (
 	SubscriptionResourceTypeImageCount = "image_count"
 	SubscriptionMaxBonusResources      = 32
 	SubscriptionMaxBillingRatio        = 100
+	// SubscriptionPlanPreviewBadge marks a plan that is visible for review but
+	// intentionally not available for purchase yet.
+	SubscriptionPlanPreviewBadge = "暂不售卖"
 )
 
 // SubscriptionBonusResource is the plan-side definition of an additional
@@ -368,6 +371,14 @@ func (p *SubscriptionPlan) EffectiveBillingRatio() float64 {
 	default:
 		return 0
 	}
+}
+
+// IsPurchasable reports whether a plan may be used by a new payment request.
+// A preview plan remains enabled so it can be displayed in the catalog, but
+// its explicit preview badge keeps every payment path closed until an
+// administrator changes the badge.
+func (p *SubscriptionPlan) IsPurchasable() bool {
+	return p != nil && p.Enabled && strings.TrimSpace(p.BadgeText) != SubscriptionPlanPreviewBadge
 }
 
 func normalizeSubscriptionModelFamily(family string) string {
@@ -1468,8 +1479,8 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		if err != nil {
 			return err
 		}
-		if !plan.Enabled {
-			return errors.New("套餐未启用")
+		if !plan.IsPurchasable() {
+			return errors.New("套餐暂未开放售卖")
 		}
 		if plan.PriceAmount < 0 {
 			return errors.New("套餐价格不能为负数")

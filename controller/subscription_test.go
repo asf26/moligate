@@ -98,6 +98,30 @@ func TestAdminCreateSubscriptionPlanForcesCNY(t *testing.T) {
 	assert.Equal(t, []string{"Priority capacity", "Extended context"}, plan.Benefits)
 }
 
+func TestSubscriptionPlanPreviewCannotBePurchasedWithBalance(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	confirmPaymentComplianceForTest(t)
+
+	plan := &model.SubscriptionPlan{
+		Title:         "Preview Plan",
+		PriceAmount:   10,
+		DurationUnit:  model.SubscriptionDurationDay,
+		DurationValue: 30,
+		Enabled:       true,
+		BadgeText:     model.SubscriptionPlanPreviewBadge,
+		ModelFamily:   "gpt",
+		BillingRatio:  0.14,
+		TotalAmount:   1000,
+	}
+	require.NoError(t, model.DB.Create(plan).Error)
+
+	// The model-level purchase path is the final guard even if a client skips
+	// the disabled CTA and calls the endpoint directly.
+	err := model.PurchaseSubscriptionWithBalance(1, plan.Id)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "暂未开放售卖")
+}
+
 func TestAdminUpdateSubscriptionPlanForcesCNY(t *testing.T) {
 	setupSubscriptionControllerTestDB(t)
 	confirmPaymentComplianceForTest(t)

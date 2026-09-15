@@ -441,6 +441,7 @@ export const STATIC_I18N_KEYS = [
   'Last 30 days',
   'Failed to fetch usage',
   'Subscribe Now',
+  'Not for sale yet',
   'Purchase Subscription',
   'My Subscriptions',
   'Plan Name',
