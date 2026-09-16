@@ -2405,6 +2405,7 @@
     "Fix Abilities": "修復渠道一致性",
     "Fix order": "修復順序",
     "Fixed abilities: {{success}} succeeded, {{fails}} failed": "渠道一致性修復完成：{{success}} 個成功，{{fails}} 個失敗",
+    "Fixed consumption multiplier for purchased plans; normally use 1.0. Plan pricing already includes discounts.": "已購買套餐的固定扣費倍率，通常填寫 1.0。套餐價格已包含優惠。",
     "Fixed multiplier used by purchased subscriptions; 0 uses the family default.": "已購買套餐使用固定扣費倍率；填寫 0 時使用該模型系列的預設倍率。",
     "Fixed price": "固定價格",
     "Fixed price (USD)": "固定價格 (USD)",

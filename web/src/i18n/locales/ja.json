@@ -2405,6 +2405,7 @@
     "Fix Abilities": "チャネル整合性を修復",
     "Fix order": "順序を修正",
     "Fixed abilities: {{success}} succeeded, {{fails}} failed": "チャネル整合性を修復しました：成功 {{success}} 件、失敗 {{fails}} 件",
+    "Fixed consumption multiplier for purchased plans; normally use 1.0. Plan pricing already includes discounts.": "購入済みプランの固定消費倍率です。通常は 1.0 を使用してください。プラン価格には割引がすでに含まれています。",
     "Fixed multiplier used by purchased subscriptions; 0 uses the family default.": "購入済みサブスクリプションは固定倍率を使用します。0 の場合はファミリーの既定値を使用します。",
     "Fixed price": "固定価格",
     "Fixed price (USD)": "固定価格 (USD)",

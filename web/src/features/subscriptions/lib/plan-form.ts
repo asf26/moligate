@@ -86,7 +86,7 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   title: '',
   subtitle: '',
   price_amount: 0,
-  billing_ratio: 0,
+  billing_ratio: 1,
   duration_unit: 'month',
   duration_value: 1,
   custom_seconds: 0,

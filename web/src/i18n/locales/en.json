@@ -2405,6 +2405,7 @@
     "Fix Abilities": "Repair Channel Consistency",
     "Fix order": "Fix order",
     "Fixed abilities: {{success}} succeeded, {{fails}} failed": "Channel consistency repaired: {{success}} succeeded, {{fails}} failed",
+    "Fixed consumption multiplier for purchased plans; normally use 1.0. Plan pricing already includes discounts.": "Fixed consumption multiplier for purchased plans; normally use 1.0. Plan pricing already includes discounts.",
     "Fixed multiplier used by purchased subscriptions; 0 uses the family default.": "Fixed multiplier used by purchased subscriptions; 0 uses the family default.",
     "Fixed price": "Fixed price",
     "Fixed price (USD)": "Fixed price (USD)",

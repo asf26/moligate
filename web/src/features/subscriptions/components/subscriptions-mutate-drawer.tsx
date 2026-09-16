@@ -426,7 +426,7 @@ export function SubscriptionsMutateDrawer({
                       </FormControl>
                       <FormDescription>
                         {t(
-                          'Fixed multiplier used by purchased subscriptions; 0 uses the family default.'
+                          'Fixed consumption multiplier for purchased plans; normally use 1.0. Plan pricing already includes discounts.'
                         )}
                       </FormDescription>
                       <FormMessage />

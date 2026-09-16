@@ -255,8 +255,9 @@ type SubscriptionPlan struct {
 	PriceAmount float64 `json:"price_amount" gorm:"type:decimal(10,6);not null;default:0"`
 	Currency    string  `json:"currency" gorm:"type:varchar(8);not null;default:'CNY'"`
 	// BillingRatio is the fixed consumption multiplier for subscriptions.
-	// A zero value uses the product default for known model families. Plans
-	// without either an explicit ratio or a known-family default cannot be sold.
+	// A zero value uses the neutral 1.0 multiplier for known model families.
+	// Plan prices already encode any commercial discount; this field must not
+	// apply that discount a second time when package quota is consumed.
 	BillingRatio float64 `json:"billing_ratio" gorm:"type:decimal(10,6);not null;default:0"`
 
 	DurationUnit  string `json:"duration_unit" gorm:"type:varchar(16);not null;default:'month'"`
@@ -357,19 +358,19 @@ func (p *SubscriptionPlan) EffectiveBillingRatio() float64 {
 	}
 	switch strings.TrimSpace(strings.ToLower(p.ModelFamily)) {
 	case "ccmax", "cc max":
-		return 0.9
+		return 1
 	case "kiro-claude", "kiro claude", "kiro":
-		return 0.17
+		return 1
 	case "gpt", "openai":
-		return 0.14
+		return 1
 	case "gemini", "google":
-		return 0.4
+		return 1
 	case "chinese", "国产", "cn":
-		return 0.35
+		return 1
 	case "gpt-image", "gpt image":
-		return 0.1
+		return 1
 	case "banana", "nano banana", "香蕉生图":
-		return 0.15
+		return 1
 	default:
 		return 0
 	}

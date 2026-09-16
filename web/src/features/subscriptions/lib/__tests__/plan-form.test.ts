@@ -31,7 +31,7 @@ const plan: SubscriptionPlan = {
   subtitle: '',
   price_amount: 42,
   currency: 'CNY',
-  billing_ratio: 0.14,
+  billing_ratio: 1,
   duration_unit: 'day',
   duration_value: 30,
   quota_reset_period: 'never',
@@ -53,6 +53,7 @@ describe('subscription plan sale form', () => {
   test('new plans fail closed until sale is explicitly enabled', () => {
     expect(PLAN_FORM_DEFAULTS.enabled).toBe(true)
     expect(PLAN_FORM_DEFAULTS.sale_enabled).toBe(false)
+    expect(PLAN_FORM_DEFAULTS.billing_ratio).toBe(1)
   })
 
   test('round-trips the independent sale switch in admin payloads', () => {

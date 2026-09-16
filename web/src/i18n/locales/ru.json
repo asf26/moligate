@@ -2405,6 +2405,7 @@
     "Fix Abilities": "Восстановить согласованность каналов",
     "Fix order": "Исправить порядок",
     "Fixed abilities: {{success}} succeeded, {{fails}} failed": "Согласованность каналов восстановлена: успешно {{success}}, ошибок {{fails}}",
+    "Fixed consumption multiplier for purchased plans; normally use 1.0. Plan pricing already includes discounts.": "Фиксированный множитель расхода для купленных тарифов; обычно используйте 1,0. Скидка уже включена в цену тарифа.",
     "Fixed multiplier used by purchased subscriptions; 0 uses the family default.": "Для купленных подписок используется фиксированный множитель; 0 использует значение семейства по умолчанию.",
     "Fixed price": "Фиксированная цена",
     "Fixed price (USD)": "Фиксированная цена (USD)",

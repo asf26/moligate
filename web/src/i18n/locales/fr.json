@@ -2405,6 +2405,7 @@
     "Fix Abilities": "Réparer la cohérence des canaux",
     "Fix order": "Corriger l’ordre",
     "Fixed abilities: {{success}} succeeded, {{fails}} failed": "Cohérence des canaux réparée : {{success}} réussie(s), {{fails}} échouée(s)",
+    "Fixed consumption multiplier for purchased plans; normally use 1.0. Plan pricing already includes discounts.": "Multiplicateur de consommation fixe des forfaits achetés ; utilisez normalement 1,0. Le prix du forfait inclut déjà les remises.",
     "Fixed multiplier used by purchased subscriptions; 0 uses the family default.": "Les abonnements achetés utilisent un multiplicateur fixe ; 0 utilise la valeur par défaut de la famille.",
     "Fixed price": "Prix fixe",
     "Fixed price (USD)": "Prix fixe (USD)",

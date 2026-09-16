@@ -2405,6 +2405,7 @@
     "Fix Abilities": "Sửa tính nhất quán kênh",
     "Fix order": "Sửa thứ tự",
     "Fixed abilities: {{success}} succeeded, {{fails}} failed": "Đã sửa tính nhất quán kênh: {{success}} thành công, {{fails}} thất bại",
+    "Fixed consumption multiplier for purchased plans; normally use 1.0. Plan pricing already includes discounts.": "Hệ số tiêu thụ cố định của gói đã mua; thông thường hãy dùng 1.0. Giá gói đã bao gồm ưu đãi.",
     "Fixed multiplier used by purchased subscriptions; 0 uses the family default.": "Gói đã mua dùng hệ số cố định; nhập 0 để dùng hệ số mặc định của nhóm.",
     "Fixed price": "Giá cố định",
     "Fixed price (USD)": "Giá cố định (USD)",

@@ -29,11 +29,20 @@ func TestCreateUserSubscriptionSnapshotsFixedBillingRatio(t *testing.T) {
 		return err
 	}))
 	require.NotNil(t, sub)
-	assert.InDelta(t, 0.17, sub.BillingRatio, 0.000001)
+	assert.InDelta(t, 1, sub.BillingRatio, 0.000001)
 
 	plan.BillingRatio = 0.23
-	assert.InDelta(t, 0.17, sub.BillingRatio, 0.000001,
+	assert.InDelta(t, 1, sub.BillingRatio, 0.000001,
 		"editing a plan must not change a purchased subscription snapshot")
+}
+
+func TestSubscriptionPlanKnownFamilyDefaultBillingRatioIsNeutral(t *testing.T) {
+	for _, family := range []string{
+		"ccmax", "kiro-claude", "gpt", "gemini", "chinese", "gpt-image", "banana",
+	} {
+		plan := &SubscriptionPlan{ModelFamily: family}
+		assert.InDelta(t, 1, plan.EffectiveBillingRatio(), 0.000001, family)
+	}
 }
 
 func TestCreateUserSubscriptionRejectsPlanWithoutFixedBillingRatio(t *testing.T) {
@@ -255,5 +264,5 @@ func TestMigrateActiveSubscriptionBillingRatiosBackfillsLegacyRows(t *testing.T)
 	require.NoError(t, migrateActiveSubscriptionBillingRatios())
 	var migrated UserSubscription
 	require.NoError(t, DB.First(&migrated, 9883).Error)
-	assert.InDelta(t, 0.4, migrated.BillingRatio, 0.000001)
+	assert.InDelta(t, 1, migrated.BillingRatio, 0.000001)
 }
