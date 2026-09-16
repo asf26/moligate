@@ -44,6 +44,9 @@ type VideoAccountUpdateInput struct {
 	Groups *[]string
 	Proxy  *string
 	Remark *string
+	// BillingPrices is keyed by model ID. A nil value clears that model's
+	// override; a nil map means the caller did not change pricing.
+	BillingPrices *map[string]*model.VideoModelPricing
 }
 
 type VideoPrivateGroup struct {
@@ -306,6 +309,14 @@ func normalizeAccountModels(models []model.VideoModel, account *model.VideoAccou
 	if account == nil {
 		return models
 	}
+	existingPrices := make(map[string]*model.VideoModelPricing)
+	for _, existing := range account.ModelCatalog() {
+		if existing.BillingPricing == nil {
+			continue
+		}
+		price := *existing.BillingPricing
+		existingPrices[strings.ToLower(existing.ID)] = &price
+	}
 	result := make([]model.VideoModel, 0, len(models))
 	seen := make(map[string]struct{}, len(models))
 	for _, item := range models {
@@ -331,6 +342,9 @@ func normalizeAccountModels(models []model.VideoModel, account *model.VideoAccou
 		}
 		if len(item.SupportedEndpointTypes) == 0 {
 			item.SupportedEndpointTypes = []string{"openai-video"}
+		}
+		if price, ok := existingPrices[key]; ok {
+			item.BillingPricing = price
 		}
 		result = append(result, item)
 	}
@@ -413,6 +427,11 @@ func UpdateVideoAccount(ctx context.Context, id int, input VideoAccountUpdateInp
 		}
 		account.LastModelSyncAt = time.Now().Unix()
 	}
+	if input.BillingPrices != nil {
+		if err := account.SetModelBillingPrices(*input.BillingPrices); err != nil {
+			return nil, err
+		}
+	}
 	if err := model.UpdateVideoAccount(account); err != nil {
 		return nil, err
 	}
@@ -453,7 +472,7 @@ func BuildVideoCreationCatalog(userGroup string) (*VideoCreationCatalog, error) 
 		PrivateGroups: make([]VideoPrivateGroup, 0, len(accounts)),
 	}
 	for _, account := range accounts {
-		models := normalizeAccountModels(account.ModelCatalog(), account)
+		models := videoCreationModels(account)
 		catalog.Models = append(catalog.Models, models...)
 		groups := account.GroupList()
 		group := ""
@@ -478,5 +497,17 @@ func GetVideoAccountModelsForGroup(userGroup, key string) ([]model.VideoModel, e
 	if !account.IsEnabled() || !account.MatchesGroup(userGroup) {
 		return nil, errors.New("video account is unavailable for this group")
 	}
-	return normalizeAccountModels(account.ModelCatalog(), account), nil
+	return videoCreationModels(account), nil
+}
+
+func videoCreationModels(account *model.VideoAccount) []model.VideoModel {
+	if account == nil {
+		return []model.VideoModel{}
+	}
+	models := normalizeAccountModels(account.ModelCatalog(), account)
+	for index := range models {
+		models[index].Pricing = models[index].EffectivePricing()
+		models[index].BillingPricing = nil
+	}
+	return models
 }

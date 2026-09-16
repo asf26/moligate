@@ -84,6 +84,7 @@ func RelayVideoAccountTask(c *gin.Context, info *relaycommon.RelayInfo) {
 func videoAccountRelayMeta(account *model.VideoAccount) *relaycommon.VideoAccountMeta {
 	models := make(map[string]relaycommon.VideoAccountModelMeta)
 	for _, item := range account.ModelCatalog() {
+		pricing := item.EffectivePricing()
 		models[item.ID] = relaycommon.VideoAccountModelMeta{
 			ID:                     item.ID,
 			DisplayName:            item.DisplayName,
@@ -99,9 +100,9 @@ func videoAccountRelayMeta(account *model.VideoAccount) *relaycommon.VideoAccoun
 			MaxAudios:              item.MaxAudios,
 			AudioRequiresImage:     item.AudioRequiresImage,
 			SupportsFirstLastFrame: item.SupportsFirstLastFrame,
-			PricingMode:            item.Pricing.Mode,
-			PricingAmount:          item.Pricing.Amount,
-			PricingCurrency:        item.Pricing.Currency,
+			PricingMode:            pricing.Mode,
+			PricingAmount:          pricing.Amount,
+			PricingCurrency:        pricing.Currency,
 			GroupRatio:             item.GroupRatio,
 		}
 	}

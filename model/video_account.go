@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -19,9 +20,9 @@ const (
 	VideoAccountStatusEnabled  = 1
 )
 
-// VideoModelPricing is returned by CTMOAI's /v1/models endpoint. Amount is
-// kept as a number in the snapshot so the billing path can use the exact
-// account/key-specific price returned by the upstream.
+// VideoModelPricing is a price snapshot. Pricing is the upstream reference
+// price; BillingPricing, when present, is the administrator-defined price
+// charged by this gateway for this account/model.
 type VideoModelPricing struct {
 	Mode     string  `json:"mode,omitempty"`
 	Amount   float64 `json:"amount"`
@@ -32,25 +33,35 @@ type VideoModelPricing struct {
 // upstream model catalog is key-scoped, so this must not be replaced with a
 // global hard-coded model list.
 type VideoModel struct {
-	ID                     string            `json:"id"`
-	DisplayName            string            `json:"display_name,omitempty"`
-	ProductKey             string            `json:"product_key,omitempty"`
-	Group                  string            `json:"group,omitempty"`
-	PrivateGroupKey        string            `json:"private_group_key,omitempty"`
-	Available              bool              `json:"available"`
-	UnavailableReason      string            `json:"unavailable_reason,omitempty"`
-	SupportedEndpointTypes []string          `json:"supported_endpoint_types,omitempty"`
-	Resolution             string            `json:"resolution,omitempty"`
-	DurationsSeconds       []int             `json:"durations_seconds,omitempty"`
-	Ratios                 []string          `json:"ratios,omitempty"`
-	Sizes                  []string          `json:"sizes,omitempty"`
-	MaxImages              int               `json:"max_images"`
-	MaxVideos              int               `json:"max_videos"`
-	MaxAudios              int               `json:"max_audios"`
-	AudioRequiresImage     bool              `json:"audio_requires_image,omitempty"`
-	SupportsFirstLastFrame bool              `json:"supports_first_last_frame,omitempty"`
-	Pricing                VideoModelPricing `json:"pricing,omitempty"`
-	GroupRatio             float64           `json:"group_ratio,omitempty"`
+	ID                     string             `json:"id"`
+	DisplayName            string             `json:"display_name,omitempty"`
+	ProductKey             string             `json:"product_key,omitempty"`
+	Group                  string             `json:"group,omitempty"`
+	PrivateGroupKey        string             `json:"private_group_key,omitempty"`
+	Available              bool               `json:"available"`
+	UnavailableReason      string             `json:"unavailable_reason,omitempty"`
+	SupportedEndpointTypes []string           `json:"supported_endpoint_types,omitempty"`
+	Resolution             string             `json:"resolution,omitempty"`
+	DurationsSeconds       []int              `json:"durations_seconds,omitempty"`
+	Ratios                 []string           `json:"ratios,omitempty"`
+	Sizes                  []string           `json:"sizes,omitempty"`
+	MaxImages              int                `json:"max_images"`
+	MaxVideos              int                `json:"max_videos"`
+	MaxAudios              int                `json:"max_audios"`
+	AudioRequiresImage     bool               `json:"audio_requires_image,omitempty"`
+	SupportsFirstLastFrame bool               `json:"supports_first_last_frame,omitempty"`
+	Pricing                VideoModelPricing  `json:"pricing,omitempty"`
+	BillingPricing         *VideoModelPricing `json:"billing_pricing,omitempty"`
+	GroupRatio             float64            `json:"group_ratio,omitempty"`
+}
+
+// EffectivePricing returns the account-level gateway price when one has been
+// configured, otherwise the price reported by CTMOAI.
+func (item VideoModel) EffectivePricing() VideoModelPricing {
+	if item.BillingPricing != nil {
+		return *item.BillingPricing
+	}
+	return item.Pricing
 }
 
 // VideoAccount stores credentials separately from the generic channels table.
@@ -166,6 +177,47 @@ func (account *VideoAccount) SetModelCatalog(models []VideoModel) error {
 	}
 	account.ModelsJSON = string(encoded)
 	return nil
+}
+
+// SetModelBillingPrices updates only administrator-defined prices. A nil
+// value clears an override and makes the model follow CTMOAI again.
+func (account *VideoAccount) SetModelBillingPrices(prices map[string]*VideoModelPricing) error {
+	if account == nil {
+		return errors.New("video account is nil")
+	}
+	models := account.ModelCatalog()
+	indexes := make(map[string]int, len(models))
+	for index, item := range models {
+		indexes[strings.ToLower(item.ID)] = index
+	}
+	for rawID, price := range prices {
+		id := strings.TrimSpace(rawID)
+		index, ok := indexes[strings.ToLower(id)]
+		if !ok {
+			return fmt.Errorf("video model %q is not available for this account", id)
+		}
+		if price == nil {
+			models[index].BillingPricing = nil
+			continue
+		}
+		if math.IsNaN(price.Amount) || math.IsInf(price.Amount, 0) || price.Amount < 0 || price.Amount > 1_000_000 {
+			return fmt.Errorf("invalid billing price for video model %q", id)
+		}
+		normalized := *price
+		normalized.Mode = strings.TrimSpace(normalized.Mode)
+		normalized.Currency = strings.TrimSpace(normalized.Currency)
+		if normalized.Currency == "" {
+			normalized.Currency = strings.TrimSpace(models[index].Pricing.Currency)
+		}
+		if normalized.Currency == "" {
+			normalized.Currency = "CNY"
+		}
+		if normalized.Mode == "" {
+			normalized.Mode = strings.TrimSpace(models[index].Pricing.Mode)
+		}
+		models[index].BillingPricing = &normalized
+	}
+	return account.SetModelCatalog(models)
 }
 
 func (account *VideoAccount) FindModel(modelName string) (*VideoModel, bool) {

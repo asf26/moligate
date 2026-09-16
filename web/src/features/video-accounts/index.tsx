@@ -80,10 +80,11 @@ function modelLabel(model: VideoModel) {
 }
 
 function modelPricing(model: VideoModel) {
-  const amount = model.pricing?.amount
+  const pricing = model.billing_pricing ?? model.pricing
+  const amount = pricing?.amount
   if (typeof amount !== 'number' || !Number.isFinite(amount)) return null
-  const currency = model.pricing?.currency?.trim() || 'CNY'
-  const mode = model.pricing?.mode?.trim()
+  const currency = pricing?.currency?.trim() || 'CNY'
+  const mode = pricing?.mode?.trim()
   const suffix = mode ? ` / ${mode.replaceAll('_', ' ')}` : ''
   return `${amount} ${currency}${suffix}`
 }

@@ -52,3 +52,18 @@ func TestNormalizeAccountModelsAddsOpaqueAccountSelectors(t *testing.T) {
 	assert.Equal(t, []string{"openai-video"}, models[0].SupportedEndpointTypes)
 	assert.Equal(t, float64(1), models[0].GroupRatio)
 }
+
+func TestNormalizeAccountModelsPreservesBillingOverridesAcrossSync(t *testing.T) {
+	account := &model.VideoAccount{Id: 7, PublicKey: "vca_account"}
+	override := model.VideoModelPricing{Amount: 0.4, Currency: "USD", Mode: "per_second"}
+	require.NoError(t, account.SetModelCatalog([]model.VideoModel{{
+		ID: "seedance-1", BillingPricing: &override,
+	}}))
+	models := normalizeAccountModels([]model.VideoModel{{
+		ID: "seedance-1", Pricing: model.VideoModelPricing{Amount: 0.2, Currency: "CNY", Mode: "per_second"},
+	}}, account)
+	require.Len(t, models, 1)
+	require.NotNil(t, models[0].BillingPricing)
+	assert.InDelta(t, 0.4, models[0].BillingPricing.Amount, 0.000001)
+	assert.Equal(t, "USD", models[0].BillingPricing.Currency)
+}

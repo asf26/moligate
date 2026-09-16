@@ -42,6 +42,7 @@ export type VideoModel = {
   audio_requires_image?: boolean
   supports_first_last_frame?: boolean
   pricing?: VideoModelPricing
+  billing_pricing?: VideoModelPricing
   group_ratio?: number
 }
 
@@ -91,4 +92,5 @@ export type VideoAccountPayload = {
   proxy?: string
   remark?: string
   base_url?: string
+  billing_prices?: Record<string, VideoModelPricing | null>
 }

@@ -65,3 +65,33 @@ func TestFindVideoAccountForModelRejectsUnavailableSnapshot(t *testing.T) {
 	_, err := FindVideoAccountForModel("seedance-1", "default", "vca_unavailable")
 	assert.ErrorContains(t, err, "currently unavailable")
 }
+
+func TestVideoModelEffectivePricingUsesBillingOverride(t *testing.T) {
+	modelItem := VideoModel{
+		ID:      "seedance-1",
+		Pricing: VideoModelPricing{Amount: 0.2, Currency: "CNY", Mode: "per_second"},
+	}
+	assert.InDelta(t, 0.2, modelItem.EffectivePricing().Amount, 0.000001)
+	modelItem.BillingPricing = &VideoModelPricing{Amount: 0.35, Currency: "USD", Mode: "per_second"}
+	assert.InDelta(t, 0.35, modelItem.EffectivePricing().Amount, 0.000001)
+}
+
+func TestSetModelBillingPricesCanSetAndClearOverrides(t *testing.T) {
+	account := &VideoAccount{}
+	require.NoError(t, account.SetModelCatalog([]VideoModel{{
+		ID:      "seedance-1",
+		Pricing: VideoModelPricing{Amount: 0.2, Currency: "CNY", Mode: "per_second"},
+	}}))
+	price := VideoModelPricing{Amount: 0.35, Currency: "USD"}
+	require.NoError(t, account.SetModelBillingPrices(map[string]*VideoModelPricing{"SEEDANCE-1": &price}))
+	item, ok := account.FindModel("seedance-1")
+	require.True(t, ok)
+	require.NotNil(t, item.BillingPricing)
+	assert.InDelta(t, 0.35, item.EffectivePricing().Amount, 0.000001)
+	assert.Equal(t, "per_second", item.BillingPricing.Mode)
+
+	require.NoError(t, account.SetModelBillingPrices(map[string]*VideoModelPricing{"seedance-1": nil}))
+	item, ok = account.FindModel("seedance-1")
+	require.True(t, ok)
+	assert.Nil(t, item.BillingPricing)
+}

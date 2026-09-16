@@ -42,7 +42,11 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 
 import { createVideoAccount, updateVideoAccount } from '../api'
-import type { VideoAccount, VideoAccountPayload } from '../types'
+import type {
+  VideoAccount,
+  VideoAccountPayload,
+  VideoModelPricing,
+} from '../types'
 
 type VideoAccountDialogProps = {
   open: boolean
@@ -57,6 +61,7 @@ type FormState = {
   groups: string
   proxy: string
   remark: string
+  billingPrices: Record<string, string>
 }
 
 function getInitialForm(account?: VideoAccount | null): FormState {
@@ -67,7 +72,20 @@ function getInitialForm(account?: VideoAccount | null): FormState {
     groups: account?.groups.join(', ') ?? 'default',
     proxy: account?.proxy ?? '',
     remark: account?.remark ?? '',
+    billingPrices: Object.fromEntries(
+      (account?.models ?? []).map((model) => [
+        model.id,
+        model.billing_pricing?.amount == null
+          ? ''
+          : String(model.billing_pricing.amount),
+      ])
+    ),
   }
+}
+
+function modelPriceLabel(pricing?: VideoModelPricing) {
+  if (!pricing || typeof pricing.amount !== 'number') return '—'
+  return `${pricing.amount} ${pricing.currency || 'CNY'}${pricing.mode ? ` / ${pricing.mode.replaceAll('_', ' ')}` : ''}`
 }
 
 export function VideoAccountDialog(props: VideoAccountDialogProps) {
@@ -127,6 +145,16 @@ export function VideoAccountDialog(props: VideoAccountDialogProps) {
       .split(/[\n,]/)
       .map((group) => group.trim())
       .filter(Boolean)
+    const invalidPrice = Object.values(form.billingPrices).some((value) => {
+      const raw = value.trim()
+      if (raw === '') return false
+      const amount = Number(raw)
+      return !Number.isFinite(amount) || amount < 0 || amount > 1_000_000
+    })
+    if (invalidPrice) {
+      toast.error(t('Please enter a valid number'))
+      return
+    }
     const payload: VideoAccountPayload = {
       name,
       status: form.status,
@@ -135,13 +163,33 @@ export function VideoAccountDialog(props: VideoAccountDialogProps) {
       remark: form.remark.trim() || undefined,
       base_url: 'https://video.ctmoai.com',
     }
+    if (isEditing && !apiKey) {
+      payload.billing_prices = Object.fromEntries(
+        (props.account?.models ?? []).map((model) => {
+          const raw = form.billingPrices[model.id]?.trim() ?? ''
+          if (raw === '') return [model.id, null]
+          const amount = Number(raw)
+          return [
+            model.id,
+            {
+              amount,
+              currency:
+                model.billing_pricing?.currency ||
+                model.pricing?.currency ||
+                'CNY',
+              mode: model.billing_pricing?.mode || model.pricing?.mode,
+            },
+          ]
+        })
+      )
+    }
     if (apiKey) payload.api_key = apiKey
     mutation.mutate(payload)
   }
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className='max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl'>
+      <DialogContent className='max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl'>
         <DialogHeader>
           <DialogTitle>
             {t(isEditing ? 'Edit Video Account' : 'Add Video Account')}
@@ -263,6 +311,89 @@ export function VideoAccountDialog(props: VideoAccountDialogProps) {
               />
             </Field>
           </FieldGroup>
+
+          {isEditing && (props.account?.models?.length ?? 0) > 0 && (
+            <section className='bg-muted/20 rounded-xl border p-3'>
+              <div className='mb-3'>
+                <h3 className='text-sm font-medium'>{t('Model pricing')}</h3>
+                <p className='text-muted-foreground mt-1 text-xs'>
+                  {t(
+                    'Leave a price empty to follow the CTMOAI upstream price. Filled prices apply only to this video account.'
+                  )}
+                </p>
+              </div>
+              <div className='bg-background overflow-x-auto rounded-lg border'>
+                <table className='w-full min-w-[680px] text-sm'>
+                  <thead className='bg-muted/40 text-left text-xs'>
+                    <tr>
+                      <th className='px-3 py-2'>{t('Model')}</th>
+                      <th className='px-3 py-2'>{t('Upstream price')}</th>
+                      <th className='px-3 py-2'>
+                        {t('Gateway billing price')}
+                      </th>
+                      <th className='px-3 py-2'>{t('Effective price')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {props.account?.models.map((model) => {
+                      const raw = form.billingPrices[model.id] ?? ''
+                      const effective =
+                        raw.trim() === ''
+                          ? model.pricing
+                          : {
+                              amount: Number(raw),
+                              currency:
+                                model.billing_pricing?.currency ||
+                                model.pricing?.currency ||
+                                'CNY',
+                              mode:
+                                model.billing_pricing?.mode ||
+                                model.pricing?.mode,
+                            }
+                      return (
+                        <tr key={model.id} className='border-t'>
+                          <td className='px-3 py-2'>
+                            <div className='font-medium'>
+                              {model.display_name || model.id}
+                            </div>
+                            <code className='text-muted-foreground text-xs'>
+                              {model.id}
+                            </code>
+                          </td>
+                          <td className='text-muted-foreground px-3 py-2'>
+                            {modelPriceLabel(model.pricing)}
+                          </td>
+                          <td className='px-3 py-2'>
+                            <Input
+                              type='number'
+                              min='0'
+                              step='any'
+                              value={raw}
+                              onChange={(event) =>
+                                setForm((current) => ({
+                                  ...current,
+                                  billingPrices: {
+                                    ...current.billingPrices,
+                                    [model.id]: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder={t('Follow upstream')}
+                              aria-label={`${t('Gateway billing price')}: ${model.id}`}
+                              className='max-w-40'
+                            />
+                          </td>
+                          <td className='px-3 py-2 font-medium'>
+                            {modelPriceLabel(effective)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
           <DialogFooter>
             <Button

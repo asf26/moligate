@@ -32,16 +32,17 @@ type videoAccountCreateRequest struct {
 }
 
 type videoAccountUpdateRequest struct {
-	ID      int       `json:"id"`
-	Name    *string   `json:"name"`
-	APIKey  *string   `json:"api_key"`
-	Key     *string   `json:"key"`
-	Status  *int      `json:"status"`
-	Groups  *[]string `json:"groups"`
-	Group   *string   `json:"group"`
-	Proxy   *string   `json:"proxy"`
-	Remark  *string   `json:"remark"`
-	BaseURL *string   `json:"base_url"`
+	ID            int                                  `json:"id"`
+	Name          *string                              `json:"name"`
+	APIKey        *string                              `json:"api_key"`
+	Key           *string                              `json:"key"`
+	Status        *int                                 `json:"status"`
+	Groups        *[]string                            `json:"groups"`
+	Group         *string                              `json:"group"`
+	Proxy         *string                              `json:"proxy"`
+	Remark        *string                              `json:"remark"`
+	BaseURL       *string                              `json:"base_url"`
+	BillingPrices *map[string]*model.VideoModelPricing `json:"billing_prices"`
 }
 
 func videoAccountGroups(groups []string, group string) []string {
@@ -246,12 +247,13 @@ func UpdateVideoAccount(c *gin.Context) {
 		return
 	}
 	account, err := service.UpdateVideoAccount(c.Request.Context(), id, service.VideoAccountUpdateInput{
-		Name:   req.Name,
-		APIKey: req.APIKey,
-		Status: req.Status,
-		Groups: groups,
-		Proxy:  req.Proxy,
-		Remark: req.Remark,
+		Name:          req.Name,
+		APIKey:        req.APIKey,
+		Status:        req.Status,
+		Groups:        groups,
+		Proxy:         req.Proxy,
+		Remark:        req.Remark,
+		BillingPrices: req.BillingPrices,
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
