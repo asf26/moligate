@@ -198,3 +198,87 @@ func TestGetCanvasConfigAppliesKeyModelLimitsToVideoAccountModels(t *testing.T) 
 	require.Len(t, response.Data.Groups[0].Models, 1)
 	assert.Equal(t, "seedance2.0-stable-full-720p", response.Data.Groups[0].Models[0].Name)
 }
+
+// The workspace decides whether to show the generation-mode control, and what a
+// run costs, from this payload alone. Both integrations accept the frame
+// workflow, and the capability flag only exists on an upstream endpoint the
+// gateway cannot read, so it must reach the canvas for a Seedance model — not
+// only for the H3 family.
+func TestGetCanvasConfigExposesCapabilitiesAndPriceForASeedanceModel(t *testing.T) {
+	db := setupCanvasControllerTest(t)
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"默认分组","视频-稳定":"稳定分组"}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"视频-稳定":1}`))
+
+	require.NoError(t, db.Create(&model.User{Id: 73, Username: "sd-user", Group: "default", Status: common.UserStatusEnabled}).Error)
+	account := &model.VideoAccount{Name: "稳定", ApiKey: "secret", PublicKey: "vca_sd", Groups: "视频-稳定", Status: model.VideoAccountStatusEnabled}
+	require.NoError(t, account.SetModelCatalog([]model.VideoModel{{
+		ID: "sd-2-vip-480", Group: "video", Available: true, Resolution: "480p",
+		DurationsSeconds: []int{5, 6}, Ratios: []string{"9:16", "16:9"},
+		MaxImages: 9, MaxVideos: 3, MaxAudios: 3,
+		Pricing: model.VideoModelPricing{Mode: "per_second", Amount: 0.35, Currency: "CNY"},
+	}}))
+	require.NoError(t, db.Create(account).Error)
+	require.NoError(t, db.Create(&model.Token{Id: 97, UserId: 73, Name: "稳定", Key: "video-sd-key", Status: common.TokenStatusEnabled, Group: "视频-稳定"}).Error)
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/canvas/config", nil)
+	context.Set("id", 73)
+	GetCanvasConfig(context)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Data canvasConfigResponse `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Len(t, response.Data.Groups, 1)
+	models := response.Data.Groups[0].Models
+	require.Len(t, models, 1)
+	video := models[0].Video
+	require.NotNil(t, video)
+
+	assert.True(t, video.SupportsFirstLastFrame, "the frame mode must be offered")
+	assert.Equal(t, "seedance", video.Family)
+	// Seedance takes no size, so the workspace must not invent one.
+	assert.Empty(t, video.RatioSizes)
+	assert.Empty(t, video.Sizes)
+	assert.Equal(t, "per_second", video.PricingMode)
+	assert.InDelta(t, 0.35, video.PricingAmount, 1e-9)
+	assert.Equal(t, "CNY", video.PricingCurrency)
+}
+
+// An administrator override reaches the workspace too, so a model that genuinely
+// lacks the mode can be switched off without a code change.
+func TestGetCanvasConfigHonoursACapabilityOverride(t *testing.T) {
+	db := setupCanvasControllerTest(t)
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"默认分组","视频-稳定":"稳定分组"}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"视频-稳定":1}`))
+
+	require.NoError(t, db.Create(&model.User{Id: 74, Username: "sd-user-2", Group: "default", Status: common.UserStatusEnabled}).Error)
+	account := &model.VideoAccount{Name: "稳定", ApiKey: "secret", PublicKey: "vca_sd2", Groups: "视频-稳定", Status: model.VideoAccountStatusEnabled}
+	require.NoError(t, account.SetModelCatalog([]model.VideoModel{
+		{ID: "sd-2-vip-480", Group: "video", Available: true, Resolution: "480p", DurationsSeconds: []int{5}, Ratios: []string{"16:9"}},
+	}))
+	disable := false
+	require.NoError(t, account.SetModelCapabilityOverrides(map[string]*model.VideoModelCapabilityOverride{
+		"sd-2-vip-480": {SupportsFirstLastFrame: &disable},
+	}))
+	require.NoError(t, db.Create(account).Error)
+	require.NoError(t, db.Create(&model.Token{Id: 98, UserId: 74, Name: "稳定", Key: "video-sd-key-2", Status: common.TokenStatusEnabled, Group: "视频-稳定"}).Error)
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/canvas/config", nil)
+	context.Set("id", 74)
+	GetCanvasConfig(context)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Data canvasConfigResponse `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Len(t, response.Data.Groups, 1)
+	require.Len(t, response.Data.Groups[0].Models, 1)
+	require.NotNil(t, response.Data.Groups[0].Models[0].Video)
+	assert.False(t, response.Data.Groups[0].Models[0].Video.SupportsFirstLastFrame)
+}
