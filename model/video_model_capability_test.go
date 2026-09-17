@@ -54,6 +54,16 @@ func TestMiniMaxH3FirstLastFrameIsEnabled(t *testing.T) {
 	require.True(t, h3.WithDerivedCapabilities().SupportsFirstLastFrame)
 }
 
+func TestRequiresReferenceImageOnlyCoversTheCFVariants(t *testing.T) {
+	require.True(t, VideoModel{ID: "minimax-h3-comic-cf-4k", Group: "minimax-h3"}.RequiresReferenceImage())
+	require.True(t, VideoModel{ID: "minimax-h3-original-cf-2k", Group: "minimax-h3"}.RequiresReferenceImage())
+	require.False(t, VideoModel{ID: "minimax-h3-original-768p", Group: "minimax-h3"}.RequiresReferenceImage())
+	require.False(t, VideoModel{ID: "minimax-h3-quantized-768p", Group: "minimax-h3"}.RequiresReferenceImage())
+	// None of the Seedance models are CF variants.
+	require.False(t, VideoModel{ID: "sd-2-vip-480", Group: "video"}.RequiresReferenceImage())
+	require.False(t, VideoModel{ID: "seedance2.0-select-sdas-full-720p", Group: "video"}.RequiresReferenceImage())
+}
+
 func TestSeedanceModelsKeepTheirOwnDialect(t *testing.T) {
 	for _, item := range []VideoModel{
 		{ID: "sd-2-vip-480", Group: "video", Resolution: "480p", Ratios: []string{"9:16", "16:9"}},
