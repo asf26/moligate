@@ -53,6 +53,7 @@ import {
 } from '@/features/subscriptions/api'
 import type {
   PlanRecord,
+  UserSubscription,
   UserSubscriptionRecord,
 } from '@/features/subscriptions/types'
 import { formatNumber } from '@/lib/format'
@@ -218,6 +219,36 @@ function ModelUsageRow(props: { row: ModelUsageSummary; totalQuota: number }) {
   )
 }
 
+// A plan whose entitlement is a counted number of image generations (the
+// gpt-image and banana packages) never consumes wallet quota: the relay charges
+// the image_count grant per generation instead, and the plan's quota fields only
+// carry the placeholder value 1. Rendering those fields would draw three
+// meaningless "$0.000002" meters, so an image package is recognised by
+// "counted image grants + no real quota entitlement". The same grant signal
+// drives the plan card and the purchase dialog.
+const QUOTA_PLACEHOLDER_LIMIT = 1
+
+function imageGrantTotals(subscription?: UserSubscription) {
+  let amount = 0
+  let used = 0
+  for (const grant of subscription?.resource_grants || []) {
+    if (grant.resource_type !== 'image_count') continue
+    const grantAmount = Math.max(0, Number(grant.amount) || 0)
+    if (grantAmount === 0) continue
+    amount += grantAmount
+    used += Math.min(grantAmount, Math.max(0, Number(grant.used) || 0))
+  }
+  return { amount, used, remaining: Math.max(0, amount - used) }
+}
+
+function isImagePackage(subscription?: UserSubscription) {
+  const quota = Math.max(0, Number(subscription?.amount_total) || 0)
+  return (
+    imageGrantTotals(subscription).amount > 0 &&
+    quota <= QUOTA_PLACEHOLDER_LIMIT
+  )
+}
+
 function SubscriptionResourceGrants(props: {
   grants: NonNullable<UserSubscriptionRecord['subscription']>['resource_grants']
 }) {
@@ -379,6 +410,7 @@ export function SubscriptionUsagePage() {
     let total = 0
     let used = 0
     for (const item of activeSubscriptions) {
+      if (isImagePackage(item.subscription)) continue
       total += Math.max(0, Number(item.subscription?.amount_total) || 0)
       used += Math.max(0, Number(item.subscription?.amount_used) || 0)
     }
@@ -388,6 +420,21 @@ export function SubscriptionUsagePage() {
       remaining: total > 0 ? Math.max(0, total - used) : null,
     }
   }, [activeSubscriptions])
+  const imagePackageTotals = useMemo(() => {
+    let amount = 0
+    let remaining = 0
+    for (const item of activeSubscriptions) {
+      if (!isImagePackage(item.subscription)) continue
+      const totals = imageGrantTotals(item.subscription)
+      amount += totals.amount
+      remaining += totals.remaining
+    }
+    return { amount, remaining }
+  }, [activeSubscriptions])
+  // An image package holds no wallet quota, so its remaining entitlement is the
+  // counted generations instead of a quota amount.
+  const showsImageRemaining =
+    quotaTotals.total === 0 && imagePackageTotals.amount > 0
   const latestEndTime = useMemo(
     () =>
       Math.max(
@@ -494,36 +541,40 @@ export function SubscriptionUsagePage() {
                   <div className='subscription-usage-plan-list'>
                     {activeSubscriptions.map((item, index) => {
                       const subscription = item.subscription
+                      const imagePackage = isImagePackage(subscription)
+                      const imageTotals = imageGrantTotals(subscription)
                       const dailyAmount =
                         Number(subscription?.daily_amount) || 0
                       const weeklyAmount =
                         Number(subscription?.weekly_amount) || 0
                       const monthlyAmount =
                         Number(subscription?.monthly_amount) || 0
-                      const meters = [
-                        {
-                          label: t('Daily Quota'),
-                          amount: dailyAmount,
-                          used: Number(subscription?.daily_used) || 0,
-                          resetTime: subscription?.daily_reset_time,
-                          tone: 'mint' as const,
-                        },
-                        {
-                          label: t('Weekly Quota'),
-                          amount: weeklyAmount,
-                          used: Number(subscription?.weekly_used) || 0,
-                          resetTime: subscription?.weekly_reset_time,
-                          tone: 'blue' as const,
-                        },
-                        {
-                          label: t('Monthly Quota'),
-                          amount: monthlyAmount,
-                          used: Number(subscription?.monthly_used) || 0,
-                          resetTime: subscription?.monthly_reset_time,
-                          tone: 'coral' as const,
-                        },
-                      ].filter((meter) => meter.amount > 0)
-                      if (meters.length === 0) {
+                      const meters = imagePackage
+                        ? []
+                        : [
+                            {
+                              label: t('Daily Quota'),
+                              amount: dailyAmount,
+                              used: Number(subscription?.daily_used) || 0,
+                              resetTime: subscription?.daily_reset_time,
+                              tone: 'mint' as const,
+                            },
+                            {
+                              label: t('Weekly Quota'),
+                              amount: weeklyAmount,
+                              used: Number(subscription?.weekly_used) || 0,
+                              resetTime: subscription?.weekly_reset_time,
+                              tone: 'blue' as const,
+                            },
+                            {
+                              label: t('Monthly Quota'),
+                              amount: monthlyAmount,
+                              used: Number(subscription?.monthly_used) || 0,
+                              resetTime: subscription?.monthly_reset_time,
+                              tone: 'coral' as const,
+                            },
+                          ].filter((meter) => meter.amount > 0)
+                      if (!imagePackage && meters.length === 0) {
                         meters.push({
                           label: t('Total Quota'),
                           amount: Number(subscription?.amount_total) || 0,
@@ -560,14 +611,16 @@ export function SubscriptionUsagePage() {
                               </p>
                             </div>
                           </div>
-                          <div className='subscription-usage-plan-meters'>
-                            {meters.map((meter) => (
-                              <SubscriptionQuotaMeter
-                                key={meter.label}
-                                {...meter}
-                              />
-                            ))}
-                          </div>
+                          {meters.length > 0 && (
+                            <div className='subscription-usage-plan-meters'>
+                              {meters.map((meter) => (
+                                <SubscriptionQuotaMeter
+                                  key={meter.label}
+                                  {...meter}
+                                />
+                              ))}
+                            </div>
+                          )}
                           <SubscriptionResourceGrants
                             grants={subscription?.resource_grants}
                           />
@@ -576,9 +629,11 @@ export function SubscriptionUsagePage() {
                               {t('Usage')}
                             </span>
                             <strong>
-                              {formatWalletQuota(
-                                Number(subscription?.amount_used) || 0
-                              )}
+                              {imagePackage
+                                ? `${formatNumber(imageTotals.used)} ${t('generations')}`
+                                : formatWalletQuota(
+                                    Number(subscription?.amount_used) || 0
+                                  )}
                             </strong>
                             <span className='text-muted-foreground text-xs'>
                               {t('{{count}} days remaining', {
@@ -678,11 +733,17 @@ export function SubscriptionUsagePage() {
                 <UsageStat
                   icon={CheckCircle2}
                   tone='coral'
-                  label={t('Remaining quota')}
+                  label={
+                    showsImageRemaining
+                      ? t('Remaining generations')
+                      : t('Remaining quota')
+                  }
                   value={
-                    quotaTotals.remaining === null
-                      ? t('Unlimited')
-                      : formatWalletQuota(quotaTotals.remaining)
+                    showsImageRemaining
+                      ? `${formatNumber(imagePackageTotals.remaining)} ${t('generations')}`
+                      : quotaTotals.remaining === null
+                        ? t('Unlimited')
+                        : formatWalletQuota(quotaTotals.remaining)
                   }
                 />
               </section>
