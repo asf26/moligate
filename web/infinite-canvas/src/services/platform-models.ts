@@ -28,6 +28,8 @@ export type PlatformVideoMetadata = {
     requires_image?: boolean;
     supports_first_last_frame?: boolean;
     pricing_mode?: string;
+    pricing_amount?: number;
+    pricing_currency?: string;
 };
 
 export type PlatformCanvasGroup = {
@@ -112,6 +114,8 @@ async function loadPlatformGroup(group: PlatformCanvasGroup, signal: AbortSignal
             requiresImage: source.requires_image,
             supportsFirstLastFrame: source.supports_first_last_frame,
             pricingMode: source.pricing_mode,
+            pricingAmount: source.pricing_amount,
+            pricingCurrency: source.pricing_currency,
         };
         models.push({ name, capability, video, videoAccountTokenId });
     };

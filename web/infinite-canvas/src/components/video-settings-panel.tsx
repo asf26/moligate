@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { normalizeVideoModelRatio, normalizeVideoModelSeconds, ratioDimensions, videoModelSizeForRatio, type VideoModelCapabilities } from "@/lib/video-model-capabilities";
+import { normalizeVideoModelRatio, normalizeVideoModelSeconds, ratioDimensions, videoModelPrice, videoModelSizeForRatio, type VideoModelCapabilities } from "@/lib/video-model-capabilities";
 import { type AiConfig } from "@/stores/use-config-store";
 
 // Options for models served by a plain relay channel. They publish no
@@ -78,6 +78,7 @@ function VideoAccountSettings({ config, capabilities, onConfigChange, theme }: {
     const size = videoModelSizeForRatio(capabilities, ratio);
     const seconds = normalizeVideoModelSeconds(capabilities, config.videoSeconds);
     const firstLastFrame = capabilities.supportsFirstLastFrame && config.videoOperationMode === "first_last_frame";
+    const price = videoModelPrice(capabilities, seconds);
 
     return (
         <>
@@ -133,6 +134,13 @@ function VideoAccountSettings({ config, capabilities, onConfigChange, theme }: {
                     </div>
                     <div className="text-xs" style={{ color: theme.node.muted }}>
                         {firstLastFrame ? t("settingsPanels.video.modeFirstLastFrameHint") : t("settingsPanels.video.modeReferencesHint")}
+                    </div>
+                </SettingGroup>
+            ) : null}
+            {price ? (
+                <SettingGroup title={t("settingsPanels.video.cost")} color={theme.node.muted}>
+                    <div className="text-xs" style={{ color: theme.node.text }}>
+                        {price.total ? t("settingsPanels.video.costPerSecond", { unit: price.unit, total: price.total }) : t("settingsPanels.video.costPerTask", { unit: price.unit })}
                     </div>
                 </SettingGroup>
             ) : null}

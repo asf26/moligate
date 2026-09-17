@@ -12,7 +12,7 @@ import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSettingsSummary } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { normalizeVideoModelRatio, normalizeVideoModelSeconds, referenceImageLimit, referenceMediaLimit, resolveVideoModelCapabilities, type VideoModelCapabilities } from "@/lib/video-model-capabilities";
+import { normalizeVideoModelRatio, normalizeVideoModelSeconds, referenceImageLimit, referenceMediaLimit, referenceUploadLimits, resolveVideoModelCapabilities, type VideoModelCapabilities } from "@/lib/video-model-capabilities";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, ensureImagePreview, getImagePreviewRevision, previewUrlFor, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
@@ -130,9 +130,13 @@ export default function VideoPage() {
         const selectedFiles = Array.from(files || []);
         const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/"));
         if (unsupported.length) message.warning(t("videoWorkbench.unsupportedFiles"));
+        const oversized = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size > referenceUploadLimits.image * 1024 * 1024);
+        // Checked here so the user learns before the upload rather than from the
+        // gateway's rejection.
+        oversized.forEach((file) => message.warning(t("videoWorkbench.fileTooLarge", { name: file.name, limit: referenceUploadLimits.image })));
         const remaining = Math.max(0, imageLimit - references.length);
-        const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/")).slice(0, remaining);
-        if (!imageFiles.length && unsupported.length === 0) message.warning(t("videoWorkbench.referenceLimit", { count: imageLimit }));
+        const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= referenceUploadLimits.image * 1024 * 1024).slice(0, remaining);
+        if (!imageFiles.length && unsupported.length === 0 && oversized.length === 0) message.warning(t("videoWorkbench.referenceLimit", { count: imageLimit }));
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
                 const image = await uploadImage(file);
@@ -144,16 +148,21 @@ export default function VideoPage() {
 
     const addReferenceMedia = async (files: FileList | null, kind: VideoReferenceMedia["kind"]) => {
         const limit = referenceMediaLimit(capabilities, kind);
+        const maxBytes = referenceUploadLimits[kind] * 1024 * 1024;
         const current = kind === "video" ? referenceVideos.length : referenceAudios.length;
         const remaining = Math.max(0, limit - current);
         const accepted = Array.from(files || []).filter((file) => file.type.startsWith(`${kind}/`));
         if (!accepted.length) return;
+        const oversized = accepted.filter((file) => file.size > maxBytes);
+        oversized.forEach((file) => message.warning(t("videoWorkbench.fileTooLarge", { name: file.name, limit: referenceUploadLimits[kind] })));
+        const usable = accepted.filter((file) => file.size <= maxBytes);
+        if (!usable.length) return;
         if (!remaining) {
             message.warning(t("videoWorkbench.referenceLimit", { count: limit }));
             return;
         }
         const uploaded = await Promise.all(
-            accepted.slice(0, remaining).map(async (file) => {
+            usable.slice(0, remaining).map(async (file) => {
                 const stored = await uploadMediaFile(file, kind);
                 return { id: nanoid(), name: file.name, kind, mimeType: stored.mimeType || file.type, url: stored.url, storageKey: stored.storageKey } satisfies VideoReferenceMedia;
             }),
@@ -270,6 +279,12 @@ export default function VideoPage() {
         }
         if (capabilities.requiresImage && !references.length) {
             message.error(t("videoWorkbench.requiresImage"));
+            return null;
+        }
+        // The upstream contract requires at least one reference image whenever
+        // reference video or audio is mixed in, so catch it before the request.
+        if ((referenceVideos.length || referenceAudios.length) && !references.length) {
+            message.error(t("videoWorkbench.referenceMediaNeedsImage"));
             return null;
         }
         if (!isAiConfigReady(effectiveConfig, model)) {

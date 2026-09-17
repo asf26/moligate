@@ -74,9 +74,14 @@ type canvasVideoModelMetadata struct {
 	// RequiresImage marks models that have no text-to-video workflow, so the
 	// workspace can require a reference image instead of letting the request
 	// fail after it reaches the gateway.
-	RequiresImage          bool   `json:"requires_image,omitempty"`
-	SupportsFirstLastFrame bool   `json:"supports_first_last_frame,omitempty"`
-	PricingMode            string `json:"pricing_mode,omitempty"`
+	RequiresImage          bool `json:"requires_image,omitempty"`
+	SupportsFirstLastFrame bool `json:"supports_first_last_frame,omitempty"`
+	// PricingMode plus the amount below let the workspace show what a generation
+	// costs before the user commits to it. The amount is per second or per task,
+	// following PricingMode.
+	PricingMode     string  `json:"pricing_mode,omitempty"`
+	PricingAmount   float64 `json:"pricing_amount,omitempty"`
+	PricingCurrency string  `json:"pricing_currency,omitempty"`
 }
 
 type canvasConfigResponse struct {
@@ -184,6 +189,8 @@ func canvasVideoMetadata(account *model.VideoAccount, item model.VideoModel) *ca
 		RequiresImage:          item.RequiresReferenceImage(),
 		SupportsFirstLastFrame: item.SupportsFirstLastFrame,
 		PricingMode:            pricing.Mode,
+		PricingAmount:          pricing.Amount,
+		PricingCurrency:        pricing.Currency,
 	}
 }
 

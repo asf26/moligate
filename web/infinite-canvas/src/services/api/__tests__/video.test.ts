@@ -178,7 +178,10 @@ describe("requestVideoGeneration", () => {
             prompt: "animate this image",
             seconds: 6,
             aspect_ratio: "16:9",
-            images: ["https://media.example/reference.png"],
+            // A lone reference image stays on the single-reference field, which is
+            // what CTMOAI's own console sends for that case.
+            input_reference: "https://media.example/reference.png",
+            prompt_enhance: true,
         });
         expect(createCall[2]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer sk-canvas-key", "X-Video-Creation-Token-Id": "vca_account" }) }));
 
@@ -205,7 +208,8 @@ describe("requestVideoGeneration", () => {
             seconds: 4,
             aspect_ratio: "9:16",
             size: "768x1376",
-            images: ["https://media.example/reference.png"],
+            input_reference: "https://media.example/reference.png",
+            prompt_enhance: true,
         });
     });
 
@@ -225,7 +229,11 @@ describe("requestVideoGeneration", () => {
 
         const body = vi.mocked(axios.post).mock.calls.at(-1)?.[1] as Record<string, unknown>;
         expect(body.workflow_id).toBe("fl2v");
+        // CTMOAI's console names the same workflow with mode, so send both.
+        expect(body.mode).toBe("first_last_frame");
+        expect(body.prompt_enhance).toBe(true);
         expect((body.images as string[]).length).toBe(2);
+        expect(body.input_reference).toBeUndefined();
         expect(body.reference_videos).toBeUndefined();
     });
 
@@ -255,9 +263,11 @@ describe("requestVideoGeneration", () => {
             prompt: "blend these",
             seconds: 6,
             aspect_ratio: "16:9",
+            // Mixing material keeps the array form even with a single image.
             images: ["https://media.example/image.png"],
             reference_videos: ["https://media.example/clip.mp4"],
             reference_audios: ["https://media.example/track.mp3"],
+            prompt_enhance: true,
         });
         // Seedance takes no size and has no first/last frame workflow.
         expect(body.size).toBeUndefined();

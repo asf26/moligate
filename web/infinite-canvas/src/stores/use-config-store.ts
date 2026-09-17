@@ -30,6 +30,9 @@ export type VideoModelMetadata = {
     requiresImage?: boolean;
     supportsFirstLastFrame?: boolean;
     pricingMode?: string;
+    /** Price of one generation unit, in PricingCurrency. Meaning depends on pricingMode. */
+    pricingAmount?: number;
+    pricingCurrency?: string;
 };
 
 export type ChannelModel = {

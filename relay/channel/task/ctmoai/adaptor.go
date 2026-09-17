@@ -28,6 +28,10 @@ const (
 	channelName = "CTMOAI Video"
 	videoPath   = "/v1/videos"
 	maxRefs     = 50
+	// contextKeyInputReferenceOnly records that the caller used the single-image
+	// compatibility field. CTMOAI treats it differently from the images array, so
+	// an explicit choice must not be rewritten into the array on the way out.
+	contextKeyInputReferenceOnly = "ctmoai_input_reference_only"
 )
 
 type responseError struct {
@@ -114,6 +118,10 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		return service.TaskErrorWrapperLocal(errors.New("prompt is required when no reference image is supplied"), "invalid_request", http.StatusBadRequest)
 	}
 	if req.InputReference != "" && len(req.Images) == 0 {
+		// The caller picked the single-image field on purpose; the upstream
+		// integrations route it to the single-reference workflow rather than the
+		// multi-reference one that a non-empty images array selects.
+		c.Set(contextKeyInputReferenceOnly, true)
 		req.Images = []string{strings.TrimSpace(req.InputReference)}
 	}
 	if req.ReferenceVideo != "" && len(req.ReferenceVideos) == 0 {
@@ -221,7 +229,19 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		payload["size"] = req.Size
 	}
 	if len(req.Images) > 0 {
-		payload["images"] = req.Images
+		// A single reference image submitted through the compatibility field stays
+		// on that field, unless the request is a first/last frame workflow: that
+		// mode always carries its frames as the documented array.
+		singular, _ := c.Get(contextKeyInputReferenceOnly)
+		firstLastFrame := strings.EqualFold(strings.TrimSpace(req.WorkflowID), "fl2v") || req.Mode == "first_last_frame"
+		if singular == true && len(req.Images) == 1 && !firstLastFrame {
+			payload["input_reference"] = req.Images[0]
+		} else {
+			payload["images"] = req.Images
+		}
+	}
+	if req.PromptEnhance != nil {
+		payload["prompt_enhance"] = *req.PromptEnhance
 	}
 	if req.Mode != "" {
 		payload["mode"] = req.Mode
@@ -254,7 +274,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			switch key {
 			case "model", "seconds", "prompt", "duration", "images", "videos", "audios",
 				"input_reference", "reference_video", "reference_videos", "reference_audio", "reference_audios",
-				"aspect_ratio", "size", "mode", "workflow_id":
+				"aspect_ratio", "size", "mode", "workflow_id", "prompt_enhance":
 				continue
 			}
 			if _, exists := payload[key]; !exists {

@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { fallbackReferenceImageLimit, normalizeVideoModelRatio, normalizeVideoModelSeconds, ratioDimensions, referenceImageLimit, referenceMediaLimit, resolveVideoModelCapabilities, videoModelSizeForRatio } from "../video-model-capabilities";
+import { fallbackReferenceImageLimit, normalizeVideoModelRatio, normalizeVideoModelSeconds, ratioDimensions, referenceImageLimit, referenceMediaLimit, resolveVideoModelCapabilities, videoModelPrice, videoModelSizeForRatio } from "../video-model-capabilities";
 import type { AiConfig } from "@/stores/use-config-store";
 
 const h3Ratios = ["16:9", "9:16", "1:1", "2:3", "3:2", "3:4", "4:3", "21:9"];
@@ -102,5 +102,26 @@ describe("normalizers", () => {
         expect(ratioDimensions("16:9")).toEqual({ width: 16, height: 9 });
         expect(ratioDimensions("21:9")).toEqual({ width: 21, height: 9 });
         expect(ratioDimensions("1280x720")).toEqual({ width: 0, height: 0 });
+    });
+});
+
+describe("videoModelPrice", () => {
+    it("quotes a per-second model per second and totals the selected duration", () => {
+        const capabilities = resolveVideoModelCapabilities(configWithVideo({ pricingMode: "per_second", pricingAmount: 0.23, pricingCurrency: "CNY" }), "vca::model-under-test");
+        expect(videoModelPrice(capabilities, "10")).toEqual({ unit: "¥0.23", total: "¥2.30" });
+    });
+
+    it("quotes a per-task model flat, because duration does not change the charge", () => {
+        const capabilities = resolveVideoModelCapabilities(configWithVideo({ pricingMode: "per_task", pricingAmount: 4.5, pricingCurrency: "CNY" }), "vca::model-under-test");
+        expect(videoModelPrice(capabilities, "15")).toEqual({ unit: "¥4.50", total: "" });
+    });
+
+    it("falls back to the currency code when there is no symbol for it", () => {
+        const capabilities = resolveVideoModelCapabilities(configWithVideo({ pricingMode: "per_second", pricingAmount: 0.1, pricingCurrency: "SGD" }), "vca::model-under-test");
+        expect(videoModelPrice(capabilities, "4")).toEqual({ unit: "SGD 0.10", total: "SGD 0.40" });
+    });
+
+    it("reports no price when the model publishes none", () => {
+        expect(videoModelPrice(resolveVideoModelCapabilities(configWithVideo({ resolution: "768p" }), "vca::model-under-test"), "10")).toBeNull();
     });
 });

@@ -217,3 +217,77 @@ func TestBuildRequestBodyUsesTheH3DialectForH3Models(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"model":"minimax-h3-original-768p","prompt":"waves","seconds":10,"aspect_ratio":"16:9","size":"1376x768","images":["https://cdn.example/a.png"],"reference_videos":["https://cdn.example/a.mp4"],"reference_audios":["https://cdn.example/a.mp3"]}`, string(data))
 }
+
+// CTMOAI's console keeps a lone reference image on the single-image field, which
+// selects the single-reference workflow; a non-empty images array selects the
+// multi-reference one. Rewriting the caller's choice would silently change which
+// workflow runs.
+func TestBuildRequestBodyKeepsTheSingleImageField(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","input_reference":"https://cdn.example/only.png"}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+	data := readRequestBody(t, adaptor, ctx, info)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","input_reference":"https://cdn.example/only.png"}`, data)
+}
+
+func TestBuildRequestBodyKeepsTheImagesArrayWhenTheCallerUsedIt(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/only.png"]}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+	data := readRequestBody(t, adaptor, ctx, info)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/only.png"]}`, data)
+}
+
+// The frame workflow carries its frames as the documented array even when only
+// one frame is supplied.
+func TestBuildRequestBodyUsesTheArrayForFirstLastFrameEvenWithASingleFrame(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","workflow_id":"fl2v","input_reference":"https://cdn.example/first.png"}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	info.VideoAccount.Models["seedance-test"] = relaycommon.VideoAccountModelMeta{
+		ID: "seedance-test", Available: true, DurationsSeconds: []int{10}, Ratios: []string{"16:9"}, MaxImages: 9, SupportsFirstLastFrame: true,
+	}
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+	data := readRequestBody(t, adaptor, ctx, info)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/first.png"],"workflow_id":"fl2v"}`, data)
+}
+
+func TestBuildRequestBodyForwardsPromptEnhance(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","prompt_enhance":true}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+	data := readRequestBody(t, adaptor, ctx, info)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","prompt_enhance":true}`, data)
+}
+
+// An explicit false must survive, and metadata must not be a second way to set it.
+func TestBuildRequestBodyKeepsAnExplicitPromptEnhanceFalse(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","prompt_enhance":false,"metadata":{"prompt_enhance":true}}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+	data := readRequestBody(t, adaptor, ctx, info)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","prompt_enhance":false}`, data)
+}
+
+func readRequestBody(t *testing.T, adaptor *TaskAdaptor, ctx *gin.Context, info *relaycommon.RelayInfo) string {
+	t.Helper()
+	body, err := adaptor.BuildRequestBody(ctx, info)
+	require.NoError(t, err)
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	return string(data)
+}

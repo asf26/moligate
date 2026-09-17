@@ -28,6 +28,10 @@ export type VideoModelCapabilities = {
     audioRequiresImage: boolean;
     requiresImage: boolean;
     supportsFirstLastFrame: boolean;
+    /** "per_second" or "per_task"; the amount below is priced accordingly. */
+    pricingMode: string;
+    pricingAmount: number;
+    pricingCurrency: string;
 };
 
 /**
@@ -43,6 +47,13 @@ export const fallbackReferenceImageLimit = 7;
  * well inside the relay's own reference ceiling.
  */
 const unboundedReferenceLimits = { image: 9, video: 3, audio: 3 } as const;
+
+/**
+ * Per-asset upload ceiling in MB. Mirrors the gateway's own limits
+ * (`controller/video_account_media.go`), which in turn match what CTMOAI's
+ * console enforces, so a file that passes here is not rejected later.
+ */
+export const referenceUploadLimits = { image: 10, video: 50, audio: 30 } as const;
 
 export function resolveVideoModelCapabilities(config: AiConfig, model: string): VideoModelCapabilities {
     const metadata = resolveModelVideoMetadata(config, model);
@@ -60,6 +71,40 @@ export function resolveVideoModelCapabilities(config: AiConfig, model: string): 
         audioRequiresImage: Boolean(metadata?.audioRequiresImage),
         requiresImage: Boolean(metadata?.requiresImage),
         supportsFirstLastFrame: Boolean(metadata?.supportsFirstLastFrame),
+        pricingMode: (metadata?.pricingMode || "").trim(),
+        pricingAmount: typeof metadata?.pricingAmount === "number" && Number.isFinite(metadata.pricingAmount) && metadata.pricingAmount > 0 ? metadata.pricingAmount : 0,
+        pricingCurrency: (metadata?.pricingCurrency || "").trim(),
+    };
+}
+
+const currencySymbols: Record<string, string> = { CNY: "¥", RMB: "¥", USD: "$", EUR: "€" };
+
+function formatMoney(amount: number, currency: string) {
+    const rounded = Math.round(amount * 100) / 100;
+    // Whole amounts stay bare; anything fractional keeps two decimals so a price
+    // reads like a price tag.
+    const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+    const code = currency.toUpperCase();
+    const symbol = currencySymbols[code];
+    return symbol ? `${symbol}${text}` : `${code ? `${code} ` : ""}${text}`;
+}
+
+/**
+ * Price of the generation the current settings would submit. Per-second models
+ * are quoted per second plus the total for the selected duration; per-task
+ * models are quoted flat, because the duration does not change the charge.
+ * Returns null when the model publishes no price.
+ */
+export function videoModelPrice(capabilities: VideoModelCapabilities, seconds: string) {
+    if (!capabilities.pricingAmount) return null;
+    const currency = capabilities.pricingCurrency || "CNY";
+    if (capabilities.pricingMode.toLowerCase() !== "per_second") {
+        return { unit: formatMoney(capabilities.pricingAmount, currency), total: "" };
+    }
+    const duration = Math.max(1, Math.floor(Number(seconds) || 0));
+    return {
+        unit: formatMoney(capabilities.pricingAmount, currency),
+        total: formatMoney(capabilities.pricingAmount * duration, currency),
     };
 }
 

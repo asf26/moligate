@@ -68,24 +68,25 @@ type VideoCreationCatalog struct {
 // meaningful default. In particular, older CTMOAI responses omitted
 // available/supported_endpoint_types; those models should remain usable.
 type upstreamVideoModel struct {
-	ID                     string               `json:"id"`
-	DisplayName            string               `json:"display_name"`
-	ProductKey             string               `json:"product_key"`
-	Group                  string               `json:"group"`
-	Available              *bool                `json:"available"`
-	UnavailableReason      string               `json:"unavailable_reason"`
-	SupportedEndpointTypes []string             `json:"supported_endpoint_types"`
-	Resolution             string               `json:"resolution"`
-	DurationsSeconds       []int                `json:"durations_seconds"`
-	Ratios                 []string             `json:"ratios"`
-	Sizes                  []string             `json:"sizes"`
-	MaxImages              *int                 `json:"max_images"`
-	MaxVideos              *int                 `json:"max_videos"`
-	MaxAudios              *int                 `json:"max_audios"`
-	AudioRequiresImage     bool                 `json:"audio_requires_image"`
-	SupportsFirstLastFrame bool                 `json:"supports_first_last_frame"`
-	Pricing                upstreamVideoPricing `json:"pricing"`
-	GroupRatio             float64              `json:"group_ratio"`
+	ID                      string               `json:"id"`
+	DisplayName             string               `json:"display_name"`
+	ProductKey              string               `json:"product_key"`
+	Group                   string               `json:"group"`
+	Available               *bool                `json:"available"`
+	UnavailableReason       string               `json:"unavailable_reason"`
+	SupportedEndpointTypes  []string             `json:"supported_endpoint_types"`
+	Resolution              string               `json:"resolution"`
+	DurationsSeconds        []int                `json:"durations_seconds"`
+	Ratios                  []string             `json:"ratios"`
+	Sizes                   []string             `json:"sizes"`
+	MaxImages               *int                 `json:"max_images"`
+	MaxVideos               *int                 `json:"max_videos"`
+	MaxAudios               *int                 `json:"max_audios"`
+	MaxVideoDurationSeconds *int                 `json:"max_video_duration_seconds"`
+	AudioRequiresImage      bool                 `json:"audio_requires_image"`
+	SupportsFirstLastFrame  bool                 `json:"supports_first_last_frame"`
+	Pricing                 upstreamVideoPricing `json:"pricing"`
+	GroupRatio              float64              `json:"group_ratio"`
 }
 
 type upstreamVideoPricing struct {
@@ -222,7 +223,7 @@ func convertUpstreamVideoModel(item upstreamVideoModel) model.VideoModel {
 			item.UnavailableReason = "invalid pricing amount"
 		}
 	}
-	maxImages, maxVideos, maxAudios := -1, -1, -1
+	maxImages, maxVideos, maxAudios, maxVideoDuration := -1, -1, -1, -1
 	if item.MaxImages != nil {
 		maxImages = *item.MaxImages
 	}
@@ -232,23 +233,27 @@ func convertUpstreamVideoModel(item upstreamVideoModel) model.VideoModel {
 	if item.MaxAudios != nil {
 		maxAudios = *item.MaxAudios
 	}
+	if item.MaxVideoDurationSeconds != nil {
+		maxVideoDuration = *item.MaxVideoDurationSeconds
+	}
 	return model.VideoModel{
-		ID:                     strings.TrimSpace(item.ID),
-		DisplayName:            displayName,
-		ProductKey:             strings.TrimSpace(item.ProductKey),
-		Group:                  group,
-		Available:              available,
-		UnavailableReason:      strings.TrimSpace(item.UnavailableReason),
-		SupportedEndpointTypes: endpoints,
-		Resolution:             strings.TrimSpace(item.Resolution),
-		DurationsSeconds:       append([]int(nil), item.DurationsSeconds...),
-		Ratios:                 append([]string(nil), item.Ratios...),
-		Sizes:                  append([]string(nil), item.Sizes...),
-		MaxImages:              maxImages,
-		MaxVideos:              maxVideos,
-		MaxAudios:              maxAudios,
-		AudioRequiresImage:     item.AudioRequiresImage,
-		SupportsFirstLastFrame: item.SupportsFirstLastFrame,
+		ID:                      strings.TrimSpace(item.ID),
+		DisplayName:             displayName,
+		ProductKey:              strings.TrimSpace(item.ProductKey),
+		Group:                   group,
+		Available:               available,
+		UnavailableReason:       strings.TrimSpace(item.UnavailableReason),
+		SupportedEndpointTypes:  endpoints,
+		Resolution:              strings.TrimSpace(item.Resolution),
+		DurationsSeconds:        append([]int(nil), item.DurationsSeconds...),
+		Ratios:                  append([]string(nil), item.Ratios...),
+		Sizes:                   append([]string(nil), item.Sizes...),
+		MaxImages:               maxImages,
+		MaxVideos:               maxVideos,
+		MaxAudios:               maxAudios,
+		MaxVideoDurationSeconds: maxVideoDuration,
+		AudioRequiresImage:      item.AudioRequiresImage,
+		SupportsFirstLastFrame:  item.SupportsFirstLastFrame,
 		Pricing: model.VideoModelPricing{
 			Mode:     strings.TrimSpace(item.Pricing.Mode),
 			Amount:   pricingAmount,

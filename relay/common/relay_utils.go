@@ -199,6 +199,11 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 	if audios := formData["reference_audios"]; len(audios) > 0 {
 		req.ReferenceAudios = audios
 	}
+	if enhance := strings.TrimSpace(formData.Get("prompt_enhance")); enhance != "" {
+		if parsed, err := strconv.ParseBool(enhance); err == nil {
+			req.PromptEnhance = &parsed
+		}
+	}
 
 	for key, values := range formData {
 		if len(values) > 0 && !isKnownTaskField(key) {
@@ -307,6 +312,7 @@ func isKnownTaskField(field string) bool {
 		"reference_audios": true,
 		"reference_video":  true,
 		"reference_audio":  true,
+		"prompt_enhance":   true,
 	}
 	return knownFields[field]
 }

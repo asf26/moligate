@@ -920,22 +920,26 @@ type TaskRelayInfo struct {
 }
 
 type TaskSubmitReq struct {
-	Prompt          string                 `json:"prompt"`
-	Model           string                 `json:"model,omitempty"`
-	Mode            string                 `json:"mode,omitempty"`
-	Image           string                 `json:"image,omitempty"`
-	Images          []string               `json:"images,omitempty"`
-	Size            string                 `json:"size,omitempty"`
-	Duration        int                    `json:"duration,omitempty"`
-	Seconds         string                 `json:"seconds,omitempty"`
-	InputReference  string                 `json:"input_reference,omitempty"`
-	AspectRatio     string                 `json:"aspect_ratio,omitempty"`
-	WorkflowID      string                 `json:"workflow_id,omitempty"`
-	ReferenceVideos []string               `json:"reference_videos,omitempty"`
-	ReferenceAudios []string               `json:"reference_audios,omitempty"`
-	ReferenceVideo  string                 `json:"reference_video,omitempty"`
-	ReferenceAudio  string                 `json:"reference_audio,omitempty"`
-	Metadata        map[string]interface{} `json:"metadata,omitempty"`
+	Prompt          string   `json:"prompt"`
+	Model           string   `json:"model,omitempty"`
+	Mode            string   `json:"mode,omitempty"`
+	Image           string   `json:"image,omitempty"`
+	Images          []string `json:"images,omitempty"`
+	Size            string   `json:"size,omitempty"`
+	Duration        int      `json:"duration,omitempty"`
+	Seconds         string   `json:"seconds,omitempty"`
+	InputReference  string   `json:"input_reference,omitempty"`
+	AspectRatio     string   `json:"aspect_ratio,omitempty"`
+	WorkflowID      string   `json:"workflow_id,omitempty"`
+	ReferenceVideos []string `json:"reference_videos,omitempty"`
+	ReferenceAudios []string `json:"reference_audios,omitempty"`
+	ReferenceVideo  string   `json:"reference_video,omitempty"`
+	ReferenceAudio  string   `json:"reference_audio,omitempty"`
+	// PromptEnhance mirrors CTMOAI's undocumented prompt_enhance flag, which its
+	// own console always sends. A pointer keeps "not sent" distinct from an
+	// explicit false so the gateway only forwards a deliberate choice.
+	PromptEnhance *bool                  `json:"prompt_enhance,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 }
 
 func (t *TaskSubmitReq) GetPrompt() string {

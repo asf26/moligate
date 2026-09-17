@@ -175,16 +175,31 @@ async function createVideoAccountTask(config: AiConfig, model: string, modelName
         const ratio = firstLastFrame ? referenceRatio(config, capabilities) : normalizeRatio(config, capabilities);
         const size = ratio ? videoModelSizeForRatio(capabilities, ratio) : "";
         const seconds = normalizeCatalogSeconds(config.videoSeconds, capabilities.durationsSeconds);
-        const body: Record<string, unknown> = { model: modelName, seconds };
+        // prompt_enhance is undocumented but CTMOAI's own console always sends
+        // it, so leaving it out would silently run a different pipeline.
+        const body: Record<string, unknown> = { model: modelName, seconds, prompt_enhance: true };
         if (prompt.trim()) body.prompt = prompt;
         if (ratio) body.aspect_ratio = ratio;
         if (size) body.size = size;
-        if (images.length) body.images = images;
+        if (images.length) {
+            // A lone reference image goes on the single-image field, which selects
+            // the single-reference workflow; a non-empty images array selects the
+            // multi-reference one. The upstream console draws the same line.
+            if (images.length === 1 && !firstLastFrame && !referenceVideos.length && !referenceAudios.length) {
+                body.input_reference = images[0];
+            } else {
+                body.images = images;
+            }
+        }
         if (referenceVideos.length) body.reference_videos = referenceVideos;
         if (referenceAudios.length) body.reference_audios = referenceAudios;
         // First/last frame is a distinct upstream workflow, not just a hint that
-        // the first two images are frames.
-        if (firstLastFrame) body.workflow_id = "fl2v";
+        // the first two images are frames. The H3 doc names workflow_id; the
+        // console sends mode. Both are accepted, so send both.
+        if (firstLastFrame) {
+            body.workflow_id = "fl2v";
+            body.mode = "first_last_frame";
+        }
 
         const created = unwrapVideoResponse(
             (

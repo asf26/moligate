@@ -33,26 +33,30 @@ type VideoModelPricing struct {
 // upstream model catalog is key-scoped, so this must not be replaced with a
 // global hard-coded model list.
 type VideoModel struct {
-	ID                     string             `json:"id"`
-	DisplayName            string             `json:"display_name,omitempty"`
-	ProductKey             string             `json:"product_key,omitempty"`
-	Group                  string             `json:"group,omitempty"`
-	PrivateGroupKey        string             `json:"private_group_key,omitempty"`
-	Available              bool               `json:"available"`
-	UnavailableReason      string             `json:"unavailable_reason,omitempty"`
-	SupportedEndpointTypes []string           `json:"supported_endpoint_types,omitempty"`
-	Resolution             string             `json:"resolution,omitempty"`
-	DurationsSeconds       []int              `json:"durations_seconds,omitempty"`
-	Ratios                 []string           `json:"ratios,omitempty"`
-	Sizes                  []string           `json:"sizes,omitempty"`
-	MaxImages              int                `json:"max_images"`
-	MaxVideos              int                `json:"max_videos"`
-	MaxAudios              int                `json:"max_audios"`
-	AudioRequiresImage     bool               `json:"audio_requires_image,omitempty"`
-	SupportsFirstLastFrame bool               `json:"supports_first_last_frame,omitempty"`
-	Pricing                VideoModelPricing  `json:"pricing,omitempty"`
-	BillingPricing         *VideoModelPricing `json:"billing_pricing,omitempty"`
-	GroupRatio             float64            `json:"group_ratio,omitempty"`
+	ID                     string   `json:"id"`
+	DisplayName            string   `json:"display_name,omitempty"`
+	ProductKey             string   `json:"product_key,omitempty"`
+	Group                  string   `json:"group,omitempty"`
+	PrivateGroupKey        string   `json:"private_group_key,omitempty"`
+	Available              bool     `json:"available"`
+	UnavailableReason      string   `json:"unavailable_reason,omitempty"`
+	SupportedEndpointTypes []string `json:"supported_endpoint_types,omitempty"`
+	Resolution             string   `json:"resolution,omitempty"`
+	DurationsSeconds       []int    `json:"durations_seconds,omitempty"`
+	Ratios                 []string `json:"ratios,omitempty"`
+	Sizes                  []string `json:"sizes,omitempty"`
+	MaxImages              int      `json:"max_images"`
+	MaxVideos              int      `json:"max_videos"`
+	MaxAudios              int      `json:"max_audios"`
+	// MaxVideoDurationSeconds is the longest single clip the model accepts. It
+	// travels with the catalog for completeness; DurationsSeconds is what bounds
+	// a request, because it lists the only accepted values.
+	MaxVideoDurationSeconds int                `json:"max_video_duration_seconds,omitempty"`
+	AudioRequiresImage      bool               `json:"audio_requires_image,omitempty"`
+	SupportsFirstLastFrame  bool               `json:"supports_first_last_frame,omitempty"`
+	Pricing                 VideoModelPricing  `json:"pricing,omitempty"`
+	BillingPricing          *VideoModelPricing `json:"billing_pricing,omitempty"`
+	GroupRatio              float64            `json:"group_ratio,omitempty"`
 }
 
 // EffectivePricing returns the account-level gateway price when one has been
