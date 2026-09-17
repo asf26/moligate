@@ -54,6 +54,38 @@ func TestMiniMaxH3FirstLastFrameIsEnabled(t *testing.T) {
 	require.True(t, h3.WithDerivedCapabilities().SupportsFirstLastFrame)
 }
 
+// Both integrations accept the frame workflow: the H3 doc documents
+// workflow_id=fl2v, and CTMOAI's console offers the mode for the Seedance
+// models. The capability flag only exists on an endpoint that needs a console
+// session, so the gateway enables it by default rather than hiding a real
+// feature behind a field it can never read.
+func TestFirstLastFrameIsEnabledForEveryCatalogModel(t *testing.T) {
+	for _, item := range []VideoModel{
+		{ID: "minimax-h3-original-768p", Group: "minimax-h3"},
+		{ID: "minimax-h3-comic-cf-4k", Group: "minimax-h3"},
+		{ID: "sd-2-vip-480", Group: "video"},
+		{ID: "seedance2.0-select-full-720p", Group: "video"},
+		{ID: "seedance2.5-stable-480p", Group: "video"},
+	} {
+		require.True(t, item.WithDerivedCapabilities().SupportsFirstLastFrame, item.ID)
+	}
+}
+
+func TestAdministratorOverrideWinsOverTheDerivedDefault(t *testing.T) {
+	disable := false
+	enable := true
+
+	off := VideoModel{ID: "sd-2-vip-480", Group: "video", SupportsFirstLastFrameOverride: &disable}
+	require.False(t, off.WithDerivedCapabilities().SupportsFirstLastFrame)
+
+	// An override also survives on a model the default already enables.
+	on := VideoModel{ID: "minimax-h3-original-768p", Group: "minimax-h3", SupportsFirstLastFrameOverride: &enable}
+	require.True(t, on.WithDerivedCapabilities().SupportsFirstLastFrame)
+
+	// A nil override follows the default.
+	require.True(t, VideoModel{ID: "sd-2-vip-480", Group: "video"}.WithDerivedCapabilities().SupportsFirstLastFrame)
+}
+
 // The two integrations share an endpoint but not a request dialect, so callers
 // that must pick a field spelling read the family instead of guessing.
 func TestFamilySeparatesTheTwoIntegrations(t *testing.T) {
@@ -81,11 +113,9 @@ func TestSeedanceModelsKeepTheirOwnDialect(t *testing.T) {
 		{ID: "seedance2.5-stable-480p", Group: "video", Resolution: "480p", Ratios: []string{"16:9"}},
 	} {
 		require.False(t, IsMiniMaxH3VideoModel(item.Group, item.ID), item.ID)
-		// Seedance has no size field and no workflow_id, so nothing may be derived.
+		// Seedance has no size field, so nothing may be derived for it.
 		require.Nil(t, item.RatioSizes(), item.ID)
-		derived := item.WithDerivedCapabilities()
-		require.Empty(t, derived.Sizes, item.ID)
-		require.False(t, derived.SupportsFirstLastFrame, item.ID)
+		require.Empty(t, item.WithDerivedCapabilities().Sizes, item.ID)
 	}
 }
 
@@ -123,6 +153,29 @@ func TestModelCatalogDerivesCapabilities(t *testing.T) {
 
 	sd, ok := account.FindModel("sd-2-vip-480")
 	require.True(t, ok)
+	// Seedance takes no size, but it does accept the frame workflow.
 	require.Empty(t, sd.Sizes)
-	require.False(t, sd.SupportsFirstLastFrame)
+	require.True(t, sd.SupportsFirstLastFrame)
+}
+
+func TestSetModelCapabilityOverridesSetsAndClears(t *testing.T) {
+	account := &VideoAccount{Id: 1, Name: "sd", Groups: "视频"}
+	require.NoError(t, account.SetModelCatalog([]VideoModel{{ID: "sd-2-vip-480", Group: "video", Available: true}}))
+
+	disable := false
+	require.NoError(t, account.SetModelCapabilityOverrides(map[string]*VideoModelCapabilityOverride{
+		"SD-2-VIP-480": {SupportsFirstLastFrame: &disable},
+	}))
+	item, ok := account.FindModel("sd-2-vip-480")
+	require.True(t, ok)
+	require.False(t, item.SupportsFirstLastFrame)
+
+	// A nil override clears the decision and returns the model to the default.
+	require.NoError(t, account.SetModelCapabilityOverrides(map[string]*VideoModelCapabilityOverride{"sd-2-vip-480": nil}))
+	item, _ = account.FindModel("sd-2-vip-480")
+	require.True(t, item.SupportsFirstLastFrame)
+
+	// An unknown model is rejected rather than silently ignored.
+	err := account.SetModelCapabilityOverrides(map[string]*VideoModelCapabilityOverride{"nope": {}})
+	require.Error(t, err)
 }

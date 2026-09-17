@@ -169,3 +169,34 @@ func TestNormalizeAccountModelsPreservesBillingOverridesAcrossSync(t *testing.T)
 	assert.InDelta(t, 0.4, models[0].BillingPricing.Amount, 0.000001)
 	assert.Equal(t, "USD", models[0].BillingPricing.Currency)
 }
+
+// The upstream catalog cannot report the first/last frame capability, so an
+// administrator decision must outlive a model sync.
+func TestNormalizeAccountModelsPreservesCapabilityOverridesAcrossSync(t *testing.T) {
+	account := &model.VideoAccount{Id: 7, PublicKey: "vca_account"}
+	disable := false
+	require.NoError(t, account.SetModelCatalog([]model.VideoModel{{
+		ID: "seedance-1", SupportsFirstLastFrameOverride: &disable,
+	}}))
+	models := normalizeAccountModels([]model.VideoModel{{ID: "seedance-1"}}, account)
+	require.Len(t, models, 1)
+	require.NotNil(t, models[0].SupportsFirstLastFrameOverride)
+	assert.False(t, *models[0].SupportsFirstLastFrameOverride)
+}
+
+// Without an override the sync must not invent one, so the model keeps
+// following the gateway default. Derivation happens when the catalog is read,
+// not when it is stored, so the stored row stays as upstream reported it.
+func TestNormalizeAccountModelsLeavesTheCapabilityOverrideUnset(t *testing.T) {
+	account := &model.VideoAccount{Id: 7, PublicKey: "vca_account"}
+	require.NoError(t, account.SetModelCatalog([]model.VideoModel{{ID: "seedance-1"}}))
+	models := normalizeAccountModels([]model.VideoModel{{ID: "seedance-1"}}, account)
+	require.Len(t, models, 1)
+	assert.Nil(t, models[0].SupportsFirstLastFrameOverride)
+	assert.False(t, models[0].SupportsFirstLastFrame, "storing must not derive")
+
+	require.NoError(t, account.SetModelCatalog(models))
+	item, ok := account.FindModel("seedance-1")
+	require.True(t, ok)
+	assert.True(t, item.SupportsFirstLastFrame, "reading derives the default")
+}

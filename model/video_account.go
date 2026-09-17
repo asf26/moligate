@@ -51,12 +51,17 @@ type VideoModel struct {
 	// MaxVideoDurationSeconds is the longest single clip the model accepts. It
 	// travels with the catalog for completeness; DurationsSeconds is what bounds
 	// a request, because it lists the only accepted values.
-	MaxVideoDurationSeconds int                `json:"max_video_duration_seconds,omitempty"`
-	AudioRequiresImage      bool               `json:"audio_requires_image,omitempty"`
-	SupportsFirstLastFrame  bool               `json:"supports_first_last_frame,omitempty"`
-	Pricing                 VideoModelPricing  `json:"pricing,omitempty"`
-	BillingPricing          *VideoModelPricing `json:"billing_pricing,omitempty"`
-	GroupRatio              float64            `json:"group_ratio,omitempty"`
+	MaxVideoDurationSeconds int  `json:"max_video_duration_seconds,omitempty"`
+	AudioRequiresImage      bool `json:"audio_requires_image,omitempty"`
+	SupportsFirstLastFrame  bool `json:"supports_first_last_frame,omitempty"`
+	// SupportsFirstLastFrameOverride is an administrator decision. CTMOAI only
+	// publishes this capability on an endpoint the gateway cannot read with an
+	// account key, so an operator needs a way to state it (or correct it) per
+	// model. A nil value follows the gateway's default.
+	SupportsFirstLastFrameOverride *bool              `json:"supports_first_last_frame_override,omitempty"`
+	Pricing                        VideoModelPricing  `json:"pricing,omitempty"`
+	BillingPricing                 *VideoModelPricing `json:"billing_pricing,omitempty"`
+	GroupRatio                     float64            `json:"group_ratio,omitempty"`
 }
 
 // EffectivePricing returns the account-level gateway price when one has been
@@ -199,6 +204,40 @@ func (account *VideoAccount) SetModelCatalog(models []VideoModel) error {
 	}
 	account.ModelsJSON = string(encoded)
 	return nil
+}
+
+// VideoModelCapabilityOverride carries administrator-defined capability values
+// for one model. Pointers keep "not specified" distinct from an explicit false,
+// so an override only touches the fields the operator actually stated.
+type VideoModelCapabilityOverride struct {
+	SupportsFirstLastFrame *bool `json:"supports_first_last_frame,omitempty"`
+}
+
+// SetModelCapabilityOverrides updates administrator-defined capabilities only.
+// A nil value clears the override and returns the model to the gateway default.
+func (account *VideoAccount) SetModelCapabilityOverrides(overrides map[string]*VideoModelCapabilityOverride) error {
+	if account == nil {
+		return errors.New("video account is nil")
+	}
+	models := account.ModelCatalog()
+	indexes := make(map[string]int, len(models))
+	for index, item := range models {
+		indexes[strings.ToLower(item.ID)] = index
+	}
+	for rawID, override := range overrides {
+		id := strings.TrimSpace(rawID)
+		index, ok := indexes[strings.ToLower(id)]
+		if !ok {
+			return fmt.Errorf("video model %q is not available for this account", id)
+		}
+		if override == nil {
+			models[index].SupportsFirstLastFrameOverride = nil
+			continue
+		}
+		flag := override.SupportsFirstLastFrame
+		models[index].SupportsFirstLastFrameOverride = flag
+	}
+	return account.SetModelCatalog(models)
 }
 
 // SetModelBillingPrices updates only administrator-defined prices. A nil

@@ -312,6 +312,29 @@ describe("requestVideoGeneration", () => {
         expect(body.input_reference).toBeUndefined();
     });
 
+    it("submits the frame workflow for a Seedance model that advertises it", async () => {
+        // Both integrations accept the frame workflow, so a Seedance model whose
+        // capability is enabled must be able to use it.
+        vi.mocked(axios.post)
+            .mockResolvedValueOnce({ data: { images: ["https://media.example/frame.png"] } })
+            .mockResolvedValueOnce({ data: { images: ["https://media.example/frame.png"] } })
+            .mockResolvedValueOnce({ data: { id: "video_123" } });
+        const config = dedicatedAccountConfig({
+            name: "sd-2-vip-480",
+            videoAccountTokenId: "vca_account",
+            video: { family: "seedance", resolution: "480p", durationsSeconds: [5], ratios: ["16:9"], maxImages: 9, supportsFirstLastFrame: true },
+        });
+
+        await requestVideoGeneration({ ...config, size: "16:9", videoOperationMode: "first_last_frame" } as AiConfig, "transition", [referenceImage(), referenceImage()]);
+
+        const body = vi.mocked(axios.post).mock.calls.at(-1)?.[1] as Record<string, unknown>;
+        expect(body.workflow_id).toBe("fl2v");
+        expect(body.mode).toBe("first_last_frame");
+        expect((body.images as string[]).length).toBe(2);
+        expect(body.input_reference).toBeUndefined();
+        expect(body.size).toBeUndefined();
+    });
+
     it("keeps polling the account that created the task after the selection changes", async () => {
         const config = {
             baseUrl: "https://gateway.example/v1",

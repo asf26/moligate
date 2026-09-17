@@ -43,6 +43,9 @@ type videoAccountUpdateRequest struct {
 	Remark        *string                              `json:"remark"`
 	BaseURL       *string                              `json:"base_url"`
 	BillingPrices *map[string]*model.VideoModelPricing `json:"billing_prices"`
+	// ModelCapabilities carries administrator decisions for capabilities the
+	// upstream catalog does not publish (currently the first/last frame mode).
+	ModelCapabilities *map[string]*model.VideoModelCapabilityOverride `json:"model_capabilities"`
 }
 
 func videoAccountGroups(groups []string, group string) []string {
@@ -234,13 +237,14 @@ func UpdateVideoAccount(c *gin.Context) {
 		return
 	}
 	account, err := service.UpdateVideoAccount(c.Request.Context(), id, service.VideoAccountUpdateInput{
-		Name:          req.Name,
-		APIKey:        req.APIKey,
-		Status:        req.Status,
-		Groups:        groups,
-		Proxy:         req.Proxy,
-		Remark:        req.Remark,
-		BillingPrices: req.BillingPrices,
+		Name:              req.Name,
+		APIKey:            req.APIKey,
+		Status:            req.Status,
+		Groups:            groups,
+		Proxy:             req.Proxy,
+		Remark:            req.Remark,
+		BillingPrices:     req.BillingPrices,
+		ModelCapabilities: req.ModelCapabilities,
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

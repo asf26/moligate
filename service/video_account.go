@@ -50,6 +50,10 @@ type VideoAccountUpdateInput struct {
 	// BillingPrices is keyed by model ID. A nil value clears that model's
 	// override; a nil map means the caller did not change pricing.
 	BillingPrices *map[string]*model.VideoModelPricing
+	// ModelCapabilities is keyed by model ID and holds administrator decisions
+	// for capabilities the upstream catalog does not publish. A nil value clears
+	// that model's override; a nil map means the caller changed nothing.
+	ModelCapabilities *map[string]*model.VideoModelCapabilityOverride
 }
 
 type VideoPrivateGroup struct {
@@ -318,12 +322,16 @@ func normalizeAccountModels(models []model.VideoModel, account *model.VideoAccou
 		return models
 	}
 	existingPrices := make(map[string]*model.VideoModelPricing)
+	existingOverrides := make(map[string]*bool)
 	for _, existing := range account.ModelCatalog() {
-		if existing.BillingPricing == nil {
-			continue
+		if existing.BillingPricing != nil {
+			price := *existing.BillingPricing
+			existingPrices[strings.ToLower(existing.ID)] = &price
 		}
-		price := *existing.BillingPricing
-		existingPrices[strings.ToLower(existing.ID)] = &price
+		if existing.SupportsFirstLastFrameOverride != nil {
+			flag := *existing.SupportsFirstLastFrameOverride
+			existingOverrides[strings.ToLower(existing.ID)] = &flag
+		}
 	}
 	result := make([]model.VideoModel, 0, len(models))
 	seen := make(map[string]struct{}, len(models))
@@ -353,6 +361,11 @@ func normalizeAccountModels(models []model.VideoModel, account *model.VideoAccou
 		}
 		if price, ok := existingPrices[key]; ok {
 			item.BillingPricing = price
+		}
+		// An administrator override outlives a sync: the upstream catalog cannot
+		// report this capability, so re-syncing must not drop the decision.
+		if flag, ok := existingOverrides[key]; ok {
+			item.SupportsFirstLastFrameOverride = flag
 		}
 		result = append(result, item)
 	}
@@ -437,6 +450,11 @@ func UpdateVideoAccount(ctx context.Context, id int, input VideoAccountUpdateInp
 	}
 	if input.BillingPrices != nil {
 		if err := account.SetModelBillingPrices(*input.BillingPrices); err != nil {
+			return nil, err
+		}
+	}
+	if input.ModelCapabilities != nil {
+		if err := account.SetModelCapabilityOverrides(*input.ModelCapabilities); err != nil {
 			return nil, err
 		}
 	}

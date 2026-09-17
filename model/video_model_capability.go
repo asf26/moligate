@@ -119,18 +119,23 @@ func (item VideoModel) RequiresReferenceImage() bool {
 	return strings.Contains(strings.ToLower(item.Group+" "+item.ID), "cf-")
 }
 
-// WithDerivedCapabilities fills in the capabilities CTMOAI does not publish but
-// the documented integrations require. Sizes are only derived when the catalog
-// left them empty, so an upstream response that starts reporting them keeps
-// working.
+// WithDerivedCapabilities fills in the capabilities CTMOAI does not publish on
+// the endpoint the gateway can read with an account key.
 //
-// supports_first_last_frame is different: the field is a plain bool, so an
-// omitted value is indistinguishable from an explicit false, and CTMOAI omits
-// it for every H3 model. H3's API doc documents first/last frame via
-// workflow_id=fl2v, so it is enabled for the H3 family. If upstream ever
-// disables the mode for a model, the relay still forwards the request and
-// upstream rejects it with a clear error.
+// First/last frame is enabled for every catalog model. Both integrations accept
+// it — the H3 doc documents workflow_id=fl2v, and CTMOAI's own console offers
+// the mode for the Seedance models — but the capability flag only exists on an
+// endpoint that requires a console session, so an account key never sees it.
+// An administrator override turns it off for a model that genuinely lacks it.
+//
+// Sizes are only derived when the catalog left them empty, so an upstream
+// response that starts reporting them keeps working.
 func (item VideoModel) WithDerivedCapabilities() VideoModel {
+	if item.SupportsFirstLastFrameOverride != nil {
+		item.SupportsFirstLastFrame = *item.SupportsFirstLastFrameOverride
+	} else {
+		item.SupportsFirstLastFrame = true
+	}
 	if !IsMiniMaxH3VideoModel(item.Group, item.ID) {
 		return item
 	}
@@ -149,10 +154,6 @@ func (item VideoModel) WithDerivedCapabilities() VideoModel {
 			item.Sizes = ordered
 		}
 	}
-	// H3 supports first/last frame through workflow_id=fl2v. The catalog never
-	// reports it, and leaving it false would make the relay reject a documented
-	// request.
-	item.SupportsFirstLastFrame = true
 	return item
 }
 
