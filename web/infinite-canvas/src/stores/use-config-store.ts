@@ -26,6 +26,12 @@ export type ChannelModel = {
     capability: ModelCapability;
     script?: string;
     video?: VideoModelMetadata;
+    /**
+     * Selects the dedicated video account this model must be routed to. It is
+     * scoped to the model rather than to the channel because one API key's
+     * group can expose models from several accounts side by side.
+     */
+    videoAccountTokenId?: string;
 };
 
 export type ModelChannel = {
@@ -35,7 +41,6 @@ export type ModelChannel = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     models: ChannelModel[];
-    videoAccountTokenId?: string;
 };
 
 export type AiConfig = {
@@ -70,6 +75,14 @@ export type AiConfig = {
 };
 
 export type PlatformModelStatus = "loading" | "ready" | "empty" | "error";
+
+/**
+ * An AiConfig pinned to one model's channel. `videoAccountTokenId` is present
+ * only for models served by a dedicated video account, and it is what the
+ * caller forwards as X-Video-Creation-Token-Id so the gateway can pick the
+ * matching upstream credential without ever exposing it to the browser.
+ */
+export type ModelRequestConfig = AiConfig & { videoAccountTokenId?: string };
 
 export type WebdavSyncConfig = {
     url: string;
@@ -376,7 +389,8 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
         const video = typeof item === "string" ? undefined : item.video;
-        result.push({ name, capability, script, video });
+        const videoAccountTokenId = typeof item === "string" ? undefined : item.videoAccountTokenId?.trim() || undefined;
+        result.push({ name, capability, script, video, videoAccountTokenId });
     }
     return result;
 }
@@ -390,7 +404,6 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiKey: channel?.apiKey || "",
         apiFormat,
         models: normalizeChannelModels(channel?.models),
-        videoAccountTokenId: channel?.videoAccountTokenId?.trim() || undefined,
     };
 }
 
@@ -457,15 +470,17 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     );
 }
 
-export function resolveModelRequestConfig(config: AiConfig, value: string) {
+export function resolveModelRequestConfig(config: AiConfig, value: string): ModelRequestConfig {
     const channel = resolveModelChannel(config, value);
+    const model = modelOptionName(value || config.model);
     return {
         ...config,
-        model: modelOptionName(value || config.model),
+        model,
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
-        videoAccountTokenId: channel.videoAccountTokenId,
+        // The account selector belongs to the resolved model, not the channel.
+        videoAccountTokenId: channel.models.find((item) => item.name === model)?.videoAccountTokenId,
     };
 }
 

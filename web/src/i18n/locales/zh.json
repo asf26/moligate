@@ -140,6 +140,7 @@
     "7d Avg Latency (MS)": "7 天平均延迟（MS）",
     "80,443,8080": "80,443,8080",
     "A billing multiplier. Lower ratios mean lower API call costs.": "计费乘数，倍率越低，API 调用费用越低。",
+    "A dedicated account authorizes groups, not people: only an API key that selected one of these groups can reach it.": "独立账号授权的是分组而非个人：只有选择了其中任一分组的 API 密钥才能调用该账号。",
     "A focused home for keys, balance, routing, and service health.": "集中展示密钥、余额、路由和服务健康状态。",
     "A multi-model AI gateway built for developers": "为开发者打造的多模型 AI 网关",
     "A multi-model API gateway and proxy available in China. One key connects Claude and GPT model families, ready in five minutes.": "面向中国用户的多模型 API 网关与代理。一把密钥接入 Claude 和 GPT 模型，五分钟即可开始使用。",

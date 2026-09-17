@@ -269,6 +269,11 @@ export function VideoAccountDialog(props: VideoAccountDialogProps) {
                 placeholder={t('Groups (comma-separated)')}
                 autoComplete='off'
               />
+              <FieldDescription>
+                {t(
+                  'A dedicated account authorizes groups, not people: only an API key that selected one of these groups can reach it.'
+                )}
+              </FieldDescription>
             </Field>
 
             <Field>

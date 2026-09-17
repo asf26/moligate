@@ -27,17 +27,33 @@ vi.mock("@/services/image-storage", () => ({
     imageToDataUrl: vi.fn(async (image: { dataUrl: string }) => image.dataUrl),
 }));
 
-vi.mock("@/stores/use-config-store", () => ({
-    boolConfig: vi.fn(),
-    buildApiUrl: (baseUrl: string, path: string) => `${baseUrl}${path}`,
-    modelOptionName: (model: string) => model.split("::").at(-1) || model,
-    resolveModelChannel: (config: AiConfig, value: string) => {
+vi.mock("@/stores/use-config-store", () => {
+    const channelFor = (config: AiConfig, value: string) => {
         const [channelId, modelName] = value.includes("::") ? value.split("::") : ["", value];
-        return config.channels?.find((channel) => channel.id === channelId || channel.models.some((model) => model.name === modelName)) || { videoAccountTokenId: undefined };
-    },
-    resolveModelRequestConfig: (config: AiConfig) => config,
-    resolveModelScript: () => "",
-}));
+        return config.channels?.find((channel) => channel.id === channelId || channel.models.some((model) => model.name === modelName));
+    };
+    const modelNameOf = (value: string) => value.split("::").at(-1) || value;
+    return {
+        boolConfig: vi.fn(),
+        buildApiUrl: (baseUrl: string, path: string) => `${baseUrl}${path}`,
+        modelOptionName: modelNameOf,
+        resolveModelChannel: (config: AiConfig, value: string) => channelFor(config, value) || { id: "default", name: "default", baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: [] },
+        // Mirrors the real resolver: the account selector belongs to the model.
+        resolveModelRequestConfig: (config: AiConfig, value: string) => {
+            const channel = channelFor(config, value);
+            const model = modelNameOf(value);
+            return {
+                ...config,
+                model,
+                baseUrl: channel?.baseUrl || config.baseUrl,
+                apiKey: channel?.apiKey || config.apiKey,
+                apiFormat: channel?.apiFormat || config.apiFormat,
+                videoAccountTokenId: channel?.models.find((item) => item.name === model)?.videoAccountTokenId,
+            };
+        },
+        resolveModelScript: () => "",
+    };
+});
 
 vi.mock("../model-plugin", () => ({ runModelPlugin: vi.fn() }));
 
@@ -107,13 +123,13 @@ describe("requestVideoGeneration", () => {
         expect(createCall[2]).toEqual(expect.objectContaining({ timeout: 90_000 }));
     });
 
-    it("uses the dedicated CTMOAI account selector for media upload, creation, and polling", async () => {
+    it("routes a dedicated account model through the key itself and its per-model selector", async () => {
         vi.mocked(axios.post)
             .mockResolvedValueOnce({ data: { url: "https://media.example/reference.png" } })
             .mockResolvedValueOnce({ data: { id: "video_123" } });
         const config = {
             baseUrl: "https://gateway.example/v1",
-            apiKey: "dashboard-token",
+            apiKey: "sk-canvas-key",
             apiFormat: "openai",
             model: "vca::minimax-h3-01",
             videoModel: "",
@@ -122,15 +138,17 @@ describe("requestVideoGeneration", () => {
             channels: [
                 {
                     id: "vca",
-                    name: "CTMOAI",
+                    name: "视频h3 key · 视频-h3",
                     baseUrl: "https://gateway.example/v1",
-                    apiKey: "dashboard-token",
+                    // The browser only ever holds the caller's own key; the
+                    // upstream CTMOAI credential stays on the server.
+                    apiKey: "sk-canvas-key",
                     apiFormat: "openai",
-                    videoAccountTokenId: "vca_account",
                     models: [
                         {
                             name: "minimax-h3-01",
                             capability: "video",
+                            videoAccountTokenId: "vca_account",
                             video: { durationsSeconds: [6, 10], ratios: ["16:9"] },
                         },
                     ],
@@ -142,7 +160,7 @@ describe("requestVideoGeneration", () => {
 
         const uploadCall = vi.mocked(axios.post).mock.calls[0];
         expect(uploadCall[0]).toBe(`${window.location.origin}/api/sd-media/upload`);
-        expect(uploadCall[2]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer dashboard-token", "X-Video-Creation-Token-Id": "vca_account" }) }));
+        expect(uploadCall[2]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer sk-canvas-key", "X-Video-Creation-Token-Id": "vca_account" }) }));
         expect((uploadCall[1] as FormData).get("type")).toBe("images");
 
         const createCall = vi.mocked(axios.post).mock.calls[1];
@@ -154,10 +172,44 @@ describe("requestVideoGeneration", () => {
             aspect_ratio: "16:9",
             images: ["https://media.example/reference.png"],
         });
-        expect(createCall[2]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ "X-Video-Creation-Token-Id": "vca_account" }) }));
+        expect(createCall[2]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer sk-canvas-key", "X-Video-Creation-Token-Id": "vca_account" }) }));
 
         const pollCall = vi.mocked(axios.get).mock.calls[0];
         expect(pollCall[0]).toBe("https://gateway.example/v1/videos/video_123");
+        expect(pollCall[1]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer sk-canvas-key", "X-Video-Creation-Token-Id": "vca_account" }) }));
+    });
+
+    it("keeps polling the account that created the task after the selection changes", async () => {
+        const config = {
+            baseUrl: "https://gateway.example/v1",
+            apiKey: "sk-canvas-key",
+            apiFormat: "openai",
+            model: "vca::minimax-h3-01",
+            videoModel: "",
+            videoSeconds: "6",
+            size: "16:9",
+            channels: [
+                {
+                    id: "vca",
+                    name: "视频h3 key · 视频-h3",
+                    baseUrl: "https://gateway.example/v1",
+                    apiKey: "sk-canvas-key",
+                    apiFormat: "openai",
+                    models: [{ name: "minimax-h3-01", capability: "video", videoAccountTokenId: "vca_account", video: { durationsSeconds: [6, 10] } }],
+                },
+            ],
+        } as AiConfig;
+        vi.mocked(axios.post)
+            .mockResolvedValueOnce({ data: { url: "https://media.example/reference.png" } })
+            .mockImplementationOnce(async () => {
+                // The user switches to another key while the job is in flight.
+                config.channels = [];
+                return { data: { id: "video_123" } };
+            });
+
+        await requestVideoGeneration(config, "animate this image", [{ id: "reference", name: "reference.png", type: "image/png", dataUrl: "data:image/png;base64,cmVmZXJlbmNl" }]);
+
+        const pollCall = vi.mocked(axios.get).mock.calls[0];
         expect(pollCall[1]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ "X-Video-Creation-Token-Id": "vca_account" }) }));
     });
 });

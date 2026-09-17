@@ -120,20 +120,38 @@ func (account *VideoAccount) GroupList() []string {
 	return result
 }
 
-func (account *VideoAccount) MatchesGroup(group string) bool {
-	group = strings.TrimSpace(group)
-	if group == "" || strings.EqualFold(group, "auto") {
-		return true
+// MatchesGroups reports whether a request routed under any of groups may use
+// this account. Groups is an authorization list rather than an identity: the
+// account is usable when the routing groups intersect it, or when it lists the
+// all/* wildcard. An empty caller set matches nothing, so an unresolved caller
+// never inherits every account.
+func (account *VideoAccount) MatchesGroups(groups []string) bool {
+	if account == nil {
+		return false
 	}
-	for _, candidate := range account.GroupList() {
-		if strings.EqualFold(candidate, "all") || candidate == "*" {
+	candidates := account.GroupList()
+	for _, candidate := range candidates {
+		if isWildcardVideoAccountGroup(candidate) {
 			return true
 		}
-		if strings.EqualFold(candidate, group) {
-			return true
+	}
+	for _, candidate := range candidates {
+		for _, group := range groups {
+			group = strings.TrimSpace(group)
+			if group == "" {
+				continue
+			}
+			if strings.EqualFold(candidate, group) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func isWildcardVideoAccountGroup(group string) bool {
+	group = strings.TrimSpace(group)
+	return strings.EqualFold(group, "all") || group == "*"
 }
 
 func (account *VideoAccount) ModelCatalog() []VideoModel {
@@ -303,27 +321,29 @@ func GetVideoAccountByPublicKey(key string) (*VideoAccount, error) {
 	return &account, nil
 }
 
-func ListEnabledVideoAccounts(group string) ([]*VideoAccount, error) {
+// ListUsableVideoAccounts returns every enabled account that a request routed
+// under the given group set may use, ordered by id.
+func ListUsableVideoAccounts(groups []string) ([]*VideoAccount, error) {
 	var accounts []*VideoAccount
 	if err := DB.Where("status = ?", VideoAccountStatusEnabled).Order("id asc").Find(&accounts).Error; err != nil {
 		return nil, err
 	}
 	result := make([]*VideoAccount, 0, len(accounts))
 	for _, account := range accounts {
-		if account.MatchesGroup(group) {
+		if account.MatchesGroups(groups) {
 			result = append(result, account)
 		}
 	}
 	return result, nil
 }
 
-func FindVideoAccountForModel(modelName, group, publicKey string) (*VideoAccount, error) {
+func FindVideoAccountForModel(modelName string, groups []string, publicKey string) (*VideoAccount, error) {
 	if strings.TrimSpace(publicKey) != "" {
 		account, err := GetVideoAccountByPublicKey(publicKey)
 		if err != nil {
 			return nil, err
 		}
-		if !account.IsEnabled() || !account.MatchesGroup(group) {
+		if !account.IsEnabled() || !account.MatchesGroups(groups) {
 			return nil, errors.New("video account is unavailable for this group")
 		}
 		item, ok := account.FindModel(modelName)
@@ -335,7 +355,7 @@ func FindVideoAccountForModel(modelName, group, publicKey string) (*VideoAccount
 		}
 		return account, nil
 	}
-	accounts, err := ListEnabledVideoAccounts(group)
+	accounts, err := ListUsableVideoAccounts(groups)
 	if err != nil {
 		return nil, err
 	}
@@ -347,12 +367,12 @@ func FindVideoAccountForModel(modelName, group, publicKey string) (*VideoAccount
 	return nil, fmt.Errorf("no enabled video account supports model %q", modelName)
 }
 
-func FindVideoAccountForModelFromPublicKey(publicKey, group string) (*VideoAccount, error) {
+func FindVideoAccountForModelFromPublicKey(publicKey string, groups []string) (*VideoAccount, error) {
 	account, err := GetVideoAccountByPublicKey(publicKey)
 	if err != nil {
 		return nil, err
 	}
-	if !account.IsEnabled() || !account.MatchesGroup(group) {
+	if !account.IsEnabled() || !account.MatchesGroups(groups) {
 		return nil, errors.New("video account is unavailable for this group")
 	}
 	return account, nil

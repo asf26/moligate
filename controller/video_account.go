@@ -102,19 +102,6 @@ func parseVideoAccountID(c *gin.Context, bodyID int) (int, bool) {
 	return bodyID, true
 }
 
-func getVideoAccountUserGroup(c *gin.Context) string {
-	if group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup); group != "" {
-		return group
-	}
-	if group := common.GetContextKeyString(c, constant.ContextKeyUserGroup); group != "" {
-		return group
-	}
-	if group := c.GetString("group"); group != "" {
-		return group
-	}
-	return "default"
-}
-
 // GetVideoAccounts lists the dedicated CTMOAI accounts for administrators.
 // API keys are never part of the response; PublicView emits only a mask.
 func GetVideoAccounts(c *gin.Context) {
@@ -305,7 +292,7 @@ func SyncVideoAccount(c *gin.Context) {
 // nesting it inside the usual ApiSuccess data object) because the upstream UI
 // reads e.data.data and e.data.private_groups.
 func GetVideoCreationCatalog(c *gin.Context) {
-	catalog, err := service.BuildVideoCreationCatalog(getVideoAccountUserGroup(c))
+	catalog, err := service.BuildVideoCreationCatalog(service.VideoAccountRequestGroups(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -327,7 +314,7 @@ func GetVideoCreationPrivateGroupModels(c *gin.Context) {
 		common.ApiErrorMsg(c, "缺少视频账号 token_id")
 		return
 	}
-	models, err := service.GetVideoAccountModelsForGroup(getVideoAccountUserGroup(c), key)
+	models, err := service.GetVideoAccountModelsForGroup(service.VideoAccountRequestGroups(c), key)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			common.ApiErrorMsg(c, "视频账号不存在")

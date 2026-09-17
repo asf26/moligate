@@ -5,7 +5,7 @@ import i18n from "@/i18n";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildApiUrl, modelOptionName, resolveModelChannel, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, buildApiUrl, modelOptionName, resolveModelChannel, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelRequestConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 
@@ -17,7 +17,7 @@ const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiE
 const miniMaxH3PollIntervalMs = 10_000;
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "plugin"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "plugin"; model: string; videoAccountTokenId?: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 /** Results for scripted (plugin) video models, which run their own create+poll in one shot at task creation. */
@@ -118,10 +118,15 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     throw new Error(apiText("noPlayableVideo"));
 }
 
-async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+async function createOpenAIVideoTask(config: ModelRequestConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
     const modelName = modelOptionName(model);
-    const videoAccountTokenId = resolveModelChannel(config, model).videoAccountTokenId;
-    if (videoAccountTokenId) return createVideoAccountTask(config, model, modelName, prompt, references, videoAccountTokenId, options);
+    // The account selector is resolved per model, so a key that exposes models
+    // from several accounts routes each one to its own upstream credential.
+    const videoAccountTokenId = config.videoAccountTokenId?.trim() || "";
+    if (videoAccountTokenId) {
+        const task = await createVideoAccountTask(config, model, modelName, prompt, references, videoAccountTokenId, options);
+        return { ...task, videoAccountTokenId };
+    }
     if (isStableVideoModel(modelName)) return createStableVideoTask(config, model, modelName, prompt, references, options);
 
     const body = new FormData();
@@ -238,7 +243,9 @@ async function createStableVideoTask(config: AiConfig, model: string, modelName:
 
 async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     try {
-        const tokenId = resolveModelChannel(config, task.model).videoAccountTokenId;
+        // The selector is carried by the task: polling must use the account that
+        // created the job, even if the user switched models in the meantime.
+        const tokenId = task.videoAccountTokenId;
         const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(aiApiUrl(config, `/videos/${task.id}`), { headers: aiHeaders(config, undefined, tokenId), signal: options?.signal })).data);
         const url = videoResultUrl(video);
         if (url) return { status: "completed", result: await videoResultFromUrl(url, options) };

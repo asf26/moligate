@@ -140,6 +140,7 @@
     "7d Avg Latency (MS)": "Độ trễ TB 7 ngày (ms)",
     "80,443,8080": "80,443,8080",
     "A billing multiplier. Lower ratios mean lower API call costs.": "Hệ số tính phí. Tỷ lệ càng thấp thì chi phí gọi API càng thấp.",
+    "A dedicated account authorizes groups, not people: only an API key that selected one of these groups can reach it.": "A dedicated account authorizes groups, not people: only an API key that selected one of these groups can reach it.",
     "A focused home for keys, balance, routing, and service health.": "Trang tổng quan tập trung cho khóa, số dư, định tuyến và trạng thái dịch vụ.",
     "A multi-model AI gateway built for developers": "Cổng AI đa mô hình dành cho nhà phát triển",
     "A multi-model API gateway and proxy available in China. One key connects Claude and GPT model families, ready in five minutes.": "Cổng và proxy API đa mô hình dùng được tại Trung Quốc. Một khóa kết nối Claude và GPT, sẵn sàng trong năm phút.",

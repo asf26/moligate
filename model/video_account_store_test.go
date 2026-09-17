@@ -50,10 +50,17 @@ func TestFindVideoAccountForModelHonorsOpaqueKeyAndGroup(t *testing.T) {
 	require.NoError(t, account.SetModelCatalog([]VideoModel{{ID: "seedance-1", Available: true}}))
 	require.NoError(t, db.Create(account).Error)
 
-	selected, err := FindVideoAccountForModel("seedance-1", "vip", "vca_test")
+	selected, err := FindVideoAccountForModel("seedance-1", []string{"vip"}, "vca_test")
 	require.NoError(t, err)
 	assert.Equal(t, account.Id, selected.Id)
-	_, err = FindVideoAccountForModel("seedance-1", "default", "vca_test")
+	// An account authorizes groups, so the caller resolves it whenever the
+	// group set it presents contains one of them.
+	selected, err = FindVideoAccountForModel("seedance-1", []string{"default", "vip"}, "vca_test")
+	require.NoError(t, err)
+	assert.Equal(t, account.Id, selected.Id)
+	_, err = FindVideoAccountForModel("seedance-1", []string{"default"}, "vca_test")
+	assert.Error(t, err)
+	_, err = FindVideoAccountForModel("seedance-1", nil, "vca_test")
 	assert.Error(t, err)
 }
 
@@ -62,8 +69,39 @@ func TestFindVideoAccountForModelRejectsUnavailableSnapshot(t *testing.T) {
 	account := &VideoAccount{Name: "ctmoai", ApiKey: "secret", PublicKey: "vca_unavailable", Groups: "default", Status: VideoAccountStatusEnabled}
 	require.NoError(t, account.SetModelCatalog([]VideoModel{{ID: "seedance-1", Available: false}}))
 	require.NoError(t, db.Create(account).Error)
-	_, err := FindVideoAccountForModel("seedance-1", "default", "vca_unavailable")
+	_, err := FindVideoAccountForModel("seedance-1", []string{"default"}, "vca_unavailable")
 	assert.ErrorContains(t, err, "currently unavailable")
+}
+
+func TestListUsableVideoAccountsMatchesRequestedGroupSet(t *testing.T) {
+	db := setupVideoAccountStoreTestDB(t)
+	gated := &VideoAccount{Name: "h3", ApiKey: "secret", PublicKey: "vca_h3", Groups: "视频-h3", Status: VideoAccountStatusEnabled}
+	shared := &VideoAccount{Name: "shared", ApiKey: "secret", PublicKey: "vca_shared", Groups: "default", Status: VideoAccountStatusEnabled}
+	wildcard := &VideoAccount{Name: "all", ApiKey: "secret", PublicKey: "vca_all", Groups: "all", Status: VideoAccountStatusEnabled}
+	disabled := &VideoAccount{Name: "off", ApiKey: "secret", PublicKey: "vca_off", Groups: "*", Status: VideoAccountStatusDisabled}
+	for _, account := range []*VideoAccount{gated, shared, wildcard, disabled} {
+		require.NoError(t, db.Create(account).Error)
+	}
+
+	accounts, err := ListUsableVideoAccounts([]string{"default", "视频-h3"})
+	require.NoError(t, err)
+	assert.Equal(t, []int{gated.Id, shared.Id, wildcard.Id}, accountIDs(accounts))
+
+	accounts, err = ListUsableVideoAccounts([]string{"default"})
+	require.NoError(t, err)
+	assert.Equal(t, []int{shared.Id, wildcard.Id}, accountIDs(accounts))
+
+	accounts, err = ListUsableVideoAccounts(nil)
+	require.NoError(t, err)
+	assert.Equal(t, []int{wildcard.Id}, accountIDs(accounts))
+}
+
+func accountIDs(accounts []*VideoAccount) []int {
+	ids := make([]int, 0, len(accounts))
+	for _, account := range accounts {
+		ids = append(ids, account.Id)
+	}
+	return ids
 }
 
 func TestVideoModelEffectivePricingUsesBillingOverride(t *testing.T) {

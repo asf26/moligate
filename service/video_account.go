@@ -12,7 +12,10 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -462,8 +465,32 @@ func SyncVideoAccountModels(ctx context.Context, id int) (*model.VideoAccount, e
 	return account, nil
 }
 
-func BuildVideoCreationCatalog(userGroup string) (*VideoCreationCatalog, error) {
-	accounts, err := model.ListEnabledVideoAccounts(userGroup)
+// VideoAccountRequestGroups resolves the group set a dedicated video account is
+// authorized against for the current request. It is the API key's group when
+// the caller presents a key - including the concrete groups a key set to "auto"
+// expands to - and the user's own group for a dashboard session.
+//
+// Catalog and relay must both go through this helper: if they disagreed, the
+// workspace would offer a model that the relay then refuses.
+func VideoAccountRequestGroups(c *gin.Context) []string {
+	usingGroup := strings.TrimSpace(common.GetContextKeyString(c, constant.ContextKeyUsingGroup))
+	if usingGroup == "auto" {
+		return GetRequestAutoGroups(c, common.GetContextKeyString(c, constant.ContextKeyUserGroup))
+	}
+	if usingGroup != "" {
+		return []string{usingGroup}
+	}
+	if userGroup := strings.TrimSpace(common.GetContextKeyString(c, constant.ContextKeyUserGroup)); userGroup != "" {
+		return []string{userGroup}
+	}
+	return nil
+}
+
+// BuildVideoCreationCatalog lists the dedicated accounts the caller may route
+// to. The groups come from the request context (the key's selected groups), so
+// a key bound to a video group sees exactly the accounts authorized for it.
+func BuildVideoCreationCatalog(groups []string) (*VideoCreationCatalog, error) {
+	accounts, err := model.ListUsableVideoAccounts(groups)
 	if err != nil {
 		return nil, err
 	}
@@ -474,10 +501,10 @@ func BuildVideoCreationCatalog(userGroup string) (*VideoCreationCatalog, error) 
 	for _, account := range accounts {
 		models := videoCreationModels(account)
 		catalog.Models = append(catalog.Models, models...)
-		groups := account.GroupList()
+		authorized := account.GroupList()
 		group := ""
-		if len(groups) > 0 {
-			group = groups[0]
+		if len(authorized) > 0 {
+			group = authorized[0]
 		}
 		catalog.PrivateGroups = append(catalog.PrivateGroups, VideoPrivateGroup{
 			Key:        account.OpaqueKey(),
@@ -489,12 +516,16 @@ func BuildVideoCreationCatalog(userGroup string) (*VideoCreationCatalog, error) 
 	return catalog, nil
 }
 
-func GetVideoAccountModelsForGroup(userGroup, key string) ([]model.VideoModel, error) {
+// GetVideoAccountModelsForGroup returns the models of one dedicated account,
+// but only when the requesting key's group set covers the account. The set must
+// come from the request context, never from the caller's body, so a key cannot
+// widen its own access.
+func GetVideoAccountModelsForGroup(groups []string, key string) ([]model.VideoModel, error) {
 	account, err := model.GetVideoAccountByPublicKey(key)
 	if err != nil {
 		return nil, err
 	}
-	if !account.IsEnabled() || !account.MatchesGroup(userGroup) {
+	if !account.IsEnabled() || !account.MatchesGroups(groups) {
 		return nil, errors.New("video account is unavailable for this group")
 	}
 	return videoCreationModels(account), nil

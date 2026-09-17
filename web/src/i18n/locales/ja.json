@@ -140,6 +140,7 @@
     "7d Avg Latency (MS)": "7日平均レイテンシ (MS)",
     "80,443,8080": "80,443,8080",
     "A billing multiplier. Lower ratios mean lower API call costs.": "課金倍率です。倍率が低いほど API 呼び出しコストは低くなります。",
+    "A dedicated account authorizes groups, not people: only an API key that selected one of these groups can reach it.": "A dedicated account authorizes groups, not people: only an API key that selected one of these groups can reach it.",
     "A focused home for keys, balance, routing, and service health.": "キー、残高、ルーティング、サービス状態を集約したホームです。",
     "A multi-model AI gateway built for developers": "開発者のためのマルチモデル AI ゲートウェイ",
     "A multi-model API gateway and proxy available in China. One key connects Claude and GPT model families, ready in five minutes.": "中国で使えるマルチモデル API ゲートウェイです。1つのキーで Claude と GPT に接続し、5分で利用を開始できます。",

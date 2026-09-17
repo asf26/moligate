@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
-import { loadPlatformModelChannels, loadVideoAccountChannels, type PlatformCanvasGroup } from "@/services/platform-models";
+import { loadPlatformModelChannels, type PlatformCanvasGroup } from "@/services/platform-models";
 import { useConfigStore, type ModelChannel } from "@/stores/use-config-store";
 
 const CANVAS_TOKEN_STORAGE_KEY = "new-api:canvas-dashboard-access-token";
@@ -109,16 +109,8 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
             } catch (error) {
                 platformWarning = error instanceof Error ? error.message : "";
             }
-            let videoChannels: ModelChannel[] = [];
-            let videoWarning = "";
-            try {
-                videoChannels = await loadVideoAccountChannels(token, controller.signal);
-            } catch (error) {
-                videoWarning = error instanceof Error ? error.message : "";
-            }
-            const warning = [platformWarning, videoWarning].filter(Boolean).join("; ");
-            if (!platformChannels.length && !videoChannels.length && warning) throw new Error(warning);
-            if (!disposed) applyPlatformChannels([...platformChannels, ...videoChannels], warning);
+            if (!platformChannels.length && platformWarning) throw new Error(platformWarning);
+            if (!disposed) applyPlatformChannels(platformChannels, platformWarning);
         };
 
         void load().catch((error) => {

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 
@@ -127,18 +126,15 @@ func UploadVideoAccountMedia(c *gin.Context) {
 
 func resolveVideoUploadAccount(c *gin.Context, form *multipart.Form) (*model.VideoAccount, error) {
 	publicKey := strings.TrimSpace(c.GetHeader("X-Video-Creation-Token-Id"))
-	group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-	if group == "" {
-		group = common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-	}
+	groups := service.VideoAccountRequestGroups(c)
 	if publicKey != "" {
-		return model.FindVideoAccountForModelFromPublicKey(publicKey, group)
+		return model.FindVideoAccountForModelFromPublicKey(publicKey, groups)
 	}
 	modelName := strings.TrimSpace(firstFormValue(form, "model"))
 	if modelName != "" {
-		return model.FindVideoAccountForModel(modelName, group, "")
+		return model.FindVideoAccountForModel(modelName, groups, "")
 	}
-	accounts, err := model.ListEnabledVideoAccounts(group)
+	accounts, err := model.ListUsableVideoAccounts(groups)
 	if err != nil {
 		return nil, err
 	}

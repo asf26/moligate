@@ -46,8 +46,26 @@ type canvasGroupResponse struct {
 }
 
 type canvasModelResponse struct {
-	Name       string `json:"name"`
-	Capability string `json:"capability"`
+	Name       string                    `json:"name"`
+	Capability string                    `json:"capability"`
+	Video      *canvasVideoModelMetadata `json:"video,omitempty"`
+}
+
+// canvasVideoModelMetadata carries a dedicated video account's catalog entry to
+// the creation workspace. VideoAccountTokenID pins the exact account the model
+// must be routed to, so the browser can submit the request with its own API key
+// while the gateway keeps the upstream credential on the server.
+type canvasVideoModelMetadata struct {
+	VideoAccountTokenID    string   `json:"video_account_token_id"`
+	Group                  string   `json:"group,omitempty"`
+	DurationsSeconds       []int    `json:"durations_seconds,omitempty"`
+	Ratios                 []string `json:"ratios,omitempty"`
+	Sizes                  []string `json:"sizes,omitempty"`
+	MaxImages              int      `json:"max_images"`
+	MaxVideos              int      `json:"max_videos"`
+	MaxAudios              int      `json:"max_audios"`
+	SupportsFirstLastFrame bool     `json:"supports_first_last_frame,omitempty"`
+	PricingMode            string   `json:"pricing_mode,omitempty"`
 }
 
 type canvasConfigResponse struct {
@@ -93,13 +111,10 @@ func GetCanvasConfig(c *gin.Context) {
 		if len(tokenGroups) == 0 {
 			continue
 		}
-		models := canvasModelsForTokenGroups(tokenGroups, token)
-		canvasModels := make([]canvasModelResponse, 0, len(models))
-		for _, modelName := range models {
-			canvasModels = append(canvasModels, canvasModelResponse{
-				Name:       modelName,
-				Capability: canvasModelCapability(modelName),
-			})
+		canvasModels, err := canvasCreationModelsForTokenGroups(tokenGroups, token)
+		if err != nil {
+			common.ApiError(c, err)
+			return
 		}
 		groupNames := make([]string, 0, len(tokenGroups))
 		for _, groupID := range tokenGroups {
@@ -141,6 +156,66 @@ func GetCanvasConfig(c *gin.Context) {
 	})
 }
 
+func canvasVideoMetadata(account *model.VideoAccount, item model.VideoModel) *canvasVideoModelMetadata {
+	pricing := item.EffectivePricing()
+	return &canvasVideoModelMetadata{
+		VideoAccountTokenID:    account.OpaqueKey(),
+		Group:                  item.Group,
+		DurationsSeconds:       item.DurationsSeconds,
+		Ratios:                 item.Ratios,
+		Sizes:                  item.Sizes,
+		MaxImages:              item.MaxImages,
+		MaxVideos:              item.MaxVideos,
+		MaxAudios:              item.MaxAudios,
+		SupportsFirstLastFrame: item.SupportsFirstLastFrame,
+		PricingMode:            pricing.Mode,
+	}
+}
+
+// canvasCreationModelsForTokenGroups lists the creation models one API key may
+// use. It merges both model sources the key can reach - the relay channels of
+// its groups, plus the dedicated video accounts those groups authorize - and
+// applies the key's own model limit to both. Merging them here (rather than
+// exposing video accounts as a separate credential-free entry) is what makes a
+// video request travel through the caller's own key, and sharing one limit
+// check keeps the workspace from offering a model the relay would refuse.
+func canvasCreationModelsForTokenGroups(groups []string, token *model.Token) ([]canvasModelResponse, error) {
+	models := canvasModelsForTokenGroups(groups, token)
+	result := make([]canvasModelResponse, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, modelName := range models {
+		seen[strings.ToLower(modelName)] = struct{}{}
+		result = append(result, canvasModelResponse{
+			Name:       modelName,
+			Capability: canvasModelCapability(modelName),
+		})
+	}
+
+	accounts, err := model.ListUsableVideoAccounts(groups)
+	if err != nil {
+		return nil, err
+	}
+	for _, account := range accounts {
+		for _, item := range account.ModelCatalog() {
+			name := strings.TrimSpace(item.ID)
+			if !item.Available || name == "" || !canvasTokenAllowsModel(token, name) {
+				continue
+			}
+			key := strings.ToLower(name)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			result = append(result, canvasModelResponse{
+				Name:       name,
+				Capability: "video",
+				Video:      canvasVideoMetadata(account, item),
+			})
+		}
+	}
+	return result, nil
+}
+
 func canvasModelCapability(modelName string) string {
 	for _, endpointType := range model.GetModelSupportEndpointTypes(modelName) {
 		switch endpointType {
@@ -180,24 +255,27 @@ func canvasModelsForGroup(group string) []string {
 
 func canvasModelsForTokenGroup(group string, token *model.Token) []string {
 	models := canvasModelsForGroup(group)
-	if token == nil || !token.ModelLimitsEnabled {
-		return models
-	}
-
-	allowed := make(map[string]struct{}, len(token.GetModelLimits()))
-	for _, modelName := range token.GetModelLimits() {
-		name := strings.TrimSpace(modelName)
-		if name != "" {
-			allowed[strings.ToLower(name)] = struct{}{}
-		}
-	}
 	filtered := make([]string, 0, len(models))
 	for _, modelName := range models {
-		if _, ok := allowed[strings.ToLower(modelName)]; ok {
+		if canvasTokenAllowsModel(token, modelName) {
 			filtered = append(filtered, modelName)
 		}
 	}
 	return filtered
+}
+
+// canvasTokenAllowsModel reports whether the key's own model limit permits the
+// model. A key without limits allows everything.
+func canvasTokenAllowsModel(token *model.Token, modelName string) bool {
+	if token == nil || !token.ModelLimitsEnabled {
+		return true
+	}
+	for _, limit := range token.GetModelLimits() {
+		if strings.EqualFold(strings.TrimSpace(limit), strings.TrimSpace(modelName)) {
+			return true
+		}
+	}
+	return false
 }
 
 func canvasModelsForTokenGroups(groups []string, token *model.Token) []string {

@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { loadPlatformModelChannels, loadVideoAccountChannels } from "../platform-models";
+import { loadPlatformModelChannels } from "../platform-models";
 
 describe("loadPlatformModelChannels", () => {
     afterEach(() => vi.unstubAllGlobals());
@@ -78,49 +78,52 @@ describe("loadPlatformModelChannels", () => {
         ]);
     });
 
-    it("loads dedicated video accounts with opaque selectors and catalog constraints", async () => {
-        const fetchMock = vi.fn().mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    data: [
-                        {
-                            id: "minimax-h3-01",
-                            display_name: "MiniMax H3",
-                            private_group_key: "vca_account",
-                            group: "minimax-h3",
-                            available: true,
-                            durations_seconds: [6, 10],
-                            ratios: ["16:9"],
-                            max_images: -1,
-                            pricing: { mode: "per_second" },
-                        },
-                    ],
-                    private_groups: [{ key: "vca_account", name: "CTMOAI 主账号" }],
-                }),
-                { status: 200, headers: { "Content-Type": "application/json" } },
-            ),
-        );
+    it("surfaces a dedicated video account's models from the key's own canvas group", async () => {
+        const fetchMock = vi.fn();
         vi.stubGlobal("fetch", fetchMock);
 
-        const channels = await loadVideoAccountChannels("dashboard-token", new AbortController().signal);
-
-        expect(fetchMock).toHaveBeenCalledWith(
-            "/api/video-creation/catalog",
-            expect.objectContaining({
-                credentials: "include",
-                headers: expect.objectContaining({ Authorization: "Bearer dashboard-token" }),
-            }),
+        const result = await loadPlatformModelChannels(
+            [
+                {
+                    id: "token-95",
+                    name: "视频h3 · 视频-h3",
+                    api_key: "sk-video-h3",
+                    group_id: "视频-h3",
+                    models: [
+                        { name: "gpt-image-2", capability: "image" },
+                        {
+                            name: "minimax-h3-01",
+                            capability: "video",
+                            video: {
+                                video_account_token_id: "vca_account",
+                                group: "minimax-h3",
+                                durations_seconds: [6, 10],
+                                ratios: ["16:9"],
+                                max_images: -1,
+                                pricing_mode: "per_second",
+                            },
+                        },
+                        // Capability metadata without a selector is not a
+                        // dedicated account and must stay a plain model.
+                        { name: "seedance2.0-stable-full-720p", capability: "video", video: { durations_seconds: [5] } },
+                    ],
+                },
+            ],
+            new AbortController().signal,
         );
-        expect(channels).toHaveLength(1);
-        expect(channels[0]).toMatchObject({
-            id: "video-account-vca_account",
-            name: "CTMOAI 主账号",
-            videoAccountTokenId: "vca_account",
-        });
-        expect(channels[0].models[0]).toMatchObject({
+
+        // The gateway already sent the key's models, so no extra /v1/models call.
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(result.channels[0].apiKey).toBe("sk-video-h3");
+        expect(result.channels[0].models[0]).toEqual({ name: "gpt-image-2", capability: "image" });
+        expect(result.channels[0].models[1]).toMatchObject({
             name: "minimax-h3-01",
             capability: "video",
-            video: { durationsSeconds: [6, 10], maxImages: -1, pricingMode: "per_second" },
+            videoAccountTokenId: "vca_account",
+            video: { group: "minimax-h3", durationsSeconds: [6, 10], ratios: ["16:9"], maxImages: -1, pricingMode: "per_second" },
         });
+        expect(result.channels[0].models[2]).toEqual({ name: "seedance2.0-stable-full-720p", capability: "video" });
+        expect(result.channels[0].models[2].videoAccountTokenId).toBeUndefined();
+        expect(result.channels[0].models[2].video).toBeUndefined();
     });
 });

@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaydto "github.com/QuantumNous/new-api/relaykit/dto"
 	relaytypes "github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -41,12 +42,11 @@ func VideoAccountDistribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelName}))
 			return
 		}
-		group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-		if group == "" {
-			group = common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-		}
+		// A dedicated account is authorized per group. The groups in force are
+		// the API key's when the request carries a key, resolved by the same
+		// helper the creation catalog uses so both agree on what is reachable.
 		publicKey := strings.TrimSpace(c.GetHeader("X-Video-Creation-Token-Id"))
-		account, selected, err := selectVideoAccount(modelName, group, publicKey)
+		account, selected, err := selectVideoAccount(modelName, service.VideoAccountRequestGroups(c), publicKey)
 		if err != nil {
 			abortWithOpenAiMessage(c, http.StatusServiceUnavailable, err.Error(), relaytypes.ErrorCodeModelNotFound)
 			return
@@ -68,12 +68,12 @@ func VideoAccountDistribute() func(c *gin.Context) {
 // lookup failure. That distinction is what lets the caller preserve legacy
 // generic-channel behavior without hiding database or explicit-selector
 // errors.
-func selectVideoAccount(modelName, group, publicKey string) (*model.VideoAccount, bool, error) {
+func selectVideoAccount(modelName string, groups []string, publicKey string) (*model.VideoAccount, bool, error) {
 	if publicKey != "" {
-		account, err := model.FindVideoAccountForModel(modelName, group, publicKey)
+		account, err := model.FindVideoAccountForModel(modelName, groups, publicKey)
 		return account, true, err
 	}
-	accounts, err := model.ListEnabledVideoAccounts(group)
+	accounts, err := model.ListUsableVideoAccounts(groups)
 	if err != nil {
 		return nil, false, err
 	}

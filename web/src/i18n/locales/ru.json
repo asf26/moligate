@@ -140,6 +140,7 @@
     "7d Avg Latency (MS)": "Средняя задержка за 7 дн. (мс)",
     "80,443,8080": "80,443,8080",
     "A billing multiplier. Lower ratios mean lower API call costs.": "Множитель тарификации. Чем ниже коэффициент, тем ниже стоимость вызовов API.",
+    "A dedicated account authorizes groups, not people: only an API key that selected one of these groups can reach it.": "A dedicated account authorizes groups, not people: only an API key that selected one of these groups can reach it.",
     "A focused home for keys, balance, routing, and service health.": "Единый экран для ключей, баланса, маршрутов и состояния сервиса.",
     "A multi-model AI gateway built for developers": "Мультимодельный AI-шлюз для разработчиков",
     "A multi-model API gateway and proxy available in China. One key connects Claude and GPT model families, ready in five minutes.": "Мультимодельный API-шлюз и прокси, доступный в Китае. Один ключ подключает Claude и GPT за пять минут.",

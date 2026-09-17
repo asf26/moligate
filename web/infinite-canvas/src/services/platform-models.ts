@@ -1,5 +1,31 @@
 import { createModelChannel, guessCapability, type ChannelModel, type ModelChannel, type VideoModelMetadata } from "@/stores/use-config-store";
 
+/** A model entry as returned by the gateway's canvas config. */
+export type PlatformCanvasModel = {
+    name?: string;
+    capability?: ChannelModel["capability"];
+    /** Present only when the model is served by a dedicated video account. */
+    video?: PlatformVideoMetadata;
+};
+
+/**
+ * Wire shape of the gateway's per-model video capability metadata. The account
+ * selector travels in the same object as the capability fields, so the
+ * workspace can never apply the capabilities of one account to another.
+ */
+export type PlatformVideoMetadata = {
+    video_account_token_id?: string;
+    group?: string;
+    durations_seconds?: number[];
+    ratios?: string[];
+    sizes?: string[];
+    max_images?: number;
+    max_videos?: number;
+    max_audios?: number;
+    supports_first_last_frame?: boolean;
+    pricing_mode?: string;
+};
+
 export type PlatformCanvasGroup = {
     id: string;
     name: string;
@@ -8,26 +34,8 @@ export type PlatformCanvasGroup = {
     key_name?: string;
     group_id?: string;
     group_name?: string;
-    models?: Array<{ name?: string; capability?: ChannelModel["capability"] }>;
+    models?: PlatformCanvasModel[];
 };
-
-type VideoCatalogModel = {
-    id?: string;
-    display_name?: string;
-    group?: string;
-    private_group_key?: string;
-    available?: boolean;
-    durations_seconds?: number[];
-    ratios?: string[];
-    sizes?: string[];
-    max_images?: number;
-    max_videos?: number;
-    max_audios?: number;
-    supports_first_last_frame?: boolean;
-    pricing?: { mode?: string };
-};
-
-type VideoCatalogGroup = { key?: string; name?: string };
 
 type GatewayModel = {
     id?: string;
@@ -69,71 +77,39 @@ export async function loadPlatformModelChannels(groups: PlatformCanvasGroup[], s
     return { channels, warning: failures.join("; ") };
 }
 
-/** Load the dedicated server-side CTMOAI accounts without exposing upstream keys. */
-export async function loadVideoAccountChannels(token: string, signal: AbortSignal): Promise<ModelChannel[]> {
-    const response = await fetch("/api/video-creation/catalog", {
-        credentials: "include",
-        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-        signal,
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const payload = (await response.json()) as {
-        data?: VideoCatalogModel[];
-        models?: VideoCatalogModel[];
-        private_groups?: VideoCatalogGroup[];
-    };
-    const models = Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : [];
-    const groups = Array.isArray(payload.private_groups) ? payload.private_groups : [];
-    const byKey = new Map<string, VideoCatalogModel[]>();
-    for (const item of models) {
-        const key = item.private_group_key?.trim() || groups[0]?.key?.trim() || "";
-        if (!key || !item.id || item.available === false) continue;
-        const list = byKey.get(key) || [];
-        list.push(item);
-        byKey.set(key, list);
-    }
-    return Array.from(byKey.entries()).map(([key, items]) => {
-        const group = groups.find((entry) => entry.key === key);
-        const channelModels: ChannelModel[] = items.map((item) => {
-            const video: VideoModelMetadata = {
-                group: item.group,
-                durationsSeconds: item.durations_seconds,
-                ratios: item.ratios,
-                sizes: item.sizes,
-                maxImages: item.max_images,
-                maxVideos: item.max_videos,
-                maxAudios: item.max_audios,
-                supportsFirstLastFrame: item.supports_first_last_frame,
-                pricingMode: item.pricing?.mode,
-            };
-            return { name: item.id!.trim(), capability: "video", video };
-        });
-        return createModelChannel({
-            id: `video-account-${encodeURIComponent(key)}`,
-            name: group?.name?.trim() || `Video account · ${key}`,
-            baseUrl: platformApiBaseUrl,
-            apiKey: token,
-            apiFormat: "openai",
-            models: channelModels,
-            videoAccountTokenId: key,
-        });
-    });
-}
-
 async function loadPlatformGroup(group: PlatformCanvasGroup, signal: AbortSignal) {
     const models: ChannelModel[] = [];
     const seen = new Set<string>();
-    const addModel = (nameValue: string | undefined, capabilityValue?: ChannelModel["capability"]) => {
-        const name = nameValue?.trim() || "";
+    const addModel = (entry: PlatformCanvasModel) => {
+        const name = entry.name?.trim() || "";
         if (!name || seen.has(name)) return;
-        const capability = capabilityValue || guessCapability(name);
+        const capability = entry.capability || guessCapability(name);
         if (capability !== "image" && capability !== "video") return;
         seen.add(name);
-        models.push({ name, capability });
+        const source = entry.video;
+        const videoAccountTokenId = source?.video_account_token_id?.trim() || "";
+        // A plain gateway model has no dedicated account: it is relayed with the
+        // key alone and needs no video capability metadata.
+        if (!source || !videoAccountTokenId) {
+            models.push({ name, capability });
+            return;
+        }
+        const video: VideoModelMetadata = {
+            group: source.group,
+            durationsSeconds: source.durations_seconds,
+            ratios: source.ratios,
+            sizes: source.sizes,
+            maxImages: source.max_images,
+            maxVideos: source.max_videos,
+            maxAudios: source.max_audios,
+            supportsFirstLastFrame: source.supports_first_last_frame,
+            pricingMode: source.pricing_mode,
+        };
+        models.push({ name, capability, video, videoAccountTokenId });
     };
 
     if (Array.isArray(group.models)) {
-        for (const item of group.models) addModel(item.name, item.capability);
+        for (const item of group.models) addModel(item);
     } else {
         const response = await fetch(`${platformApiBaseUrl}/models`, {
             headers: { Accept: "application/json", Authorization: `Bearer ${group.api_key}` },
@@ -155,7 +131,7 @@ async function loadPlatformGroup(group: PlatformCanvasGroup, signal: AbortSignal
             let capability: ChannelModel["capability"] | undefined;
             if (endpoints.has(imageEndpoint)) capability = "image";
             if (endpoints.has(videoEndpoint)) capability = "video";
-            addModel(name, capability);
+            addModel({ name, capability });
         }
     }
 
