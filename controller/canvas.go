@@ -56,16 +56,27 @@ type canvasModelResponse struct {
 // must be routed to, so the browser can submit the request with its own API key
 // while the gateway keeps the upstream credential on the server.
 type canvasVideoModelMetadata struct {
-	VideoAccountTokenID    string   `json:"video_account_token_id"`
-	Group                  string   `json:"group,omitempty"`
-	DurationsSeconds       []int    `json:"durations_seconds,omitempty"`
-	Ratios                 []string `json:"ratios,omitempty"`
-	Sizes                  []string `json:"sizes,omitempty"`
-	MaxImages              int      `json:"max_images"`
-	MaxVideos              int      `json:"max_videos"`
-	MaxAudios              int      `json:"max_audios"`
-	SupportsFirstLastFrame bool     `json:"supports_first_last_frame,omitempty"`
-	PricingMode            string   `json:"pricing_mode,omitempty"`
+	VideoAccountTokenID string   `json:"video_account_token_id"`
+	Group               string   `json:"group,omitempty"`
+	Resolution          string   `json:"resolution,omitempty"`
+	DurationsSeconds    []int    `json:"durations_seconds,omitempty"`
+	Ratios              []string `json:"ratios,omitempty"`
+	Sizes               []string `json:"sizes,omitempty"`
+	// RatioSizes tells the workspace which size value to submit for each
+	// supported ratio. It is the only way the browser can send a legal size,
+	// because the models endpoint publishes ratios and resolution but not the
+	// mapping between them.
+	RatioSizes         map[string]string `json:"ratio_sizes,omitempty"`
+	MaxImages          int               `json:"max_images"`
+	MaxVideos          int               `json:"max_videos"`
+	MaxAudios          int               `json:"max_audios"`
+	AudioRequiresImage bool              `json:"audio_requires_image,omitempty"`
+	// RequiresImage marks models that have no text-to-video workflow, so the
+	// workspace can require a reference image instead of letting the request
+	// fail after it reaches the gateway.
+	RequiresImage          bool   `json:"requires_image,omitempty"`
+	SupportsFirstLastFrame bool   `json:"supports_first_last_frame,omitempty"`
+	PricingMode            string `json:"pricing_mode,omitempty"`
 }
 
 type canvasConfigResponse struct {
@@ -161,12 +172,16 @@ func canvasVideoMetadata(account *model.VideoAccount, item model.VideoModel) *ca
 	return &canvasVideoModelMetadata{
 		VideoAccountTokenID:    account.OpaqueKey(),
 		Group:                  item.Group,
+		Resolution:             item.Resolution,
 		DurationsSeconds:       item.DurationsSeconds,
 		Ratios:                 item.Ratios,
 		Sizes:                  item.Sizes,
+		RatioSizes:             item.RatioSizes(),
 		MaxImages:              item.MaxImages,
 		MaxVideos:              item.MaxVideos,
 		MaxAudios:              item.MaxAudios,
+		AudioRequiresImage:     item.AudioRequiresImage,
+		RequiresImage:          item.RequiresReferenceImage(),
 		SupportsFirstLastFrame: item.SupportsFirstLastFrame,
 		PricingMode:            pricing.Mode,
 	}

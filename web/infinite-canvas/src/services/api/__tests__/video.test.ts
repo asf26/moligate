@@ -52,6 +52,11 @@ vi.mock("@/stores/use-config-store", () => {
             };
         },
         resolveModelScript: () => "",
+        // Mirrors the real resolver: capabilities belong to the resolved model.
+        resolveModelVideoMetadata: (config: AiConfig, value: string) => {
+            const model = modelNameOf(value);
+            return channelFor(config, value)?.models.find((item) => item.name === model)?.video;
+        },
     };
 });
 
@@ -59,7 +64,10 @@ vi.mock("../model-plugin", () => ({ runModelPlugin: vi.fn() }));
 
 describe("requestVideoGeneration", () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        // Reset, not just clear: a queued mockResolvedValueOnce would otherwise
+        // leak into the next test and answer the wrong request.
+        vi.mocked(axios.post).mockReset();
+        vi.mocked(axios.get).mockReset();
         vi.mocked(axios.post).mockResolvedValue({ data: { id: "video_123" } });
         vi.mocked(axios.get)
             .mockResolvedValueOnce({ data: { id: "video_123", status: "completed" } })
@@ -179,6 +187,102 @@ describe("requestVideoGeneration", () => {
         expect(pollCall[1]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer sk-canvas-key", "X-Video-Creation-Token-Id": "vca_account" }) }));
     });
 
+    it("submits the size the model maps to the selected ratio", async () => {
+        vi.mocked(axios.post)
+            .mockResolvedValueOnce({ data: { url: "https://media.example/reference.png" } })
+            .mockResolvedValueOnce({ data: { id: "video_123" } });
+        const config = dedicatedAccountConfig({
+            name: "minimax-h3-original-768p",
+            videoAccountTokenId: "vca_account",
+            video: { resolution: "768p", durationsSeconds: [4, 10], ratios: ["16:9", "9:16"], ratioSizes: { "16:9": "1376x768", "9:16": "768x1376" }, maxImages: 9 },
+        });
+
+        await requestVideoGeneration({ ...config, size: "9:16" } as AiConfig, "animate", [referenceImage()]);
+
+        expect(vi.mocked(axios.post).mock.calls[1][1]).toEqual({
+            model: "minimax-h3-original-768p",
+            prompt: "animate",
+            seconds: 4,
+            aspect_ratio: "9:16",
+            size: "768x1376",
+            images: ["https://media.example/reference.png"],
+        });
+    });
+
+    it("sends workflow_id=fl2v and at most two images in first/last frame mode", async () => {
+        // Three references are supplied, but the mode only uploads the two frames.
+        vi.mocked(axios.post)
+            .mockResolvedValueOnce({ data: { url: "https://media.example/frame.png" } })
+            .mockResolvedValueOnce({ data: { url: "https://media.example/frame.png" } })
+            .mockResolvedValueOnce({ data: { id: "video_123" } });
+        const config = dedicatedAccountConfig({
+            name: "minimax-h3-original-768p",
+            videoAccountTokenId: "vca_account",
+            video: { resolution: "768p", durationsSeconds: [4], ratios: ["16:9"], ratioSizes: { "16:9": "1376x768" }, maxImages: 9, supportsFirstLastFrame: true },
+        });
+
+        await requestVideoGeneration({ ...config, size: "16:9", videoOperationMode: "first_last_frame" } as AiConfig, "transition", [referenceImage(), referenceImage(), referenceImage()]);
+
+        const body = vi.mocked(axios.post).mock.calls.at(-1)?.[1] as Record<string, unknown>;
+        expect(body.workflow_id).toBe("fl2v");
+        expect((body.images as string[]).length).toBe(2);
+        expect(body.reference_videos).toBeUndefined();
+    });
+
+    it("uploads and forwards reference videos and audios when the model allows them", async () => {
+        vi.mocked(axios.post)
+            .mockResolvedValueOnce({ data: { images: ["https://media.example/image.png"] } })
+            .mockResolvedValueOnce({ data: { videos: ["https://media.example/clip.mp4"] } })
+            .mockResolvedValueOnce({ data: { audios: ["https://media.example/track.mp3"] } })
+            .mockResolvedValueOnce({ data: { id: "video_123" } });
+        const config = dedicatedAccountConfig({
+            name: "sd-2-vip-480",
+            videoAccountTokenId: "vca_account",
+            video: { resolution: "480p", durationsSeconds: [5, 6], ratios: ["9:16", "16:9"], maxImages: 9, maxVideos: 3, maxAudios: 3 },
+        });
+
+        await requestVideoGeneration({ ...config, size: "16:9" } as AiConfig, "blend these", [referenceImage()], {
+            referenceVideos: [{ id: "v1", name: "clip.mp4", kind: "video", mimeType: "video/mp4", url: "data:video/mp4;base64,Y2xpcA==" }],
+            referenceAudios: [{ id: "a1", name: "track.mp3", kind: "audio", mimeType: "audio/mpeg", url: "data:audio/mpeg;base64,dHJhY2s=" }],
+        });
+
+        const uploads = vi.mocked(axios.post).mock.calls.filter((call) => call[1] instanceof FormData).map((call) => (call[1] as FormData).get("type"));
+        expect(uploads).toEqual(["images", "videos", "audios"]);
+
+        const body = vi.mocked(axios.post).mock.calls.at(-1)?.[1] as Record<string, unknown>;
+        expect(body).toEqual({
+            model: "sd-2-vip-480",
+            prompt: "blend these",
+            seconds: 6,
+            aspect_ratio: "16:9",
+            images: ["https://media.example/image.png"],
+            reference_videos: ["https://media.example/clip.mp4"],
+            reference_audios: ["https://media.example/track.mp3"],
+        });
+        // Seedance takes no size and has no first/last frame workflow.
+        expect(body.size).toBeUndefined();
+        expect(body.workflow_id).toBeUndefined();
+    });
+
+    it("omits reference kinds the model does not advertise", async () => {
+        vi.mocked(axios.post)
+            .mockResolvedValueOnce({ data: { images: ["https://media.example/image.png"] } })
+            .mockResolvedValueOnce({ data: { id: "video_123" } });
+        const config = dedicatedAccountConfig({
+            name: "minimax-h3-quantized-768p",
+            videoAccountTokenId: "vca_account",
+            video: { resolution: "768p", durationsSeconds: [4], ratios: ["16:9"], maxImages: 4, maxVideos: 0, maxAudios: 0 },
+        });
+
+        await requestVideoGeneration({ ...config, size: "16:9" } as AiConfig, "animate", [referenceImage()], {
+            referenceVideos: [{ id: "v1", name: "clip.mp4", kind: "video", mimeType: "video/mp4", url: "data:video/mp4;base64,Y2xpcA==" }],
+        });
+
+        const uploads = vi.mocked(axios.post).mock.calls.filter((call) => call[1] instanceof FormData).map((call) => (call[1] as FormData).get("type"));
+        expect(uploads).toEqual(["images"]);
+        expect((vi.mocked(axios.post).mock.calls.at(-1)?.[1] as Record<string, unknown>).reference_videos).toBeUndefined();
+    });
+
     it("keeps polling the account that created the task after the selection changes", async () => {
         const config = {
             baseUrl: "https://gateway.example/v1",
@@ -213,3 +317,21 @@ describe("requestVideoGeneration", () => {
         expect(pollCall[1]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ "X-Video-Creation-Token-Id": "vca_account" }) }));
     });
 });
+
+function referenceImage() {
+    return { id: "reference", name: "reference.png", type: "image/png", dataUrl: "data:image/png;base64,cmVmZXJlbmNl" };
+}
+
+/** A config exposing one dedicated-account model, matching the canvas config shape. */
+function dedicatedAccountConfig(model: { name: string; videoAccountTokenId: string; video: NonNullable<AiConfig["channels"][number]["models"][number]["video"]> }) {
+    return {
+        baseUrl: "https://gateway.example/v1",
+        apiKey: "sk-canvas-key",
+        apiFormat: "openai",
+        model: `vca::${model.name}`,
+        videoModel: "",
+        videoSeconds: "6",
+        size: "16:9",
+        channels: [{ id: "vca", name: "key · group", baseUrl: "https://gateway.example/v1", apiKey: "sk-canvas-key", apiFormat: "openai", models: [{ ...model, capability: "video" }] }],
+    };
+}

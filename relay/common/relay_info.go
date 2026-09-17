@@ -92,6 +92,8 @@ type VideoAccountModelMeta struct {
 	MaxAudios              int
 	AudioRequiresImage     bool
 	SupportsFirstLastFrame bool
+	// RequiresReferenceImage marks models that have no text-to-video workflow.
+	RequiresReferenceImage bool
 	PricingMode            string
 	PricingAmount          float64
 	PricingCurrency        string

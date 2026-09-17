@@ -4,8 +4,12 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
+import { normalizeVideoModelRatio, normalizeVideoModelSeconds, ratioDimensions, videoModelSizeForRatio, type VideoModelCapabilities } from "@/lib/video-model-capabilities";
 import { type AiConfig } from "@/stores/use-config-store";
 
+// Options for models served by a plain relay channel. They publish no
+// capabilities, so the workspace keeps offering generic values instead of
+// pretending to know what the endpoint accepts.
 const resolutionOptions = [
     { value: "720", label: "720p" },
     { value: "480", label: "480p" },
@@ -31,15 +35,112 @@ export const videoSizeOptions = sizeOptions.map((item) => ({
 }));
 export const videoSecondOptions = secondOptions.map((value) => String(value));
 
+export type VideoConfigKey = "vquality" | "size" | "videoSeconds" | "videoOperationMode" | "videoGenerateAudio" | "videoWatermark";
+
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
+    /**
+     * Capabilities of the selected model. When the model belongs to a dedicated
+     * video account the panel renders only the controls that model advertises;
+     * without capabilities it falls back to the generic controls.
+     */
+    capabilities?: VideoModelCapabilities;
+    onConfigChange: (key: VideoConfigKey, value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
 };
 
-export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
+export function VideoSettingsPanel({ config, capabilities, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
+    const { t } = useTranslation();
+    return (
+        <ImageSettingsTheme theme={theme}>
+            <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
+                {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
+                {capabilities?.known ? (
+                    <VideoAccountSettings config={config} capabilities={capabilities} onConfigChange={onConfigChange} theme={theme} />
+                ) : (
+                    <GenericVideoSettings config={config} onConfigChange={onConfigChange} theme={theme} />
+                )}
+            </div>
+        </ImageSettingsTheme>
+    );
+}
+
+/**
+ * Controls for a model of a dedicated video account. Every group is driven by
+ * the model's published capabilities, so a control the model does not support
+ * is never rendered.
+ */
+function VideoAccountSettings({ config, capabilities, onConfigChange, theme }: { config: AiConfig; capabilities: VideoModelCapabilities; onConfigChange: (key: VideoConfigKey, value: string) => void; theme: CanvasTheme }) {
+    const { t } = useTranslation();
+    const ratio = normalizeVideoModelRatio(capabilities, config.size);
+    const size = videoModelSizeForRatio(capabilities, ratio);
+    const seconds = normalizeVideoModelSeconds(capabilities, config.videoSeconds);
+    const firstLastFrame = capabilities.supportsFirstLastFrame && config.videoOperationMode === "first_last_frame";
+
+    return (
+        <>
+            <SettingGroup title={t("settingsPanels.video.output")} color={theme.node.muted}>
+                {capabilities.resolution ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border px-2.5 py-1 text-xs font-medium" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
+                            {capabilities.resolution}
+                        </span>
+                        <span className="text-xs" style={{ color: theme.node.muted }}>
+                            {t("settingsPanels.video.fixedByModel")}
+                        </span>
+                    </div>
+                ) : null}
+                {capabilities.ratios.length ? (
+                    <div className="grid grid-cols-4 gap-2.5">
+                        {capabilities.ratios.map((item) => (
+                            <RatioPill key={item} ratio={item} selected={ratio === item} theme={theme} onClick={() => onConfigChange("size", item)} />
+                        ))}
+                    </div>
+                ) : null}
+                {size ? (
+                    <div className="text-xs" style={{ color: theme.node.muted }}>
+                        {t("settingsPanels.video.submitSize", { size })}
+                    </div>
+                ) : null}
+                {capabilities.requiresImage ? (
+                    <div className="text-xs" style={{ color: theme.node.text }}>
+                        {t("settingsPanels.video.requiresImage")}
+                    </div>
+                ) : null}
+            </SettingGroup>
+            {capabilities.durationsSeconds.length ? (
+                <SettingGroup title={t("settingsPanels.video.duration")} color={theme.node.muted}>
+                    <div className="grid grid-cols-4 gap-2.5">
+                        {capabilities.durationsSeconds.map((value) => (
+                            <OptionPill key={value} selected={seconds === String(value)} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
+                                {value}s
+                            </OptionPill>
+                        ))}
+                    </div>
+                </SettingGroup>
+            ) : null}
+            {capabilities.supportsFirstLastFrame ? (
+                <SettingGroup title={t("settingsPanels.video.mode")} color={theme.node.muted}>
+                    <div className="grid grid-cols-2 gap-2.5">
+                        <OptionPill selected={!firstLastFrame} theme={theme} onClick={() => onConfigChange("videoOperationMode", "references")}>
+                            {t("settingsPanels.video.modeReferences")}
+                        </OptionPill>
+                        <OptionPill selected={firstLastFrame} theme={theme} onClick={() => onConfigChange("videoOperationMode", "first_last_frame")}>
+                            {t("settingsPanels.video.modeFirstLastFrame")}
+                        </OptionPill>
+                    </div>
+                    <div className="text-xs" style={{ color: theme.node.muted }}>
+                        {firstLastFrame ? t("settingsPanels.video.modeFirstLastFrameHint") : t("settingsPanels.video.modeReferencesHint")}
+                    </div>
+                </SettingGroup>
+            ) : null}
+        </>
+    );
+}
+
+function GenericVideoSettings({ config, onConfigChange, theme }: { config: AiConfig; onConfigChange: (key: VideoConfigKey, value: string) => void; theme: CanvasTheme }) {
     const { t } = useTranslation();
     const seconds = config.videoSeconds || "6";
     const size = normalizeVideoSizeValue(config.size);
@@ -51,54 +152,51 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     };
 
     return (
-        <ImageSettingsTheme theme={theme}>
-            <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
-                {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
-                <SettingGroup title={t("settingsPanels.video.quality")} color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {resolutionOptions.map((item) => (
-                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
-                                {item.label}
-                            </OptionPill>
-                        ))}
-                        <ResolutionInput value={resolution} theme={theme} onChange={(value) => onConfigChange("vquality", value)} />
-                    </div>
-                </SettingGroup>
-                <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
-                        <DimensionInput prefix="W" value={dimensions.width} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("width", value)} />
-                        <span className="text-lg opacity-45">↔</span>
-                        <DimensionInput prefix="H" value={dimensions.height} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("height", value)} />
-                    </div>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {sizeOptions.map((item) => (
-                            <button
-                                key={item.value}
-                                type="button"
-                                className="flex h-[78px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
-                                style={{ borderColor: size === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
-                                onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() => onConfigChange("size", item.value)}
-                            >
-                                <SizePreview width={item.width} height={item.height} color={theme.node.text} />
-                                <span>{t(`settingsPanels.video.sizes.${item.labelKey}`)}</span>
-                                {item.value === "auto" ? null : <span className="text-[11px] leading-none opacity-55">{item.value}</span>}
-                            </button>
-                        ))}
-                    </div>
-                </SettingGroup>
-                <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {secondOptions.map((value) => (
-                            <OptionPill key={value} selected={seconds === String(value)} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
-                                {value}s
-                            </OptionPill>
-                        ))}
-                        <NumberInput value={seconds} min={1} max={30} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
-                    </div>
-                </SettingGroup>
-            </div>
-        </ImageSettingsTheme>
+        <>
+            <SettingGroup title={t("settingsPanels.video.quality")} color={theme.node.muted}>
+                <div className="grid grid-cols-3 gap-2.5">
+                    {resolutionOptions.map((item) => (
+                        <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
+                            {item.label}
+                        </OptionPill>
+                    ))}
+                    <ResolutionInput value={resolution} theme={theme} onChange={(value) => onConfigChange("vquality", value)} />
+                </div>
+            </SettingGroup>
+            <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
+                    <DimensionInput prefix="W" value={dimensions.width} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("width", value)} />
+                    <span className="text-lg opacity-45">↔</span>
+                    <DimensionInput prefix="H" value={dimensions.height} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("height", value)} />
+                </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                    {sizeOptions.map((item) => (
+                        <button
+                            key={item.value}
+                            type="button"
+                            className="flex h-[78px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                            style={{ borderColor: size === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onClick={() => onConfigChange("size", item.value)}
+                        >
+                            <SizePreview width={item.width} height={item.height} color={theme.node.text} />
+                            <span>{t(`settingsPanels.video.sizes.${item.labelKey}`)}</span>
+                            {item.value === "auto" ? null : <span className="text-[11px] leading-none opacity-55">{item.value}</span>}
+                        </button>
+                    ))}
+                </div>
+            </SettingGroup>
+            <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
+                <div className="grid grid-cols-3 gap-2.5">
+                    {secondOptions.map((value) => (
+                        <OptionPill key={value} selected={seconds === String(value)} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
+                            {value}s
+                        </OptionPill>
+                    ))}
+                    <NumberInput value={seconds} min={1} max={30} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
+                </div>
+            </SettingGroup>
+        </>
     );
 }
 
@@ -108,6 +206,8 @@ export function videoResolutionLabel(value: string) {
 
 export function videoSizeLabel(value: string) {
     if (value === "adaptive" || value === "auto") return i18n.t("settingsPanels.video.adaptive");
+    // Aspect ratios are submitted as-is, so their label must stay the ratio.
+    if (/^\d+\s*:\s*\d+$/.test((value || "").trim())) return value.trim();
     const size = normalizeVideoSizeValue(value);
     const option = sizeOptions.find((item) => item.value === size);
     return option ? i18n.t(`settingsPanels.video.sizes.${option.labelKey}`) : size;
@@ -116,6 +216,24 @@ export function videoSizeLabel(value: string) {
 export function videoSecondsLabel(value: string) {
     if (String(value).trim() === "-1") return i18n.t("settingsPanels.video.smart");
     return `${value || "6"}s`;
+}
+
+/**
+ * One-line summary of the settings that will actually be submitted. For catalog
+ * models it reports the model's own values, which is what makes it agree with
+ * the controls above it.
+ */
+export function videoSettingsSummary(config: AiConfig, capabilities?: VideoModelCapabilities) {
+    if (!capabilities?.known) {
+        return `${videoResolutionLabel(config.vquality)} · ${videoSizeLabel(config.size)} · ${videoSecondsLabel(config.videoSeconds)}`;
+    }
+    const ratio = normalizeVideoModelRatio(capabilities, config.size);
+    const size = videoModelSizeForRatio(capabilities, ratio);
+    const seconds = normalizeVideoModelSeconds(capabilities, config.videoSeconds);
+    // CF models report the resolution label as the size, so a duplicate would
+    // only add noise.
+    const parts = [capabilities.resolution, ratio, size === capabilities.resolution ? "" : size, `${seconds}s`].filter(Boolean);
+    return parts.join(" · ");
 }
 
 export function normalizeVideoSizeValue(value: string) {
@@ -141,6 +259,23 @@ function OptionPill({ selected, disabled = false, theme, onClick, children }: { 
             onClick={onClick}
         >
             {children}
+        </button>
+    );
+}
+
+/** A ratio choice shows its own shape, so the picked value is readable at a glance. */
+function RatioPill({ ratio, selected, theme, onClick }: { ratio: string; selected: boolean; theme: CanvasTheme; onClick: () => void }) {
+    const dimensions = ratioDimensions(ratio);
+    return (
+        <button
+            type="button"
+            className="flex h-[62px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-xs transition hover:opacity-80"
+            style={{ borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={onClick}
+        >
+            <SizePreview width={dimensions.width} height={dimensions.height} color={theme.node.text} />
+            <span>{ratio}</span>
         </button>
     );
 }

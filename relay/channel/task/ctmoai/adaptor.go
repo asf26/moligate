@@ -91,7 +91,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if !meta.Available {
 		return service.TaskErrorWrapperLocal(fmt.Errorf("video model %q is currently unavailable", modelName), "invalid_model", http.StatusBadRequest)
 	}
-	if len(meta.SupportedEndpointTypes) > 0 && !containsFold(meta.SupportedEndpointTypes, "openai-video") {
+	if len(meta.SupportedEndpointTypes) > 0 && !videoEndpointSupported(meta.SupportedEndpointTypes) {
 		return service.TaskErrorWrapperLocal(fmt.Errorf("video model %q is not available on the OpenAI video endpoint", modelName), "invalid_model", http.StatusBadRequest)
 	}
 	seconds, err := resolveSeconds(req)
@@ -137,7 +137,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if (len(req.ReferenceVideos) > 0 || len(req.ReferenceAudios) > 0) && len(req.Images) == 0 {
 		return service.TaskErrorWrapperLocal(errors.New("reference videos or audios require at least one reference image"), "missing_reference", http.StatusBadRequest)
 	}
-	if strings.Contains(strings.ToLower(meta.Group+" "+modelName), "cf-") && len(req.Images) == 0 {
+	if meta.RequiresReferenceImage && len(req.Images) == 0 {
 		return service.TaskErrorWrapperLocal(errors.New("this model requires at least one reference image"), "missing_reference", http.StatusBadRequest)
 	}
 	if req.Mode == "first_last_frame" || strings.EqualFold(strings.TrimSpace(req.WorkflowID), "fl2v") {
@@ -229,7 +229,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if req.WorkflowID != "" {
 		payload["workflow_id"] = req.WorkflowID
 	}
-	isH3 := strings.Contains(strings.ToLower(a.modelGroup(modelName)), "h3") || strings.HasPrefix(strings.ToLower(modelName), "minimax-h3-")
+	isH3 := model.IsMiniMaxH3VideoModel(a.modelGroup(modelName), modelName)
 	if isH3 {
 		if len(req.ReferenceVideos) > 0 {
 			payload["reference_videos"] = req.ReferenceVideos
@@ -459,6 +459,21 @@ func validatePublicMediaURL(raw string) error {
 func containsFold(values []string, target string) bool {
 	for _, value := range values {
 		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(target)) {
+			return true
+		}
+	}
+	return false
+}
+
+// videoEndpointSupported reports whether a model advertises the OpenAI video
+// endpoint. CTMOAI labels the same /v1/videos endpoint differently per account:
+// the MiniMax H3 catalog reports "openai-video" while the Seedance catalog
+// reports "openai". Both are video models on a dedicated video account, so
+// accepting only one label would lock out an entire account.
+func videoEndpointSupported(values []string) bool {
+	for _, value := range values {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "openai-video", "openai":
 			return true
 		}
 	}

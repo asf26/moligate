@@ -16,12 +16,16 @@ export type PlatformCanvasModel = {
 export type PlatformVideoMetadata = {
     video_account_token_id?: string;
     group?: string;
+    resolution?: string;
     durations_seconds?: number[];
     ratios?: string[];
     sizes?: string[];
+    ratio_sizes?: Record<string, string>;
     max_images?: number;
     max_videos?: number;
     max_audios?: number;
+    audio_requires_image?: boolean;
+    requires_image?: boolean;
     supports_first_last_frame?: boolean;
     pricing_mode?: string;
 };
@@ -96,12 +100,16 @@ async function loadPlatformGroup(group: PlatformCanvasGroup, signal: AbortSignal
         }
         const video: VideoModelMetadata = {
             group: source.group,
+            resolution: source.resolution,
             durationsSeconds: source.durations_seconds,
             ratios: source.ratios,
             sizes: source.sizes,
+            ratioSizes: source.ratio_sizes,
             maxImages: source.max_images,
             maxVideos: source.max_videos,
             maxAudios: source.max_audios,
+            audioRequiresImage: source.audio_requires_image,
+            requiresImage: source.requires_image,
             supportsFirstLastFrame: source.supports_first_last_frame,
             pricingMode: source.pricing_mode,
         };

@@ -180,7 +180,7 @@ func (account *VideoAccount) ModelCatalog() []VideoModel {
 		if item.GroupRatio <= 0 {
 			item.GroupRatio = 1
 		}
-		result = append(result, item)
+		result = append(result, item.WithDerivedCapabilities())
 	}
 	return result
 }

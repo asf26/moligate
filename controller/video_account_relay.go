@@ -27,7 +27,7 @@ func RelayVideoAccountTask(c *gin.Context, info *relaycommon.RelayInfo) {
 		respondTaskError(c, service.TaskErrorWrapperLocal(fmt.Errorf("video account is unavailable"), "video_account_unavailable", http.StatusServiceUnavailable))
 		return
 	}
-	info.VideoAccount = videoAccountRelayMeta(account)
+	info.VideoAccount = service.VideoAccountRelayMeta(account)
 	if info.Action == "" {
 		info.Action = constant.TaskActionTextGenerate
 	}
@@ -78,41 +78,5 @@ func RelayVideoAccountTask(c *gin.Context, info *relaycommon.RelayInfo) {
 	task.Action = info.Action
 	if insertErr := task.Insert(); insertErr != nil {
 		common.SysError("insert video account task error: " + insertErr.Error())
-	}
-}
-
-func videoAccountRelayMeta(account *model.VideoAccount) *relaycommon.VideoAccountMeta {
-	models := make(map[string]relaycommon.VideoAccountModelMeta)
-	for _, item := range account.ModelCatalog() {
-		pricing := item.EffectivePricing()
-		models[item.ID] = relaycommon.VideoAccountModelMeta{
-			ID:                     item.ID,
-			DisplayName:            item.DisplayName,
-			Group:                  item.Group,
-			Available:              item.Available,
-			SupportedEndpointTypes: item.SupportedEndpointTypes,
-			Resolution:             item.Resolution,
-			DurationsSeconds:       item.DurationsSeconds,
-			Ratios:                 item.Ratios,
-			Sizes:                  item.Sizes,
-			MaxImages:              item.MaxImages,
-			MaxVideos:              item.MaxVideos,
-			MaxAudios:              item.MaxAudios,
-			AudioRequiresImage:     item.AudioRequiresImage,
-			SupportsFirstLastFrame: item.SupportsFirstLastFrame,
-			PricingMode:            pricing.Mode,
-			PricingAmount:          pricing.Amount,
-			PricingCurrency:        pricing.Currency,
-			GroupRatio:             item.GroupRatio,
-		}
-	}
-	return &relaycommon.VideoAccountMeta{
-		ID:      account.Id,
-		Name:    account.Name,
-		Token:   account.OpaqueKey(),
-		BaseURL: account.BaseURL(),
-		APIKey:  account.ApiKey,
-		Proxy:   account.Proxy,
-		Models:  models,
 	}
 }

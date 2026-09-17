@@ -9,14 +9,25 @@ export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
+/**
+ * Capabilities CTMOAI publishes for one model of a dedicated video account.
+ * The workspace renders its video controls from this data alone, so a control
+ * the model does not support is never offered.
+ */
 export type VideoModelMetadata = {
     group?: string;
+    resolution?: string;
     durationsSeconds?: number[];
     ratios?: string[];
     sizes?: string[];
+    /** Size value to submit for each supported ratio. Empty when the model takes no size. */
+    ratioSizes?: Record<string, string>;
     maxImages?: number;
     maxVideos?: number;
     maxAudios?: number;
+    audioRequiresImage?: boolean;
+    /** The model has no text-to-video workflow and needs a reference image. */
+    requiresImage?: boolean;
     supportsFirstLastFrame?: boolean;
     pricingMode?: string;
 };
@@ -62,6 +73,12 @@ export type AiConfig = {
     audioInstructions: string;
     videoSeconds: string;
     vquality: string;
+    /**
+     * How reference images are interpreted. "first_last_frame" submits
+     * workflow_id=fl2v and accepts one or two images; "references" is the
+     * multi-reference workflow.
+     */
+    videoOperationMode: string;
     videoGenerateAudio: string;
     videoWatermark: string;
     systemPrompt: string;
@@ -117,6 +134,7 @@ export const defaultConfig: AiConfig = {
     audioInstructions: "",
     videoSeconds: "6",
     vquality: "720",
+    videoOperationMode: "references",
     videoGenerateAudio: "true",
     videoWatermark: "false",
     systemPrompt: "",
@@ -363,6 +381,7 @@ export const useConfigStore = create<ConfigStore>()(
                         reasoningEffort: config.reasoningEffort || "auto",
                         videoSeconds: config.videoSeconds || "6",
                         vquality: config.vquality || "720",
+                        videoOperationMode: config.videoOperationMode === "first_last_frame" ? "first_last_frame" : "references",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
                         canvasImageCount: config.canvasImageCount || "3",
@@ -482,6 +501,17 @@ export function resolveModelRequestConfig(config: AiConfig, value: string): Mode
         // The account selector belongs to the resolved model, not the channel.
         videoAccountTokenId: channel.models.find((item) => item.name === model)?.videoAccountTokenId,
     };
+}
+
+/**
+ * Capabilities of one video model. Only models served by a dedicated video
+ * account carry them, which is also what makes the selector available: without
+ * metadata there is nothing to render the video controls from.
+ */
+export function resolveModelVideoMetadata(config: AiConfig, value: string) {
+    const channel = resolveModelChannel(config, value);
+    const model = modelOptionName(value || config.model);
+    return channel.models.find((item) => item.name === model)?.video;
 }
 
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {

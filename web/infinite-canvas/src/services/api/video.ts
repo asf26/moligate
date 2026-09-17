@@ -3,16 +3,20 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { dataUrlToFile } from "@/lib/image-utils";
+import { referenceImageLimit, referenceMediaLimit, resolveVideoModelCapabilities, videoModelSizeForRatio, type VideoModelCapabilities } from "@/lib/video-model-capabilities";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildApiUrl, modelOptionName, resolveModelChannel, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelRequestConfig } from "@/stores/use-config-store";
+import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelRequestConfig } from "@/stores/use-config-store";
+import { normalizeVideoOperationMode, type VideoOperationMode, type VideoReferenceMedia } from "@/types/video";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 
 type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null };
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
-type RequestOptions = { signal?: AbortSignal };
+type RequestOptions = { signal?: AbortSignal; referenceVideos?: VideoReferenceMedia[]; referenceAudios?: VideoReferenceMedia[] };
+type MediaUploadKind = "images" | "videos" | "audios";
+type MediaUploadResponse = { images?: string[]; videos?: string[]; audios?: string[]; url?: string };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 const miniMaxH3PollIntervalMs = 10_000;
 
@@ -153,37 +157,35 @@ async function createOpenAIVideoTask(config: ModelRequestConfig, model: string, 
     }
 }
 
+/**
+ * Creates a task on a dedicated video account. Everything it sends is derived
+ * from the model's published capabilities, and the gateway translates the
+ * canonical field names into the dialect the account expects, so the browser
+ * never has to know which upstream integration is behind the model.
+ */
 async function createVideoAccountTask(config: AiConfig, model: string, modelName: string, prompt: string, references: ReferenceImage[], tokenId: string, options?: RequestOptions): Promise<VideoGenerationTask> {
-    const channel = resolveModelChannel(config, model);
-    const metadata = channel.models.find((item) => item.name === modelName)?.video;
+    const capabilities = resolveVideoModelCapabilities(config, model);
+    const mode = normalizeVideoOperationMode(config.videoOperationMode);
+    const firstLastFrame = capabilities.supportsFirstLastFrame && mode === "first_last_frame";
     try {
-        const images = await Promise.all(
-            references.slice(0, metadata?.maxImages && metadata.maxImages > 0 ? metadata.maxImages : 10).map(async (image) => {
-                const file = await dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) });
-                const form = new FormData();
-                form.append("type", "images");
-                form.append("file", file);
-                const response = await axios.post<{ images?: string[]; url?: string }>(`${window.location.origin}/api/sd-media/upload`, form, {
-                    headers: aiHeaders(config, undefined, tokenId),
-                    signal: options?.signal,
-                    timeout: 90_000,
-                });
-                const url = response.data?.images?.[0]?.trim() || response.data?.url?.trim() || "";
-                if (!url) throw new Error(apiText("referenceImageReadFailed"));
-                return url;
-            }),
-        );
-        const seconds = normalizeCatalogSeconds(config.videoSeconds, metadata?.durationsSeconds);
-        const ratio = normalizeCatalogRatio(config.size, metadata?.ratios);
-        const size = normalizeCatalogSize(config.size, metadata?.sizes, ratio);
-        const body = {
-            model: modelName,
-            prompt,
-            seconds,
-            ...(ratio ? { aspect_ratio: ratio } : {}),
-            ...(size ? { size } : {}),
-            ...(images.length ? { images } : {}),
-        };
+        const images = await uploadVideoAccountImages(config, references, capabilities, tokenId, firstLastFrame, options);
+        const referenceVideos = await uploadVideoAccountMediaList(config, options?.referenceVideos || [], "videos", Math.min(referenceMediaLimit(capabilities, "video"), 50), tokenId, options);
+        const referenceAudios = await uploadVideoAccountMediaList(config, options?.referenceAudios || [], "audios", Math.min(referenceMediaLimit(capabilities, "audio"), 50), tokenId, options);
+
+        const ratio = firstLastFrame ? referenceRatio(config, capabilities) : normalizeRatio(config, capabilities);
+        const size = ratio ? videoModelSizeForRatio(capabilities, ratio) : "";
+        const seconds = normalizeCatalogSeconds(config.videoSeconds, capabilities.durationsSeconds);
+        const body: Record<string, unknown> = { model: modelName, seconds };
+        if (prompt.trim()) body.prompt = prompt;
+        if (ratio) body.aspect_ratio = ratio;
+        if (size) body.size = size;
+        if (images.length) body.images = images;
+        if (referenceVideos.length) body.reference_videos = referenceVideos;
+        if (referenceAudios.length) body.reference_audios = referenceAudios;
+        // First/last frame is a distinct upstream workflow, not just a hint that
+        // the first two images are frames.
+        if (firstLastFrame) body.workflow_id = "fl2v";
+
         const created = unwrapVideoResponse(
             (
                 await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, {
@@ -198,6 +200,89 @@ async function createVideoAccountTask(config: AiConfig, model: string, modelName
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
     }
+}
+
+async function uploadVideoAccountImages(config: AiConfig, references: ReferenceImage[], capabilities: VideoModelCapabilities, tokenId: string, firstLastFrame: boolean, options?: RequestOptions) {
+    // First/last frame accepts at most two images: the first frame and the last.
+    const limit = firstLastFrame ? Math.min(2, referenceImageLimit(capabilities)) : Math.min(referenceImageLimit(capabilities), 50);
+    const selected = references.slice(0, Math.max(0, limit));
+    return Promise.all(
+        selected.map(async (image) => {
+            const file = await dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) });
+            return uploadVideoAccountMedia(config, file, "images", tokenId, options?.signal);
+        }),
+    );
+}
+
+async function uploadVideoAccountMediaList(config: AiConfig, media: VideoReferenceMedia[], kind: "videos" | "audios", limit: number, tokenId: string, options?: RequestOptions) {
+    if (!limit || !media.length) return [] as string[];
+    const selected = media.slice(0, limit);
+    return Promise.all(selected.map((item) => uploadVideoAccountMedia(config, item, kind, tokenId, options?.signal, item.name)));
+}
+
+/**
+ * Uploads one reference asset through the gateway, which resolves the upstream
+ * credential from the account selector. The gateway answers with the public URL
+ * grouped under the media type it stored, so one shape covers images, videos
+ * and audios.
+ */
+async function uploadVideoAccountMedia(config: AiConfig, source: File | Blob | VideoReferenceMedia, kind: MediaUploadKind, tokenId: string, signal?: AbortSignal, filename?: string) {
+    const isMediaRef = typeof source === "object" && "kind" in source;
+    const file = isMediaRef ? await videoReferenceMediaToFile(source as VideoReferenceMedia) : (source as File | Blob);
+    const form = new FormData();
+    form.append("type", kind);
+    form.append("file", filename ? new File([file], filename, { type: file.type }) : file);
+    const response = await axios.post<MediaUploadResponse>(`${window.location.origin}/api/sd-media/upload`, form, {
+        headers: aiHeaders(config, undefined, tokenId),
+        signal,
+        timeout: 90_000,
+    });
+    const grouped = (response.data?.[kind] || []).find((value) => typeof value === "string" && value.trim());
+    const url = grouped?.trim() || response.data?.url?.trim() || "";
+    if (!url) throw new Error(apiText("referenceImageReadFailed"));
+    return url;
+}
+
+async function videoReferenceMediaToFile(media: VideoReferenceMedia) {
+    if (media.url.startsWith("data:") || media.url.startsWith("blob:")) {
+        const response = await fetch(media.url);
+        const blob = await response.blob();
+        return new File([blob], media.name || `${media.kind}.bin`, { type: blob.type || media.mimeType });
+    }
+    // Stored media lives in IndexedDB, so read the bytes back instead of
+    // handing the gateway a local object URL it cannot reach.
+    const { getMediaBlob } = await import("@/services/file-storage");
+    const blob = media.storageKey ? await getMediaBlob(media.storageKey) : null;
+    if (blob) return new File([blob], media.name || `${media.kind}.bin`, { type: blob.type || media.mimeType });
+    const response = await fetch(media.url);
+    const fetched = await response.blob();
+    return new File([fetched], media.name || `${media.kind}.bin`, { type: fetched.type || media.mimeType });
+}
+
+function normalizeRatio(config: AiConfig, capabilities: VideoModelCapabilities) {
+    const requested = (config.size || "").trim();
+    if (!capabilities.ratios.length) return "";
+    return capabilities.ratios.includes(requested) ? requested : capabilities.ratios[0];
+}
+
+/**
+ * First/last frame keeps the ratio the user picked, which may be a size or a
+ * ratio depending on what the previous model offered.
+ */
+function referenceRatio(config: AiConfig, capabilities: VideoModelCapabilities) {
+    const requested = (config.size || "").trim();
+    if (capabilities.ratios.includes(requested)) return requested;
+    const [width, height] = requested.split("x").map(Number);
+    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+        return capabilities.ratios.find((ratio) => matchesRatio(ratio, width / height)) || capabilities.ratios[0] || "";
+    }
+    return capabilities.ratios[0] || "";
+}
+
+function matchesRatio(ratio: string, target: number) {
+    const [width, height] = ratio.split(":").map(Number);
+    if (!width || !height) return false;
+    return Math.abs(width / height - target) < 0.02;
 }
 
 async function createStableVideoTask(config: AiConfig, model: string, modelName: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
@@ -339,27 +424,6 @@ function normalizeMiniMaxH3AspectRatio(value: string) {
         return "9:16";
     }
     return "16:9";
-}
-
-function normalizeCatalogRatio(value: string, supported?: string[]) {
-    const ratio = normalizeMiniMaxH3AspectRatio(value);
-    if (!supported?.length) return ratio;
-    return supported.includes(ratio) ? ratio : supported[0];
-}
-
-function normalizeCatalogSize(value: string, supported: string[] | undefined, ratio: string) {
-    if (!supported?.length) return "";
-    if (supported.includes(value)) return value;
-    const ratioParts = ratio.split(":").map(Number);
-    const target = ratioParts.length === 2 && ratioParts[1] ? ratioParts[0] / ratioParts[1] : 0;
-    if (!target) return supported[0];
-    return supported.reduce((best, candidate) => {
-        const parts = candidate.match(/^(\d+)x(\d+)$/i);
-        const current = parts ? Number(parts[1]) / Number(parts[2]) : 0;
-        const previous = best.match(/^(\d+)x(\d+)$/i);
-        const previousRatio = previous ? Number(previous[1]) / Number(previous[2]) : 0;
-        return Math.abs(current - target) < Math.abs(previousRatio - target) ? candidate : best;
-    }, supported[0]);
 }
 
 function normalizeVideoSize(value: string) {

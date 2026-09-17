@@ -34,7 +34,12 @@ type TaskPollingAdaptor interface {
 	AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int
 }
 
-func videoAccountRelayMeta(account *model.VideoAccount) *relaycommon.VideoAccountMeta {
+// VideoAccountRelayMeta snapshots a dedicated video account's credentials and
+// key-scoped model catalog for the relay/task lifecycle. It is the single
+// builder for relaycommon.VideoAccountMeta: both the relay entry and the task
+// polling path read the same capability snapshot, so a model can never be
+// accepted on one path and rejected on the other.
+func VideoAccountRelayMeta(account *model.VideoAccount) *relaycommon.VideoAccountMeta {
 	if account == nil {
 		return nil
 	}
@@ -49,6 +54,7 @@ func videoAccountRelayMeta(account *model.VideoAccount) *relaycommon.VideoAccoun
 			MaxImages: item.MaxImages, MaxVideos: item.MaxVideos, MaxAudios: item.MaxAudios,
 			AudioRequiresImage:     item.AudioRequiresImage,
 			SupportsFirstLastFrame: item.SupportsFirstLastFrame,
+			RequiresReferenceImage: item.RequiresReferenceImage(),
 			PricingMode:            pricing.Mode, PricingAmount: pricing.Amount,
 			PricingCurrency: pricing.Currency, GroupRatio: item.GroupRatio,
 		}
@@ -451,7 +457,7 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 	}
 	info := &relaycommon.RelayInfo{}
 	if platform == constant.TaskPlatformVideoCTMoai {
-		info.VideoAccount = videoAccountRelayMeta(videoAccount)
+		info.VideoAccount = VideoAccountRelayMeta(videoAccount)
 		info.ChannelMeta = &relaycommon.ChannelMeta{ChannelBaseUrl: videoAccount.BaseURL()}
 		info.ApiKey = videoAccount.ApiKey
 	} else {

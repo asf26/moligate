@@ -119,3 +119,101 @@ func TestValidateRequestRequiresCatalogDurationAndSizeFields(t *testing.T) {
 	require.NotNil(t, taskErr)
 	assert.Contains(t, taskErr.Message, "size")
 }
+
+// The two CTMOAI accounts label the same /v1/videos endpoint differently: the
+// MiniMax H3 catalog reports "openai-video" while the Seedance catalog reports
+// "openai". Accepting only one of them would lock out a whole account.
+func TestValidateRequestAcceptsBothVideoEndpointLabels(t *testing.T) {
+	for _, label := range []string{"openai-video", "openai", "OpenAI-Video"} {
+		ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9"}`)
+		info := ctmoaiInfo()
+		info.VideoAccount.Models["seedance-test"] = relaycommon.VideoAccountModelMeta{
+			ID: "seedance-test", Available: true, SupportedEndpointTypes: []string{label}, DurationsSeconds: []int{10}, Ratios: []string{"16:9"},
+		}
+		adaptor := &TaskAdaptor{}
+		adaptor.Init(info)
+		require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info), "endpoint label %q should be accepted", label)
+		common.CleanupBodyStorage(ctx)
+	}
+}
+
+func TestValidateRequestRejectsANonVideoEndpoint(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9"}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	info.VideoAccount.Models["seedance-test"] = relaycommon.VideoAccountModelMeta{
+		ID: "seedance-test", Available: true, SupportedEndpointTypes: []string{"image-generation"}, DurationsSeconds: []int{10}, Ratios: []string{"16:9"},
+	}
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	taskErr := adaptor.ValidateRequestAndSetAction(ctx, info)
+	require.NotNil(t, taskErr)
+	assert.Contains(t, taskErr.Message, "OpenAI video endpoint")
+}
+
+// CF super resolution models have no text-to-video workflow, and the flag now
+// travels with the model instead of being re-derived from the model name.
+func TestValidateRequestHonoursTheRequiresReferenceImageFlag(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9"}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	info.VideoAccount.Models["seedance-test"] = relaycommon.VideoAccountModelMeta{
+		ID: "seedance-test", Available: true, DurationsSeconds: []int{10}, Ratios: []string{"16:9"}, MaxImages: 9, RequiresReferenceImage: true,
+	}
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	taskErr := adaptor.ValidateRequestAndSetAction(ctx, info)
+	require.NotNil(t, taskErr)
+	assert.Contains(t, taskErr.Message, "at least one reference image")
+}
+
+// First/last frame is only reachable when the derived capability says so; the
+// gateway must not reject a documented workflow_id=fl2v request.
+func TestValidateRequestAllowsFirstLastFrameWhenDerivedCapabilityIsSet(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","workflow_id":"fl2v","images":["https://cdn.example/first.png","https://cdn.example/last.png"]}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	info.VideoAccount.Models["seedance-test"] = relaycommon.VideoAccountModelMeta{
+		ID: "seedance-test", Available: true, DurationsSeconds: []int{10}, Ratios: []string{"16:9"}, MaxImages: 9, SupportsFirstLastFrame: true,
+	}
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+
+	body, err := adaptor.BuildRequestBody(ctx, info)
+	require.NoError(t, err)
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/first.png","https://cdn.example/last.png"],"workflow_id":"fl2v"}`, string(data))
+}
+
+func TestValidateRequestRejectsFirstLastFrameWithoutTheCapability(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","workflow_id":"fl2v","images":["https://cdn.example/first.png"]}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	taskErr := adaptor.ValidateRequestAndSetAction(ctx, info)
+	require.NotNil(t, taskErr)
+	assert.Contains(t, taskErr.Message, "first/last frame")
+}
+
+// H3 expects reference_videos / reference_audios while Seedance expects
+// videos / audios; the caller sends one canonical shape either way.
+func TestBuildRequestBodyUsesTheH3DialectForH3Models(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"minimax-h3-original-768p","prompt":"waves","seconds":10,"aspect_ratio":"16:9","size":"1376x768","images":["https://cdn.example/a.png"],"reference_videos":["https://cdn.example/a.mp4"],"reference_audios":["https://cdn.example/a.mp3"]}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	info.VideoAccount.Models["minimax-h3-original-768p"] = relaycommon.VideoAccountModelMeta{
+		ID: "minimax-h3-original-768p", Group: "minimax-h3", Available: true, DurationsSeconds: []int{10},
+		Ratios: []string{"16:9"}, Sizes: []string{"1376x768"}, MaxImages: 9, MaxVideos: 3, MaxAudios: 3,
+	}
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+	body, err := adaptor.BuildRequestBody(ctx, info)
+	require.NoError(t, err)
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"model":"minimax-h3-original-768p","prompt":"waves","seconds":10,"aspect_ratio":"16:9","size":"1376x768","images":["https://cdn.example/a.png"],"reference_videos":["https://cdn.example/a.mp4"],"reference_audios":["https://cdn.example/a.mp3"]}`, string(data))
+}
