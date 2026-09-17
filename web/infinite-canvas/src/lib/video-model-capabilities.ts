@@ -10,6 +10,8 @@ export type VideoModelCapabilities = {
     /** False for models served by a plain relay channel, which have no catalog data. */
     known: boolean;
     metadata?: VideoModelMetadata;
+    /** Upstream integration serving the model: "minimax-h3" or "seedance". */
+    family: string;
     /** Fixed output resolution; CTMOAI bakes it into the model id. */
     resolution: string;
     ratios: string[];
@@ -61,6 +63,7 @@ export function resolveVideoModelCapabilities(config: AiConfig, model: string): 
     return {
         known: Boolean(metadata),
         metadata,
+        family: (metadata?.family || "").trim(),
         resolution: (metadata?.resolution || "").trim(),
         ratios,
         ratioSizes: normalizeRatioSizes(metadata?.ratioSizes, ratios),

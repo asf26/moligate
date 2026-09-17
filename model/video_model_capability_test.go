@@ -54,6 +54,17 @@ func TestMiniMaxH3FirstLastFrameIsEnabled(t *testing.T) {
 	require.True(t, h3.WithDerivedCapabilities().SupportsFirstLastFrame)
 }
 
+// The two integrations share an endpoint but not a request dialect, so callers
+// that must pick a field spelling read the family instead of guessing.
+func TestFamilySeparatesTheTwoIntegrations(t *testing.T) {
+	require.Equal(t, VideoFamilyMiniMaxH3, VideoModel{ID: "minimax-h3-original-768p", Group: "minimax-h3"}.Family())
+	require.Equal(t, VideoFamilyMiniMaxH3, VideoModel{ID: "minimax-h3-comic-cf-4k", Group: "minimax-h3"}.Family())
+	require.Equal(t, VideoFamilySeedance, VideoModel{ID: "sd-2-vip-480", Group: "video"}.Family())
+	require.Equal(t, VideoFamilySeedance, VideoModel{ID: "seedance2.5-stable-480p", Group: "video"}.Family())
+	// A catalog that matches neither pattern must not inherit the H3 dialect.
+	require.Equal(t, VideoFamilySeedance, VideoModel{ID: "unknown-video-model", Group: "misc"}.Family())
+}
+
 func TestRequiresReferenceImageOnlyCoversTheCFVariants(t *testing.T) {
 	require.True(t, VideoModel{ID: "minimax-h3-comic-cf-4k", Group: "minimax-h3"}.RequiresReferenceImage())
 	require.True(t, VideoModel{ID: "minimax-h3-original-cf-2k", Group: "minimax-h3"}.RequiresReferenceImage())

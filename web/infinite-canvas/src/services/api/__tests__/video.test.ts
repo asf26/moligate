@@ -157,7 +157,7 @@ describe("requestVideoGeneration", () => {
                             name: "minimax-h3-01",
                             capability: "video",
                             videoAccountTokenId: "vca_account",
-                            video: { durationsSeconds: [6, 10], ratios: ["16:9"] },
+                            video: { family: "minimax-h3", durationsSeconds: [6, 10], ratios: ["16:9"] },
                         },
                     ],
                 },
@@ -197,7 +197,7 @@ describe("requestVideoGeneration", () => {
         const config = dedicatedAccountConfig({
             name: "minimax-h3-original-768p",
             videoAccountTokenId: "vca_account",
-            video: { resolution: "768p", durationsSeconds: [4, 10], ratios: ["16:9", "9:16"], ratioSizes: { "16:9": "1376x768", "9:16": "768x1376" }, maxImages: 9 },
+            video: { family: "minimax-h3", resolution: "768p", durationsSeconds: [4, 10], ratios: ["16:9", "9:16"], ratioSizes: { "16:9": "1376x768", "9:16": "768x1376" }, maxImages: 9 },
         });
 
         await requestVideoGeneration({ ...config, size: "9:16" } as AiConfig, "animate", [referenceImage()]);
@@ -222,7 +222,7 @@ describe("requestVideoGeneration", () => {
         const config = dedicatedAccountConfig({
             name: "minimax-h3-original-768p",
             videoAccountTokenId: "vca_account",
-            video: { resolution: "768p", durationsSeconds: [4], ratios: ["16:9"], ratioSizes: { "16:9": "1376x768" }, maxImages: 9, supportsFirstLastFrame: true },
+            video: { family: "minimax-h3", resolution: "768p", durationsSeconds: [4], ratios: ["16:9"], ratioSizes: { "16:9": "1376x768" }, maxImages: 9, supportsFirstLastFrame: true },
         });
 
         await requestVideoGeneration({ ...config, size: "16:9", videoOperationMode: "first_last_frame" } as AiConfig, "transition", [referenceImage(), referenceImage(), referenceImage()]);
@@ -281,7 +281,7 @@ describe("requestVideoGeneration", () => {
         const config = dedicatedAccountConfig({
             name: "minimax-h3-quantized-768p",
             videoAccountTokenId: "vca_account",
-            video: { resolution: "768p", durationsSeconds: [4], ratios: ["16:9"], maxImages: 4, maxVideos: 0, maxAudios: 0 },
+            video: { family: "minimax-h3", resolution: "768p", durationsSeconds: [4], ratios: ["16:9"], maxImages: 4, maxVideos: 0, maxAudios: 0 },
         });
 
         await requestVideoGeneration({ ...config, size: "16:9" } as AiConfig, "animate", [referenceImage()], {
@@ -291,6 +291,25 @@ describe("requestVideoGeneration", () => {
         const uploads = vi.mocked(axios.post).mock.calls.filter((call) => call[1] instanceof FormData).map((call) => (call[1] as FormData).get("type"));
         expect(uploads).toEqual(["images"]);
         expect((vi.mocked(axios.post).mock.calls.at(-1)?.[1] as Record<string, unknown>).reference_videos).toBeUndefined();
+    });
+
+    it("keeps a lone image on the images array for the Seedance dialect", async () => {
+        // Seedance's published field set has no single-image field, so even one
+        // reference image must travel as the documented array.
+        vi.mocked(axios.post)
+            .mockResolvedValueOnce({ data: { images: ["https://media.example/image.png"] } })
+            .mockResolvedValueOnce({ data: { id: "video_123" } });
+        const config = dedicatedAccountConfig({
+            name: "sd-2-vip-480",
+            videoAccountTokenId: "vca_account",
+            video: { family: "seedance", resolution: "480p", durationsSeconds: [5], ratios: ["16:9"], maxImages: 9 },
+        });
+
+        await requestVideoGeneration({ ...config, size: "16:9" } as AiConfig, "animate", [referenceImage()]);
+
+        const body = vi.mocked(axios.post).mock.calls.at(-1)?.[1] as Record<string, unknown>;
+        expect(body.images).toEqual(["https://media.example/image.png"]);
+        expect(body.input_reference).toBeUndefined();
     });
 
     it("keeps polling the account that created the task after the selection changes", async () => {

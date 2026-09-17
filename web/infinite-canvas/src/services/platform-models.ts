@@ -16,6 +16,7 @@ export type PlatformCanvasModel = {
 export type PlatformVideoMetadata = {
     video_account_token_id?: string;
     group?: string;
+    family?: string;
     resolution?: string;
     durations_seconds?: number[];
     ratios?: string[];
@@ -102,6 +103,7 @@ async function loadPlatformGroup(group: PlatformCanvasGroup, signal: AbortSignal
         }
         const video: VideoModelMetadata = {
             group: source.group,
+            family: source.family,
             resolution: source.resolution,
             durationsSeconds: source.durations_seconds,
             ratios: source.ratios,

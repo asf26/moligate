@@ -47,6 +47,25 @@ func IsMiniMaxH3VideoModel(group, modelID string) bool {
 	return strings.Contains(strings.ToLower(strings.TrimSpace(group)), "h3")
 }
 
+// Video integration names. The two integrations share an endpoint but not a
+// request dialect, so callers that must pick a field spelling need to know which
+// one a model belongs to rather than re-deriving it.
+const (
+	VideoFamilyMiniMaxH3 = "minimax-h3"
+	VideoFamilySeedance  = "seedance"
+)
+
+// Family names the upstream integration a model belongs to. A catalog that
+// matches neither pattern falls back to Seedance, which is the other
+// integration this gateway supports and the one whose documented field set is
+// the narrower of the two.
+func (item VideoModel) Family() string {
+	if IsMiniMaxH3VideoModel(item.Group, item.ID) {
+		return VideoFamilyMiniMaxH3
+	}
+	return VideoFamilySeedance
+}
+
 // MiniMaxH3RatioSizes returns the size to submit for each supported aspect
 // ratio, keyed by ratio. An empty result means the caller must not send a size.
 func MiniMaxH3RatioSizes(resolution string, ratios []string) map[string]string {

@@ -56,12 +56,16 @@ type canvasModelResponse struct {
 // must be routed to, so the browser can submit the request with its own API key
 // while the gateway keeps the upstream credential on the server.
 type canvasVideoModelMetadata struct {
-	VideoAccountTokenID string   `json:"video_account_token_id"`
-	Group               string   `json:"group,omitempty"`
-	Resolution          string   `json:"resolution,omitempty"`
-	DurationsSeconds    []int    `json:"durations_seconds,omitempty"`
-	Ratios              []string `json:"ratios,omitempty"`
-	Sizes               []string `json:"sizes,omitempty"`
+	VideoAccountTokenID string `json:"video_account_token_id"`
+	Group               string `json:"group,omitempty"`
+	// Family names the upstream integration. The two integrations share an
+	// endpoint but not a request dialect, so the workspace needs it to pick the
+	// right field spelling instead of guessing from the model id.
+	Family           string   `json:"family,omitempty"`
+	Resolution       string   `json:"resolution,omitempty"`
+	DurationsSeconds []int    `json:"durations_seconds,omitempty"`
+	Ratios           []string `json:"ratios,omitempty"`
+	Sizes            []string `json:"sizes,omitempty"`
 	// RatioSizes tells the workspace which size value to submit for each
 	// supported ratio. It is the only way the browser can send a legal size,
 	// because the models endpoint publishes ratios and resolution but not the
@@ -177,6 +181,7 @@ func canvasVideoMetadata(account *model.VideoAccount, item model.VideoModel) *ca
 	return &canvasVideoModelMetadata{
 		VideoAccountTokenID:    account.OpaqueKey(),
 		Group:                  item.Group,
+		Family:                 item.Family(),
 		Resolution:             item.Resolution,
 		DurationsSeconds:       item.DurationsSeconds,
 		Ratios:                 item.Ratios,

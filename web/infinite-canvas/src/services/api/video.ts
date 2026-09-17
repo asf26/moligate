@@ -182,10 +182,11 @@ async function createVideoAccountTask(config: AiConfig, model: string, modelName
         if (ratio) body.aspect_ratio = ratio;
         if (size) body.size = size;
         if (images.length) {
-            // A lone reference image goes on the single-image field, which selects
-            // the single-reference workflow; a non-empty images array selects the
-            // multi-reference one. The upstream console draws the same line.
-            if (images.length === 1 && !firstLastFrame && !referenceVideos.length && !referenceAudios.length) {
+            // H3 documents the single-image field, which selects the
+            // single-reference workflow, so a lone image goes there. Seedance
+            // publishes only the images array, and a non-empty array selects the
+            // multi-reference workflow either way.
+            if (images.length === 1 && capabilities.family === "minimax-h3" && !firstLastFrame && !referenceVideos.length && !referenceAudios.length) {
                 body.input_reference = images[0];
             } else {
                 body.images = images;

@@ -16,6 +16,8 @@ export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
  */
 export type VideoModelMetadata = {
     group?: string;
+    /** Which upstream integration serves the model: "minimax-h3" or "seedance". */
+    family?: string;
     resolution?: string;
     durationsSeconds?: number[];
     ratios?: string[];
