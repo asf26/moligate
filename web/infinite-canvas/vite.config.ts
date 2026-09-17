@@ -7,7 +7,7 @@ import { defineConfig, type Plugin } from "vite";
 import { parseChangelog } from "./src/lib/release";
 
 const webDir = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_CANVAS_VERSION = "v0.18.0";
+const DEFAULT_CANVAS_VERSION = "v0.19.0";
 const localVersionFile = resolve(webDir, "VERSION");
 const localChangelogFile = resolve(webDir, "CHANGELOG.md");
 const localVersion = existsSync(localVersionFile) ? readFileSync(localVersionFile, "utf8").trim() || DEFAULT_CANVAS_VERSION : DEFAULT_CANVAS_VERSION;

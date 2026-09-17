@@ -132,6 +132,7 @@ export default {
         serviceBusy: "Service unavailable (503). Try again later.",
         httpFailed: "Request failed (HTTP {{status}}). Check the Base URL and API key.",
         htmlError: "The service returned an HTML error page ({{preview}})",
+        imageTimeout: "The image request timed out. The endpoint did not respond in time; retry later or switch channels.",
         audioModelRequired: "Configure an audio model first",
         audioGenerationFailed: "Audio generation failed",
         scriptNoAudio: "The model request script did not return audio",
@@ -865,7 +866,7 @@ export default {
             records: "{{count}} records",
             refresh: "Refresh usage",
             readFailed: "Failed to read local storage",
-            stores: { appState: "App state", images: "Image files", media: "Audio and video files", imageLogs: "Image history", videoLogs: "Video history", agentMessages: "Agent messages", promptCache: "Prompt cache" },
+            stores: { appState: "App state", images: "Image files", imagePreviews: "Image thumbnails", media: "Audio and video files", imageLogs: "Image history", videoLogs: "Video history", agentMessages: "Agent messages", promptCache: "Prompt cache" },
         },
         promptSources: {
             add: "Add source",

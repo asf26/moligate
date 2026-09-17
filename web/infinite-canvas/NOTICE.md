@@ -1,1 +1,1 @@
-This directory incorporates basketikun/infinite-canvas v0.18.0 (commit d213a74614e0e4bd8a26383d1e1e907249e9c61b, https://github.com/basketikun/infinite-canvas) under the MIT License. See LICENSE.infinite-canvas.
+This directory incorporates basketikun/infinite-canvas v0.19.0 (commit e856c878e0a34651bb828e28f0af20d71016a7d4, https://github.com/basketikun/infinite-canvas) under the MIT License. See LICENSE.infinite-canvas.

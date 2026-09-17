@@ -1,4 +1,4 @@
-export const APP_VERSION = __APP_VERSION__ || "v0.18.0";
+export const APP_VERSION = __APP_VERSION__ || "v0.19.0";
 
 export const DOCS_URL = import.meta.env.VITE_DOC_URL || "https://docs.canvas.best";
 
