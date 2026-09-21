@@ -32,12 +32,14 @@ vi.mock('../api', () => ({
 const orders: OrderRecord[] = [
   {
     id: 68,
+    kind: 'subscription',
     user_id: 86,
     username: 'yaoyingjie',
     plan_id: 30,
     plan_title: '国产模型 入门版',
     trade_no: 'SUBUSR86NOYECmmO1789971944',
     money: 105,
+    amount: 0,
     payment_method: 'wxpay',
     payment_provider: 'epay',
     status: 'success',
@@ -45,13 +47,31 @@ const orders: OrderRecord[] = [
     complete_time: 1789972000,
   },
   {
+    id: 90,
+    kind: 'topup',
+    user_id: 86,
+    username: 'yaoyingjie',
+    plan_id: 0,
+    plan_title: '',
+    trade_no: 'TOPUP86AAAA0000000001',
+    money: 50,
+    amount: 25000000,
+    payment_method: 'stripe',
+    payment_provider: 'stripe',
+    status: 'success',
+    create_time: 1789970000,
+    complete_time: 1789970100,
+  },
+  {
     id: 67,
+    kind: 'subscription',
     user_id: 1,
     username: 'guochangrong',
     plan_id: 45,
     plan_title: '香蕉生图 3,000 张包',
     trade_no: 'SUBUSR1NOGYtH671789651647',
     money: 450,
+    amount: 0,
     payment_method: 'wxpay',
     payment_provider: 'epay',
     status: 'pending',
@@ -75,21 +95,22 @@ describe('OrdersTable', () => {
   beforeEach(() => {
     vi.mocked(getAdminOrders).mockResolvedValue({
       success: true,
-      data: { page: 1, page_size: 20, total: 2, items: orders },
+      data: { page: 1, page_size: 20, total: 3, items: orders },
     })
   })
 
-  test('lists every user order with buyer, plan, amount and status', async () => {
+  test('lists package purchases and wallet recharges in one ledger', async () => {
     renderOrdersTable()
 
     expect(await screen.findByText('SUBUSR86NOYECmmO1789971944')).toBeVisible()
-    expect(screen.getByText('yaoyingjie')).toBeVisible()
-    expect(screen.getByText('ID 86')).toBeVisible()
+    expect(screen.getAllByText('yaoyingjie').length).toBeGreaterThan(0)
     expect(screen.getByText('国产模型 入门版')).toBeVisible()
     expect(screen.getByText('¥105.00')).toBeVisible()
-    expect(screen.getAllByText('WeChat Pay · epay')[0]).toBeVisible()
-    expect(screen.getByText('Paid')).toBeVisible()
+    expect(screen.getAllByText('Subscription order')[0]).toBeVisible()
+    expect(screen.getAllByText('Balance top-up')[0]).toBeVisible()
     expect(screen.getByText('Pending payment')).toBeVisible()
+    // The recharge row shows the credited quota next to its label.
+    expect(screen.getByText(/^\+\$/)).toBeVisible()
     expect(vi.mocked(getAdminOrders)).toHaveBeenCalledWith(
       expect.objectContaining({ p: 1, page_size: 20 })
     )

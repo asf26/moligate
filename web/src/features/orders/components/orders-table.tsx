@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select'
 
 import { getAdminOrders } from '../api'
-import { getOrderStatusOptions } from '../constants'
+import { getOrderKindOptions, getOrderStatusOptions } from '../constants'
 import type { OrderRecord, OrdersQuery } from '../types'
 import { useOrdersColumns } from './orders-columns'
 
@@ -43,6 +43,7 @@ interface OrderFilters {
   tradeNo: string
   username: string
   userId: string
+  kind: string
   status: string
   start?: Date
   end?: Date
@@ -52,10 +53,11 @@ const EMPTY_FILTERS: OrderFilters = {
   tradeNo: '',
   username: '',
   userId: '',
+  kind: '',
   status: '',
 }
 
-const ALL_STATUSES = 'all'
+const ALL_OPTION = 'all'
 
 function toUnixSeconds(date?: Date): number | undefined {
   return date ? Math.floor(date.getTime() / 1000) : undefined
@@ -66,6 +68,7 @@ function hasAnyFilter(filters: OrderFilters): boolean {
     filters.tradeNo.trim() ||
     filters.username.trim() ||
     filters.userId.trim() ||
+    filters.kind ||
     filters.status ||
     filters.start ||
     filters.end
@@ -83,10 +86,12 @@ export function OrdersTable() {
   })
 
   const statusOptions = useMemo(
-    () => [
-      { value: ALL_STATUSES, label: t('All') },
-      ...getOrderStatusOptions(t),
-    ],
+    () => [{ value: ALL_OPTION, label: t('All') }, ...getOrderStatusOptions(t)],
+    [t]
+  )
+
+  const kindOptions = useMemo(
+    () => [{ value: ALL_OPTION, label: t('All') }, ...getOrderKindOptions(t)],
     [t]
   )
 
@@ -99,6 +104,7 @@ export function OrdersTable() {
       username: applied.username.trim() || undefined,
       user_id: Number.isFinite(userId) && userId > 0 ? userId : undefined,
       status: applied.status || undefined,
+      kind: applied.kind || undefined,
       start_time: toUnixSeconds(applied.start),
       end_time: toUnixSeconds(applied.end),
     }
@@ -217,12 +223,38 @@ export function OrdersTable() {
               className='h-8 w-full sm:w-64'
             />
             <Select
-              items={statusOptions}
-              value={draft.status || ALL_STATUSES}
+              items={kindOptions}
+              value={draft.kind || ALL_OPTION}
               onValueChange={(value) =>
                 setDraft((previous) => ({
                   ...previous,
-                  status: !value || value === ALL_STATUSES ? '' : value,
+                  kind: !value || value === ALL_OPTION ? '' : value,
+                }))
+              }
+            >
+              <SelectTrigger
+                className='h-8 w-full sm:w-32'
+                aria-label={t('Type')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {kindOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select
+              items={statusOptions}
+              value={draft.status || ALL_OPTION}
+              onValueChange={(value) =>
+                setDraft((previous) => ({
+                  ...previous,
+                  status: !value || value === ALL_OPTION ? '' : value,
                 }))
               }
             >

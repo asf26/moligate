@@ -18,12 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export interface OrderRecord {
   id: number
+  kind: string
   user_id: number
   username: string
   plan_id: number
   plan_title: string
   trade_no: string
   money: number
+  amount: number
   payment_method: string
   payment_provider: string
   status: string
@@ -38,6 +40,7 @@ export interface OrdersQuery {
   username?: string
   user_id?: number
   status?: string
+  kind?: string
   start_time?: number
   end_time?: number
 }

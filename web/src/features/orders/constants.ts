@@ -25,7 +25,37 @@ export const ORDER_STATUS = {
   FAILED: 'failed',
 } as const
 
-type BadgeVariant = 'success' | 'warning' | 'neutral' | 'danger'
+// Two sources feed the ledger: package purchases and wallet recharges.
+export const ORDER_KIND = {
+  SUBSCRIPTION: 'subscription',
+  TOP_UP: 'topup',
+} as const
+
+type BadgeVariant = 'success' | 'warning' | 'neutral' | 'danger' | 'info'
+
+export function getOrderKindLabel(kind: string, t: TFunction): string {
+  switch (kind) {
+    case ORDER_KIND.SUBSCRIPTION:
+      return t('Subscription order')
+    case ORDER_KIND.TOP_UP:
+      return t('Balance top-up')
+    default:
+      return kind || '-'
+  }
+}
+
+export function getOrderKindVariant(kind: string): BadgeVariant {
+  return kind === ORDER_KIND.TOP_UP ? 'success' : 'info'
+}
+
+export function getOrderKindOptions(
+  t: TFunction
+): { label: string; value: string }[] {
+  return [ORDER_KIND.SUBSCRIPTION, ORDER_KIND.TOP_UP].map((kind) => ({
+    label: getOrderKindLabel(kind, t),
+    value: kind,
+  }))
+}
 
 export function getOrderStatusLabel(status: string, t: TFunction): string {
   switch (status) {

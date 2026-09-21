@@ -25,6 +25,6 @@ import type { OrdersQuery, OrdersResponse } from './types'
 export async function getAdminOrders(
   params: OrdersQuery
 ): Promise<OrdersResponse> {
-  const res = await api.get('/api/subscription/admin/orders', { params })
+  const res = await api.get('/api/order/admin/list', { params })
   return res.data
 }

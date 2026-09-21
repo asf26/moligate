@@ -22,10 +22,13 @@ import { useTranslation } from 'react-i18next'
 import { DataTableColumnHeader } from '@/components/data-table/core/column-header'
 import { StatusBadge } from '@/components/status-badge'
 import { formatSubscriptionPrice } from '@/features/subscriptions/lib'
-import { formatTimestamp } from '@/lib/format'
+import { formatQuota, formatTimestamp } from '@/lib/format'
 
 import {
+  ORDER_KIND,
   formatPaymentMethod,
+  getOrderKindLabel,
+  getOrderKindVariant,
   getOrderStatusLabel,
   getOrderStatusVariant,
 } from '../constants'
@@ -69,15 +72,38 @@ export function useOrdersColumns(): ColumnDef<OrderRecord>[] {
       size: 150,
     },
     {
-      accessorKey: 'plan_title',
+      accessorKey: 'kind',
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={t('Plan')} />
+        <DataTableColumnHeader column={column} title={t('Type')} />
       ),
       cell: ({ row }) => (
-        <span className='truncate' title={row.original.plan_title}>
-          {row.original.plan_title || '-'}
-        </span>
+        <StatusBadge
+          label={getOrderKindLabel(row.original.kind, t)}
+          variant={getOrderKindVariant(row.original.kind)}
+          copyable={false}
+          showDot
+        />
       ),
+      size: 130,
+    },
+    {
+      accessorKey: 'plan_title',
+      header: t('Content'),
+      cell: ({ row }) => {
+        if (row.original.kind === ORDER_KIND.TOP_UP) {
+          // The kind badge already says "Balance top-up"; show the credited quota.
+          return (
+            <span className='text-muted-foreground text-xs tabular-nums'>
+              +{formatQuota(row.original.amount)}
+            </span>
+          )
+        }
+        return (
+          <span className='truncate' title={row.original.plan_title}>
+            {row.original.plan_title || '-'}
+          </span>
+        )
+      },
       size: 180,
     },
     {
