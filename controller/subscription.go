@@ -492,37 +492,6 @@ func AdminUpdateSubscriptionPlanStatus(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
-// AdminListSubscriptionOrders exposes every user's orders to the console, with
-// optional filters on time range, username, user id and trade number.
-func AdminListSubscriptionOrders(c *gin.Context) {
-	pageInfo := common.GetPageQuery(c)
-	userId, _ := strconv.Atoi(strings.TrimSpace(c.Query("user_id")))
-	orders, total, err := model.ListAdminSubscriptionOrders(model.AdminSubscriptionOrderQuery{
-		UserId:    userId,
-		Username:  c.Query("username"),
-		TradeNo:   c.Query("trade_no"),
-		Status:    c.Query("status"),
-		StartTime: parseOrderFilterTime(c.Query("start_time")),
-		EndTime:   parseOrderFilterTime(c.Query("end_time")),
-	}, pageInfo)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(orders)
-	common.ApiSuccess(c, pageInfo)
-}
-
-// parseOrderFilterTime reads a unix-seconds bound; anything else means "no bound".
-func parseOrderFilterTime(raw string) int64 {
-	seconds, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
-	if err != nil || seconds <= 0 {
-		return 0
-	}
-	return seconds
-}
-
 type AdminBindSubscriptionRequest struct {
 	UserId             int   `json:"user_id"`
 	PlanId             int   `json:"plan_id"`
