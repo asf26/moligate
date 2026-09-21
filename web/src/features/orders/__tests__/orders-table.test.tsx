@@ -55,7 +55,7 @@ const orders: OrderRecord[] = [
     plan_title: '',
     trade_no: 'TOPUP86AAAA0000000001',
     money: 50,
-    amount: 25000000,
+    amount: 150,
     payment_method: 'stripe',
     payment_provider: 'stripe',
     status: 'success',
@@ -109,8 +109,8 @@ describe('OrdersTable', () => {
     expect(screen.getAllByText('Subscription order')[0]).toBeVisible()
     expect(screen.getAllByText('Balance top-up')[0]).toBeVisible()
     expect(screen.getByText('Pending payment')).toBeVisible()
-    // The recharge row shows the credited quota next to its label.
-    expect(screen.getByText(/^\+\$/)).toBeVisible()
+    // The recharge row shows the credited face value (¥150 for a ¥50 payment).
+    expect(screen.getByText('+¥150')).toBeVisible()
     expect(vi.mocked(getAdminOrders)).toHaveBeenCalledWith(
       expect.objectContaining({ p: 1, page_size: 20 })
     )

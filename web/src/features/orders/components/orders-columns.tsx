@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { DataTableColumnHeader } from '@/components/data-table/core/column-header'
 import { StatusBadge } from '@/components/status-badge'
 import { formatSubscriptionPrice } from '@/features/subscriptions/lib'
-import { formatQuota, formatTimestamp } from '@/lib/format'
+import { formatTimestamp } from '@/lib/format'
 
 import {
   ORDER_KIND,
@@ -91,10 +91,11 @@ export function useOrdersColumns(): ColumnDef<OrderRecord>[] {
       header: t('Content'),
       cell: ({ row }) => {
         if (row.original.kind === ORDER_KIND.TOP_UP) {
-          // The kind badge already says "Balance top-up"; show the credited quota.
+          // The kind badge already says "Balance top-up"; amount is the credited
+          // face value in CNY (gift multipliers included), money is what was paid.
           return (
             <span className='text-muted-foreground text-xs tabular-nums'>
-              +{formatQuota(row.original.amount)}
+              +¥{row.original.amount}
             </span>
           )
         }
