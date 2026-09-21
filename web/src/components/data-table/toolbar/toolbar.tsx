@@ -160,8 +160,10 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
   const hasExpandable = props.expandable != null
   const hasSearch = props.onSearch != null
 
+  // Consumers that only use custom filters never seed column filters, so the
+  // table state can legitimately carry `undefined` here.
   const isFiltered =
-    props.table.getState().columnFilters.length > 0 ||
+    (props.table.getState().columnFilters?.length ?? 0) > 0 ||
     !!props.table.getState().globalFilter ||
     !!props.hasAdditionalFilters
 

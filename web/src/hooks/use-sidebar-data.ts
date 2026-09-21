@@ -30,6 +30,7 @@ import {
   ListTodo,
   MessageSquare,
   Radio,
+  ReceiptText,
   ServerCog,
   Settings,
   Sparkles,
@@ -191,6 +192,11 @@ export function useSidebarData(): SidebarData {
             title: t('Subscriptions'),
             url: '/subscriptions',
             icon: CreditCard,
+          },
+          {
+            title: t('Order Management'),
+            url: '/orders',
+            icon: ReceiptText,
           },
           {
             title: t('Affiliate Management'),

@@ -25,7 +25,7 @@ import { useTranslation } from 'react-i18next'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { DrawingLogFilters, LogCategory, TaskLogFilters } from '../types'
-import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
+import { CompactDateTimeRangePicker } from '@/components/compact-date-time-range-picker'
 import {
   LogsFilterField,
   LogsFilterInput,

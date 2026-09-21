@@ -43,7 +43,7 @@ import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
-import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
+import { CompactDateTimeRangePicker } from '@/components/compact-date-time-range-picker'
 import {
   LogsFilterField,
   LogsFilterInput,
