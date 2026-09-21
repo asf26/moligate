@@ -36,6 +36,10 @@ const (
 // adminOrderUnion projects both order tables onto one column set. It carries no
 // user input: filters, ordering and paging are applied by the caller on top of
 // this derived table, which keeps the statement portable across databases.
+//
+// Recharge rows whose trade_no matches a subscription order are the wallet
+// mirror the payment callback writes for a package purchase — they are not
+// recharges, and listing them would show every purchase twice.
 const adminOrderUnion = `
 SELECT 'subscription' AS kind, id, user_id, plan_id, money, 0 AS amount, trade_no,
        payment_method, payment_provider, status, create_time, complete_time, plan_snapshot
@@ -43,7 +47,10 @@ FROM subscription_orders
 UNION ALL
 SELECT 'topup' AS kind, id, user_id, 0 AS plan_id, money, amount, trade_no,
        payment_method, payment_provider, status, create_time, complete_time, '' AS plan_snapshot
-FROM top_ups`
+FROM top_ups
+WHERE NOT EXISTS (
+    SELECT 1 FROM subscription_orders s WHERE s.trade_no = top_ups.trade_no
+)`
 
 // AdminOrderQuery filters the admin order ledger. Empty values mean "no
 // constraint"; the time bounds are inclusive unix seconds on create_time.
@@ -57,8 +64,10 @@ type AdminOrderQuery struct {
 	EndTime   int64
 }
 
-// AdminOrderRow is one row of the admin order ledger. PlanSnapshot is read to
-// resolve the purchased plan title and is never serialized.
+// AdminOrderRow is one row of the admin order ledger. For recharges, Amount is
+// the credited face value in CNY (gift multipliers included) while Money is
+// what was actually paid. PlanSnapshot is read to resolve the purchased plan
+// title and is never serialized.
 type AdminOrderRow struct {
 	Id              int     `json:"id"`
 	Kind            string  `json:"kind"`

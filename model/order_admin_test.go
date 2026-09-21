@@ -88,7 +88,8 @@ func setupAdminOrderTestDB(t *testing.T) *gorm.DB {
 		(id, user_id, amount, money, trade_no, payment_method, payment_provider, status, create_time, complete_time)
 		VALUES
 		(11, 1, 5000000, 10, 'TOPUP1AAAA', 'alipay', 'epay', 'success', 4000, 4100),
-		(12, 2, 25000000, 50, 'TOPUP2BBBB', 'stripe', 'stripe', 'success', 5000, 5100)`).Error)
+		(12, 2, 25000000, 50, 'TOPUP2BBBB', 'stripe', 'stripe', 'success', 5000, 5100),
+		(13, 1, 0, 270, 'SUBUSR1AAAA', 'wxpay', 'epay', 'success', 1000, 1100)`).Error)
 	return db
 }
 
@@ -97,7 +98,7 @@ func TestListAdminOrdersMergesBothOrderKinds(t *testing.T) {
 
 	rows, total, err := ListAdminOrders(AdminOrderQuery{}, &common.PageInfo{Page: 1, PageSize: 20})
 	require.NoError(t, err)
-	assert.EqualValues(t, 5, total)
+	assert.EqualValues(t, 5, total, "the wallet mirror of a purchase must not appear as a second order")
 	require.Len(t, rows, 5)
 
 	// Newest first, whatever the source.
