@@ -72,11 +72,6 @@ const MODEL_CATEGORIES: ModelCategory[] = [
     tone: 'slate',
     matches: (model) => matchesModel(model, /grok|xai/),
   },
-  {
-    name: 'Other models',
-    tone: 'slate',
-    matches: () => true,
-  },
 ]
 
 const fallbackModelFamilies: ModelFamily[] = [
@@ -151,15 +146,17 @@ function buildModelFamilies(models: PricingModel[]): ModelFamily[] {
     const modelName = model.model_name.trim()
     if (!modelName || seenModels.has(modelName)) continue
 
+    const category = MODEL_CATEGORIES.find((entry) => entry.matches(model))
+    // Models outside the advertised families are deliberately not listed on the
+    // public homepage.
+    if (!category) continue
+
     seenModels.add(modelName)
-    const familyName =
-      MODEL_CATEGORIES.find((category) => category.matches(model))?.name ??
-      'Other models'
-    const modelsInFamily = familyModels.get(familyName) ?? []
+    const modelsInFamily = familyModels.get(category.name) ?? []
 
     if (modelsInFamily.length < MAX_MODELS_PER_FAMILY) {
       modelsInFamily.push(modelName)
-      familyModels.set(familyName, modelsInFamily)
+      familyModels.set(category.name, modelsInFamily)
     }
   }
 

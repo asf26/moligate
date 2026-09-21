@@ -79,4 +79,22 @@ describe('ModelDirectory', () => {
     expect(screen.getByRole('heading', { name: 'Claude' })).toBeInTheDocument()
     expect(screen.getByText('claude-opus-5')).toBeInTheDocument()
   })
+
+  it('leaves out models that belong to no advertised family', () => {
+    mockedUsePricingData.mockReturnValue({
+      models: [
+        { model_name: 'gpt-live', vendor_name: 'OpenAI' },
+        { model_name: 'flux-pro', vendor_name: 'Black Forest Labs' },
+        { model_name: 'kling-v2', vendor_name: 'Kuaishou' },
+      ],
+    } as unknown as ReturnType<typeof usePricingData>)
+
+    render(<ModelDirectory />)
+
+    expect(screen.getByRole('heading', { name: 'GPT' })).toBeInTheDocument()
+    expect(screen.getByText('gpt-live')).toBeInTheDocument()
+    expect(screen.queryByText('flux-pro')).not.toBeInTheDocument()
+    expect(screen.queryByText('kling-v2')).not.toBeInTheDocument()
+    expect(screen.queryByText('Other models')).not.toBeInTheDocument()
+  })
 })
