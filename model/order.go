@@ -25,32 +25,40 @@ import (
 	"gorm.io/gorm"
 )
 
-// Order kinds. Money comes in through two tables — package purchases and
-// wallet recharges — and the admin ledger lists both because an operator
-// reconciles them against the same payment statements.
+// Order kinds. Money comes in through three tables — package purchases, wallet
+// recharges and redemption codes — and the admin ledger lists all of them
+// because an operator reconciles them against the same payment statements.
 const (
 	OrderKindSubscription = "subscription"
 	OrderKindTopUp        = "topup"
+	OrderKindRedemption   = "redemption"
 )
 
-// adminOrderUnion projects both order tables onto one column set. It carries no
-// user input: filters, ordering and paging are applied by the caller on top of
-// this derived table, which keeps the statement portable across databases.
+// adminOrderUnion projects the three order tables onto one column set. It
+// carries no user input: filters, ordering and paging are applied by the caller
+// on top of this derived table, which keeps the statement portable across
+// databases.
 //
 // Recharge rows whose trade_no matches a subscription order are the wallet
 // mirror the payment callback writes for a package purchase — they are not
 // recharges, and listing them would show every purchase twice.
 const adminOrderUnion = `
 SELECT 'subscription' AS kind, id, user_id, plan_id, money, 0 AS amount, trade_no,
-       payment_method, payment_provider, status, create_time, complete_time, plan_snapshot
+       payment_method, payment_provider, status, create_time, complete_time, plan_snapshot, '' AS name
 FROM subscription_orders
 UNION ALL
 SELECT 'topup' AS kind, id, user_id, 0 AS plan_id, money, amount, trade_no,
-       payment_method, payment_provider, status, create_time, complete_time, '' AS plan_snapshot
+       payment_method, payment_provider, status, create_time, complete_time, '' AS plan_snapshot, '' AS name
 FROM top_ups
 WHERE NOT EXISTS (
     SELECT 1 FROM subscription_orders s WHERE s.trade_no = top_ups.trade_no
-)`
+)
+UNION ALL
+SELECT 'redemption' AS kind, id, used_user_id AS user_id, 0 AS plan_id, 0 AS money, quota AS amount,
+       '' AS trade_no, '' AS payment_method, '' AS payment_provider, 'success' AS status,
+       redeemed_time AS create_time, redeemed_time AS complete_time, '' AS plan_snapshot, name
+FROM redemptions
+WHERE status = 3 AND used_user_id > 0 AND deleted_at IS NULL`
 
 // AdminOrderQuery filters the admin order ledger. Empty values mean "no
 // constraint"; the time bounds are inclusive unix seconds on create_time.
@@ -66,8 +74,9 @@ type AdminOrderQuery struct {
 
 // AdminOrderRow is one row of the admin order ledger. For recharges, Amount is
 // the credited face value in CNY (gift multipliers included) while Money is
-// what was actually paid. PlanSnapshot is read to resolve the purchased plan
-// title and is never serialized.
+// what was actually paid; for redemptions Amount is the credited API quota and
+// Money is always 0. PlanSnapshot is read to resolve the purchased plan title
+// and is never serialized.
 type AdminOrderRow struct {
 	Id              int     `json:"id"`
 	Kind            string  `json:"kind"`
@@ -83,6 +92,7 @@ type AdminOrderRow struct {
 	Status          string  `json:"status"`
 	CreateTime      int64   `json:"create_time"`
 	CompleteTime    int64   `json:"complete_time"`
+	Name            string  `json:"name"`
 
 	PlanSnapshot string `json:"-" gorm:"column:plan_snapshot"`
 }
@@ -141,7 +151,8 @@ func ListAdminOrders(query AdminOrderQuery, pageInfo *common.PageInfo) ([]AdminO
 	err := scoped().
 		Select("orders.id, orders.kind, orders.user_id, orders.plan_id, orders.money, " +
 			"orders.amount, orders.trade_no, orders.payment_method, orders.payment_provider, " +
-			"orders.status, orders.create_time, orders.complete_time, orders.plan_snapshot, u.username").
+			"orders.status, orders.create_time, orders.complete_time, orders.plan_snapshot, " +
+			"orders.name, u.username").
 		Order("orders.create_time DESC, orders.id DESC, orders.kind").
 		Limit(pageInfo.PageSize).
 		Offset(pageInfo.GetStartIdx()).

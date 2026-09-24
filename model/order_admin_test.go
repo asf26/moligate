@@ -90,6 +90,25 @@ func setupAdminOrderTestDB(t *testing.T) *gorm.DB {
 		(11, 1, 5000000, 10, 'TOPUP1AAAA', 'alipay', 'epay', 'success', 4000, 4100),
 		(12, 2, 25000000, 50, 'TOPUP2BBBB', 'stripe', 'stripe', 'success', 5000, 5100),
 		(13, 1, 0, 270, 'SUBUSR1AAAA', 'wxpay', 'epay', 'success', 1000, 1100)`).Error)
+	require.NoError(t, db.Exec(`CREATE TABLE redemptions (
+		id integer PRIMARY KEY,
+		user_id integer,
+		name varchar(128),
+		quota integer,
+		status integer,
+		source_type varchar(32),
+		used_user_id integer,
+		created_time bigint,
+		redeemed_time bigint,
+		deleted_at datetime
+	)`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO redemptions
+		(id, user_id, name, quota, status, source_type, used_user_id, created_time, redeemed_time, deleted_at)
+		VALUES
+		(21, 1, '活动码A', 10000000, 3, '', 2, 1, 6000, NULL),
+		(22, 1, '未用码', 5000000, 1, '', 0, 1, 0, NULL),
+		(23, 1, '禁用码', 5000000, 2, '', 0, 1, 0, NULL),
+		(24, 1, '软删已用', 5000000, 3, '', 2, 1, 7000, '2026-09-24 00:00:00')`).Error)
 	return db
 }
 
@@ -98,26 +117,34 @@ func TestListAdminOrdersMergesBothOrderKinds(t *testing.T) {
 
 	rows, total, err := ListAdminOrders(AdminOrderQuery{}, &common.PageInfo{Page: 1, PageSize: 20})
 	require.NoError(t, err)
-	assert.EqualValues(t, 5, total, "the wallet mirror of a purchase must not appear as a second order")
-	require.Len(t, rows, 5)
+	assert.EqualValues(t, 6, total, "the wallet mirror of a purchase must not appear as a second order, and only used redemption codes count")
+	require.Len(t, rows, 6)
 
 	// Newest first, whatever the source.
-	assert.Equal(t, []int{12, 11, 3, 2, 1}, []int{rows[0].Id, rows[1].Id, rows[2].Id, rows[3].Id, rows[4].Id})
-	assert.Equal(t, OrderKindTopUp, rows[0].Kind)
+	assert.Equal(t, []int{21, 12, 11, 3, 2, 1}, []int{rows[0].Id, rows[1].Id, rows[2].Id, rows[3].Id, rows[4].Id, rows[5].Id})
+	assert.Equal(t, OrderKindRedemption, rows[0].Kind)
 	assert.Equal(t, OrderKindTopUp, rows[1].Kind)
-	assert.Equal(t, OrderKindSubscription, rows[2].Kind)
+	assert.Equal(t, OrderKindTopUp, rows[2].Kind)
+	assert.Equal(t, OrderKindSubscription, rows[3].Kind)
 
-	// Recharges carry the credited amount and no plan title.
-	assert.EqualValues(t, 25000000, rows[0].Amount)
-	assert.Equal(t, 50.0, rows[0].Money)
-	assert.Empty(t, rows[0].PlanTitle)
-	assert.Equal(t, "bob", rows[0].Username)
+	// Redemption codes carry the credited quota, no money and no trade number.
+	assert.EqualValues(t, 10000000, rows[0].Amount)
+	assert.Equal(t, 0.0, rows[0].Money)
+	assert.Empty(t, rows[0].TradeNo)
+	assert.Equal(t, "活动码A", rows[0].Name)
+	assert.Equal(t, "bob", rows[0].Username, "used_user_id is the credited user")
+
+	// Recharges carry the credited face value and no plan title.
+	assert.EqualValues(t, 25000000, rows[1].Amount)
+	assert.Equal(t, 50.0, rows[1].Money)
+	assert.Empty(t, rows[1].PlanTitle)
+	assert.Equal(t, "bob", rows[1].Username)
 
 	// Package purchases resolve their title from the order snapshot.
-	assert.Equal(t, "黄金套餐", rows[4].PlanTitle)
-	assert.EqualValues(t, 0, rows[4].Amount)
-	assert.Empty(t, rows[2].PlanTitle, "an order without a snapshot keeps an empty title")
-	assert.Equal(t, "alice", rows[2].Username)
+	assert.Equal(t, "黄金套餐", rows[5].PlanTitle)
+	assert.EqualValues(t, 0, rows[5].Amount)
+	assert.Empty(t, rows[3].PlanTitle, "an order without a snapshot keeps an empty title")
+	assert.Equal(t, "alice", rows[3].Username)
 }
 
 func TestListAdminOrdersFiltersBothKinds(t *testing.T) {
@@ -133,6 +160,12 @@ func TestListAdminOrdersFiltersBothKinds(t *testing.T) {
 	assert.EqualValues(t, 2, total)
 	assert.Len(t, topUps, 2)
 
+	redemptions, total, err := ListAdminOrders(AdminOrderQuery{Kind: OrderKindRedemption}, &common.PageInfo{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, total, "only used codes with a credited user are listed")
+	assert.Len(t, redemptions, 1)
+	assert.Equal(t, 21, redemptions[0].Id)
+
 	// A username filter applies to both sources.
 	byUsername, total, err := ListAdminOrders(AdminOrderQuery{Username: "alice"}, &common.PageInfo{Page: 1, PageSize: 20})
 	require.NoError(t, err)
@@ -141,8 +174,8 @@ func TestListAdminOrdersFiltersBothKinds(t *testing.T) {
 
 	byUserId, total, err := ListAdminOrders(AdminOrderQuery{UserId: 2}, &common.PageInfo{Page: 1, PageSize: 20})
 	require.NoError(t, err)
-	assert.EqualValues(t, 2, total)
-	assert.Len(t, byUserId, 2)
+	assert.EqualValues(t, 3, total, "bob has a purchase, a recharge and a redeemed code")
+	assert.Len(t, byUserId, 3)
 	assert.Equal(t, "bob", byUserId[0].Username)
 
 	byTradeNo, total, err := ListAdminOrders(AdminOrderQuery{TradeNo: "TOPUP"}, &common.PageInfo{Page: 1, PageSize: 20})
@@ -190,7 +223,7 @@ func TestListAdminOrdersPaginatesAndClampsPageSize(t *testing.T) {
 
 	first, total, err := ListAdminOrders(AdminOrderQuery{}, &common.PageInfo{Page: 1, PageSize: 2})
 	require.NoError(t, err)
-	assert.EqualValues(t, 30, total)
+	assert.EqualValues(t, 31, total)
 	assert.Len(t, first, 2)
 
 	second, _, err := ListAdminOrders(AdminOrderQuery{}, &common.PageInfo{Page: 2, PageSize: 2})
@@ -206,5 +239,5 @@ func TestListAdminOrdersPaginatesAndClampsPageSize(t *testing.T) {
 	// An oversized page size is clamped, so every remaining order still arrives.
 	clamped, _, err := ListAdminOrders(AdminOrderQuery{}, &common.PageInfo{Page: 1, PageSize: 5000})
 	require.NoError(t, err)
-	assert.Len(t, clamped, 30)
+	assert.Len(t, clamped, 31)
 }
