@@ -45,6 +45,7 @@ const orders: OrderRecord[] = [
     status: 'success',
     create_time: 1789971944,
     complete_time: 1789972000,
+    name: '',
   },
   {
     id: 90,
@@ -61,6 +62,24 @@ const orders: OrderRecord[] = [
     status: 'success',
     create_time: 1789970000,
     complete_time: 1789970100,
+    name: '',
+  },
+  {
+    id: 91,
+    kind: 'redemption',
+    user_id: 86,
+    username: 'yaoyingjie',
+    plan_id: 0,
+    plan_title: '',
+    trade_no: '',
+    money: 0,
+    amount: 10000000,
+    payment_method: '',
+    payment_provider: '',
+    status: 'success',
+    create_time: 1789960000,
+    complete_time: 1789960000,
+    name: '九月活动码',
   },
   {
     id: 67,
@@ -77,6 +96,7 @@ const orders: OrderRecord[] = [
     status: 'pending',
     create_time: 1789651647,
     complete_time: 0,
+    name: '',
   },
 ]
 
@@ -95,7 +115,7 @@ describe('OrdersTable', () => {
   beforeEach(() => {
     vi.mocked(getAdminOrders).mockResolvedValue({
       success: true,
-      data: { page: 1, page_size: 20, total: 3, items: orders },
+      data: { page: 1, page_size: 20, total: 4, items: orders },
     })
   })
 
@@ -108,6 +128,10 @@ describe('OrdersTable', () => {
     expect(screen.getByText('¥105.00')).toBeVisible()
     expect(screen.getAllByText('Subscription order')[0]).toBeVisible()
     expect(screen.getAllByText('Balance top-up')[0]).toBeVisible()
+    expect(screen.getAllByText('Redemption Code')[0]).toBeVisible()
+    expect(screen.getByText('九月活动码')).toBeVisible()
+    expect(screen.getByText('+$20')).toBeVisible()
+    expect(screen.getByText('Redeemed')).toBeVisible()
     expect(screen.getByText('Pending payment')).toBeVisible()
     // The recharge row shows the credited face value (¥150 for a ¥50 payment).
     expect(screen.getByText('+¥150')).toBeVisible()

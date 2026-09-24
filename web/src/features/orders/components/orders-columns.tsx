@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { DataTableColumnHeader } from '@/components/data-table/core/column-header'
 import { StatusBadge } from '@/components/status-badge'
 import { formatSubscriptionPrice } from '@/features/subscriptions/lib'
-import { formatTimestamp } from '@/lib/format'
+import { formatQuota, formatTimestamp } from '@/lib/format'
 
 import {
   ORDER_KIND,
@@ -44,14 +44,17 @@ export function useOrdersColumns(): ColumnDef<OrderRecord>[] {
         <DataTableColumnHeader column={column} title={t('Trade No')} />
       ),
       meta: { mobileTitle: true },
-      cell: ({ row }) => (
-        <span
-          className='font-[family-name:var(--font-geist-mono)] text-xs break-all'
-          title={row.original.trade_no}
-        >
-          {row.original.trade_no}
-        </span>
-      ),
+      cell: ({ row }) =>
+        row.original.trade_no ? (
+          <span
+            className='font-[family-name:var(--font-geist-mono)] text-xs break-all'
+            title={row.original.trade_no}
+          >
+            {row.original.trade_no}
+          </span>
+        ) : (
+          <span className='text-muted-foreground text-xs'>-</span>
+        ),
       size: 230,
     },
     {
@@ -99,6 +102,17 @@ export function useOrdersColumns(): ColumnDef<OrderRecord>[] {
             </span>
           )
         }
+        if (row.original.kind === ORDER_KIND.REDEMPTION) {
+          // Amount is API quota here — the code credits the wallet in quota.
+          return (
+            <div className='flex min-w-0 flex-col'>
+              <span className='truncate'>{row.original.name || '-'}</span>
+              <span className='text-muted-foreground text-xs tabular-nums'>
+                +{formatQuota(row.original.amount)}
+              </span>
+            </div>
+          )
+        }
         return (
           <span className='truncate' title={row.original.plan_title}>
             {row.original.plan_title || '-'}
@@ -112,11 +126,14 @@ export function useOrdersColumns(): ColumnDef<OrderRecord>[] {
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('Amount')} />
       ),
-      cell: ({ row }) => (
-        <span className='font-[family-name:var(--font-geist-mono)] tabular-nums'>
-          {formatSubscriptionPrice(row.original.money)}
-        </span>
-      ),
+      cell: ({ row }) =>
+        row.original.kind === ORDER_KIND.REDEMPTION ? (
+          <span className='text-muted-foreground text-xs'>-</span>
+        ) : (
+          <span className='font-[family-name:var(--font-geist-mono)] tabular-nums'>
+            {formatSubscriptionPrice(row.original.money)}
+          </span>
+        ),
       size: 110,
     },
     {
@@ -139,7 +156,11 @@ export function useOrdersColumns(): ColumnDef<OrderRecord>[] {
       header: t('Status'),
       cell: ({ row }) => (
         <StatusBadge
-          label={getOrderStatusLabel(row.original.status, t)}
+          label={
+            row.original.kind === ORDER_KIND.REDEMPTION
+              ? t('Redeemed')
+              : getOrderStatusLabel(row.original.status, t)
+          }
           variant={getOrderStatusVariant(row.original.status)}
           copyable={false}
           showDot

@@ -29,9 +29,10 @@ export const ORDER_STATUS = {
 export const ORDER_KIND = {
   SUBSCRIPTION: 'subscription',
   TOP_UP: 'topup',
+  REDEMPTION: 'redemption',
 } as const
 
-type BadgeVariant = 'success' | 'warning' | 'neutral' | 'danger' | 'info'
+type BadgeVariant = 'success' | 'warning' | 'neutral' | 'danger' | 'info' | 'purple'
 
 export function getOrderKindLabel(kind: string, t: TFunction): string {
   switch (kind) {
@@ -39,19 +40,23 @@ export function getOrderKindLabel(kind: string, t: TFunction): string {
       return t('Subscription order')
     case ORDER_KIND.TOP_UP:
       return t('Balance top-up')
+    case ORDER_KIND.REDEMPTION:
+      return t('Redemption Code')
     default:
       return kind || '-'
   }
 }
 
 export function getOrderKindVariant(kind: string): BadgeVariant {
-  return kind === ORDER_KIND.TOP_UP ? 'success' : 'info'
+  if (kind === ORDER_KIND.TOP_UP) return 'success'
+  if (kind === ORDER_KIND.REDEMPTION) return 'purple'
+  return 'info'
 }
 
 export function getOrderKindOptions(
   t: TFunction
 ): { label: string; value: string }[] {
-  return [ORDER_KIND.SUBSCRIPTION, ORDER_KIND.TOP_UP].map((kind) => ({
+  return [ORDER_KIND.SUBSCRIPTION, ORDER_KIND.TOP_UP, ORDER_KIND.REDEMPTION].map((kind) => ({
     label: getOrderKindLabel(kind, t),
     value: kind,
   }))

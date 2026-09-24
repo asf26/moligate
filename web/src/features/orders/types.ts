@@ -31,6 +31,7 @@ export interface OrderRecord {
   status: string
   create_time: number
   complete_time: number
+  name: string
 }
 
 export interface OrdersQuery {
