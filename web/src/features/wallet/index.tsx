@@ -331,7 +331,6 @@ export function Wallet(props: WalletProps) {
                   enableWaffoPancakeTopup={
                     topupInfo?.enable_waffo_pancake_topup
                   }
-                  showRedemptionCode={false}
                 />
               </div>
               <WalletSidePanel
