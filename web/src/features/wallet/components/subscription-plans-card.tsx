@@ -36,6 +36,7 @@ import {
 } from '@/features/subscriptions/api'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import {
+  formatPlanBillingRatio,
   formatSubscriptionValidity,
   formatSubscriptionPrice,
 } from '@/features/subscriptions/lib'
@@ -340,10 +341,15 @@ function getPlanBenefits(
   totalQuota: number,
   includedModelCount: number
 ): string[] {
+  const billingRate = t('Plan billing rate {{ratio}}×', {
+    ratio: formatPlanBillingRatio(plan),
+  })
   const configuredBenefits = (plan.benefits || [])
     .map((benefit) => benefit.trim())
     .filter(Boolean)
-  if (configuredBenefits.length > 0) return configuredBenefits
+  if (configuredBenefits.length > 0) {
+    return [...configuredBenefits, billingRate]
+  }
 
   const familyLabel = t(family.labelKey)
   const credit = totalQuota > 0 ? formatWalletQuota(totalQuota) : t('Unlimited')
@@ -365,6 +371,7 @@ function getPlanBenefits(
     t('Valid for {{duration}}', {
       duration: formatSubscriptionValidity(plan, t),
     }),
+    billingRate,
   ]
 }
 

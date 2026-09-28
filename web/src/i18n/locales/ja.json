@@ -4104,6 +4104,7 @@
     "Ping Interval (seconds)": "Ping間隔（秒）",
     "Plan": "プラン",
     "Plan benefits": "プラン特典",
+    "Plan billing rate {{ratio}}×": "プラン課金倍率 {{ratio}}倍",
     "Plan Name": "プラン名",
     "Plan Price": "プラン価格",
     "Plan price must be greater than zero": "プラン価格は 0 より大きい必要があります",

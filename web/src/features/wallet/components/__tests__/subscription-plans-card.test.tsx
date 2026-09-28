@@ -298,6 +298,7 @@ describe('subscription plans layout', () => {
     expect(within(card).getByText('限量推荐')).toBeVisible()
     expect(within(card).getByText('适合个人开发')).toBeVisible()
     expect(within(card).getByText('包含专属额度')).toBeVisible()
+    expect(within(card).getByText('Plan billing rate 1×')).toBeVisible()
     expect(within(card).queryByText(/Supports the/)).not.toBeInTheDocument()
   })
 

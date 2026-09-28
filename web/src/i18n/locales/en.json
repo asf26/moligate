@@ -4104,6 +4104,7 @@
     "Ping Interval (seconds)": "Ping Interval (seconds)",
     "Plan": "Plan",
     "Plan benefits": "Plan benefits",
+    "Plan billing rate {{ratio}}×": "Plan billing rate {{ratio}}×",
     "Plan Name": "Plan Name",
     "Plan Price": "Plan Price",
     "Plan price must be greater than zero": "Plan price must be greater than zero",

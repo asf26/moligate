@@ -4104,6 +4104,7 @@
     "Ping Interval (seconds)": "Intervalle de ping (secondes)",
     "Plan": "Plan",
     "Plan benefits": "Avantages du forfait",
+    "Plan billing rate {{ratio}}×": "Taux de facturation du forfait {{ratio}}×",
     "Plan Name": "Nom du plan",
     "Plan Price": "Prix du forfait",
     "Plan price must be greater than zero": "Le prix du forfait doit être supérieur à zéro",

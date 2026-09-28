@@ -26,6 +26,7 @@ import { AnimateInView } from '@/components/animate-in-view'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getPublicPlans } from '@/features/subscriptions/api'
+import { formatPlanBillingRatio } from '@/features/subscriptions/lib'
 import {
   formatDuration,
   formatSubscriptionPrice,
@@ -296,6 +297,17 @@ export function PricingPreview(props: PricingProps) {
                         aria-hidden='true'
                       />
                       <span>{t('Claude and GPT model families')}</span>
+                    </li>
+                    <li className='flex items-start gap-2 text-sm'>
+                      <Check
+                        className='home-reference-check mt-0.5 size-4 shrink-0'
+                        aria-hidden='true'
+                      />
+                      <span>
+                        {t('Plan billing rate {{ratio}}×', {
+                          ratio: formatPlanBillingRatio(plan),
+                        })}
+                      </span>
                     </li>
                   </ul>
                   {saleEnabled ? (

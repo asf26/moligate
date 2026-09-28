@@ -21,6 +21,7 @@ export {
   formatResetPeriod,
   formatSubscriptionValidity,
   formatSubscriptionPrice,
+  formatPlanBillingRatio,
   formatTimestamp,
 } from './format'
 export {

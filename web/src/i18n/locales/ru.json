@@ -4104,6 +4104,7 @@
     "Ping Interval (seconds)": "Интервал Ping (секунды)",
     "Plan": "План",
     "Plan benefits": "Преимущества тарифа",
+    "Plan billing rate {{ratio}}×": "Коэффициент тарификации пакета {{ratio}}×",
     "Plan Name": "Название плана",
     "Plan Price": "Цена тарифа",
     "Plan price must be greater than zero": "Цена плана должна быть больше нуля",

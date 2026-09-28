@@ -92,6 +92,22 @@ export function formatSubscriptionPrice(
   return `¥${Number.isFinite(amount) ? amount.toFixed(2) : '0.00'}`
 }
 
+/**
+ * The plan's fixed consumption multiplier (套餐扣费倍率), as shown to buyers.
+ * Mirrors the backend's EffectiveBillingRatio: anything outside (0, 100] means
+ * "not configured", and an unconfigured plan bills at 1×.
+ */
+export function formatPlanBillingRatio(
+  planOrRatio?: Partial<SubscriptionPlan> | number | string | null
+): string {
+  const ratio =
+    typeof planOrRatio === 'object' && planOrRatio !== null
+      ? Number(planOrRatio.billing_ratio || 0)
+      : Number(planOrRatio || 0)
+  if (!Number.isFinite(ratio) || ratio <= 0 || ratio > 100) return '1'
+  return String(ratio)
+}
+
 export function formatTimestamp(ts: number): string {
   if (!ts) return '-'
   return dayjs(ts * 1000).format('YYYY-MM-DD HH:mm:ss')

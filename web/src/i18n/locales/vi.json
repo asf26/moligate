@@ -4104,6 +4104,7 @@
     "Ping Interval (seconds)": "Thời gian Ping (giây)",
     "Plan": "Gói",
     "Plan benefits": "Quyền lợi gói",
+    "Plan billing rate {{ratio}}×": "Hệ số tính phí gói {{ratio}}×",
     "Plan Name": "Tên gói",
     "Plan Price": "Giá gói",
     "Plan price must be greater than zero": "Giá gói phải lớn hơn 0",

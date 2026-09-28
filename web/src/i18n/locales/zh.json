@@ -4104,6 +4104,7 @@
     "Ping Interval (seconds)": "Ping 间隔（秒）",
     "Plan": "套餐",
     "Plan benefits": "套餐权益",
+    "Plan billing rate {{ratio}}×": "套餐扣费倍率 {{ratio}} 倍",
     "Plan Name": "套餐名称",
     "Plan Price": "套餐价格",
     "Plan price must be greater than zero": "套餐价格必须大于 0",

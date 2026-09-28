@@ -121,6 +121,9 @@ describe('PricingPreview', () => {
     ).not.toHaveLength(0)
     expect(screen.getByText('¥40.00')).toBeInTheDocument()
     expect(screen.getByText('Daily limit $30')).toBeInTheDocument()
+    expect(screen.getAllByText('Plan billing rate 1×').length).toBeGreaterThan(
+      0
+    )
     expect(
       screen.queryByRole('heading', { name: 'Basic' })
     ).not.toBeInTheDocument()
