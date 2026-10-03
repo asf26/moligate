@@ -462,6 +462,16 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		return
 	}
 	model.InvalidateSubscriptionPlanCache(id)
+	// Buyers keep the models their plan grants today, not the list frozen when
+	// they checked out: carry additions into every still-active subscription.
+	if added := model.SubscriptionPlanAddedModels(existingPlan.IncludedModels, req.Plan.IncludedModels); len(added) > 0 {
+		extended, err := model.ExtendActiveSubscriptionsWithPlanModels(id, added)
+		if err != nil {
+			common.SysError("failed to extend active subscriptions with new plan models: " + err.Error())
+		} else if extended > 0 {
+			common.SysLog(fmt.Sprintf("plan %d: extended %d active subscription(s) with %d new model(s)", id, extended, len(added)))
+		}
+	}
 	common.ApiSuccess(c, nil)
 }
 

@@ -596,6 +596,68 @@ func subscriptionCanServeModel(sub UserSubscription, modelName string) bool {
 	return false
 }
 
+// SubscriptionPlanAddedModels lists the models a plan update adds to its access
+// list. Removals are deliberately ignored: a model dropped from a plan stays
+// with the subscriptions that already bought it.
+func SubscriptionPlanAddedModels(previous, updated []string) []string {
+	existing := make(map[string]struct{}, len(previous))
+	for _, modelName := range previous {
+		existing[strings.TrimSpace(modelName)] = struct{}{}
+	}
+	added := make([]string, 0, len(updated))
+	for _, modelName := range updated {
+		name := strings.TrimSpace(modelName)
+		if name == "" {
+			continue
+		}
+		if _, ok := existing[name]; ok {
+			continue
+		}
+		added = append(added, name)
+	}
+	return normalizeSubscriptionModels(added)
+}
+
+// ExtendActiveSubscriptionsWithPlanModels carries models newly added to a plan
+// into the model snapshot of every subscription that is still active, so buyers
+// keep the access the plan grants today instead of the list frozen at checkout.
+// Subscriptions without a snapshot are left alone: their family matcher already
+// covers the additions. Returns how many subscriptions were extended.
+func ExtendActiveSubscriptionsWithPlanModels(planId int, added []string) (int, error) {
+	if planId <= 0 || len(added) == 0 {
+		return 0, nil
+	}
+	var subs []UserSubscription
+	err := DB.Where("plan_id = ? AND status = ? AND end_time > ?", planId, "active", common.GetTimestamp()).
+		Find(&subs).Error
+	if err != nil {
+		return 0, err
+	}
+	extended := 0
+	for i := range subs {
+		sub := &subs[i]
+		if len(sub.IncludedModels) == 0 {
+			continue
+		}
+		merged := normalizeSubscriptionModels(append(append([]string{}, sub.IncludedModels...), added...))
+		if len(merged) == len(sub.IncludedModels) {
+			continue
+		}
+		// Pass pre-serialized JSON: a bare slice would reach the driver as a row
+		// value instead of the column's stored form.
+		payload, err := common.Marshal(merged)
+		if err != nil {
+			return extended, err
+		}
+		if err := DB.Model(&UserSubscription{}).Where("id = ?", sub.Id).
+			Update("included_models", string(payload)).Error; err != nil {
+			return extended, err
+		}
+		extended++
+	}
+	return extended, nil
+}
+
 // Subscription order (payment -> webhook -> create UserSubscription)
 type SubscriptionOrder struct {
 	Id     int     `json:"id"`
