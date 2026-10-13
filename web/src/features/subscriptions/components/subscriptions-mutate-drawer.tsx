@@ -381,12 +381,14 @@ export function SubscriptionsMutateDrawer({
                     <FormItem>
                       <FormLabel>{t('Plan Price')}</FormLabel>
                       <FormControl>
+                        {/* Keep in sync with the backend cap (9999 in
+                            controller/subscription.go#AdminUpdateSubscriptionPlan). */}
                         <Input
                           {...field}
                           type='number'
                           step='0.01'
                           min={0}
-                          max={100}
+                          max={9999}
                           onChange={(e) =>
                             field.onChange(
                               Number.parseFloat(e.target.value) || 0
