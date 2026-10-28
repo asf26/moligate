@@ -3875,6 +3875,7 @@
     "Order total {{amount}} · {{count}} codes": "Commande {{amount}} · {{count}} CDK",
     "org-...": "org-...",
     "Original Model": "Modèle Original",
+    "Origin of a CTMOAI-compatible video gateway. The gateway appends the API paths itself; leave empty to use the default host.": "Origine d’une passerelle vidéo compatible CTMOAI (domaine uniquement, les chemins d’API sont ajoutés par la passerelle ; laisser vide pour l’hôte par défaut)",
     "Original value": "Valeur d'origine",
     "Other": "Autre",
     "Other channels": "Autres canaux",

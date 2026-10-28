@@ -59,6 +59,7 @@ type FormState = {
   apiKey: string
   status: number
   groups: string
+  baseUrl: string
   proxy: string
   remark: string
   billingPrices: Record<string, string>
@@ -70,6 +71,7 @@ function getInitialForm(account?: VideoAccount | null): FormState {
     apiKey: '',
     status: account?.status ?? 1,
     groups: account?.groups.join(', ') ?? 'default',
+    baseUrl: account?.base_url ?? DEFAULT_VIDEO_ACCOUNT_BASE_URL,
     proxy: account?.proxy ?? '',
     remark: account?.remark ?? '',
     billingPrices: Object.fromEntries(
@@ -87,6 +89,8 @@ function modelPriceLabel(pricing?: VideoModelPricing) {
   if (!pricing || typeof pricing.amount !== 'number') return '—'
   return `${pricing.amount} ${pricing.currency || 'CNY'}${pricing.mode ? ` / ${pricing.mode.replaceAll('_', ' ')}` : ''}`
 }
+
+const DEFAULT_VIDEO_ACCOUNT_BASE_URL = 'https://video.ctmoai.com'
 
 export function VideoAccountDialog(props: VideoAccountDialogProps) {
   const { t } = useTranslation()
@@ -161,7 +165,7 @@ export function VideoAccountDialog(props: VideoAccountDialogProps) {
       groups: groups.length > 0 ? groups : ['default'],
       proxy: form.proxy.trim() || undefined,
       remark: form.remark.trim() || undefined,
-      base_url: 'https://video.ctmoai.com',
+      base_url: form.baseUrl.trim() || undefined,
     }
     if (isEditing && !apiKey) {
       payload.billing_prices = Object.fromEntries(
@@ -246,14 +250,13 @@ export function VideoAccountDialog(props: VideoAccountDialogProps) {
               </FieldLabel>
               <Input
                 id='video-account-base-url'
-                value='https://video.ctmoai.com'
-                readOnly
-                aria-readonly='true'
-                className='bg-muted/40'
+                value={form.baseUrl}
+                onChange={(event) => updateField('baseUrl', event.target.value)}
+                placeholder={DEFAULT_VIDEO_ACCOUNT_BASE_URL}
               />
               <FieldDescription>
                 {t(
-                  'The CTMOAI video gateway URL is fixed for this account type.'
+                  'Origin of a CTMOAI-compatible video gateway. The gateway appends the API paths itself; leave empty to use the default host.'
                 )}
               </FieldDescription>
             </Field>

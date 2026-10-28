@@ -3875,6 +3875,7 @@
     "Order total {{amount}} · {{count}} codes": "Đơn {{amount}} · {{count}} CDK",
     "org-...": "org-...",
     "Original Model": "Nguyên mẫu",
+    "Origin of a CTMOAI-compatible video gateway. The gateway appends the API paths itself; leave empty to use the default host.": "Địa chỉ cổng video tương thích CTMOAI (chỉ nhập tên miền; đường dẫn API do cổng ghép; để trống dùng mặc định)",
     "Original value": "Giá trị gốc",
     "Other": "Khác",
     "Other channels": "Kênh khác",

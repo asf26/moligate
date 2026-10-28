@@ -32,21 +32,23 @@ var videoAccountBaseURL = model.VideoAccountBaseURL
 // omitted key from an explicit replacement without ever binding a database
 // record (and its secret) directly from JSON.
 type VideoAccountCreateInput struct {
-	Name   string
-	APIKey string
-	Status *int
-	Groups []string
-	Proxy  string
-	Remark string
+	Name    string
+	APIKey  string
+	Status  *int
+	Groups  []string
+	BaseURL string
+	Proxy   string
+	Remark  string
 }
 
 type VideoAccountUpdateInput struct {
-	Name   *string
-	APIKey *string
-	Status *int
-	Groups *[]string
-	Proxy  *string
-	Remark *string
+	Name    *string
+	APIKey  *string
+	Status  *int
+	Groups  *[]string
+	BaseURL *string
+	Proxy   *string
+	Remark  *string
 	// BillingPrices is keyed by model ID. A nil value clears that model's
 	// override; a nil map means the caller did not change pricing.
 	BillingPrices *map[string]*model.VideoModelPricing
@@ -109,7 +111,7 @@ type upstreamVideoModelsResponse struct {
 // FetchVideoAccountModels reads the key-scoped catalog from CTMOAI. It is the
 // only source of model capabilities and pricing for a dedicated account;
 // model names and prices must not be hard-coded in the gateway.
-func FetchVideoAccountModels(ctx context.Context, apiKey, proxyURL string) ([]model.VideoModel, error) {
+func FetchVideoAccountModels(ctx context.Context, baseURL, apiKey, proxyURL string) ([]model.VideoModel, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		return nil, errors.New("video account api key is required")
@@ -120,7 +122,11 @@ func FetchVideoAccountModels(ctx context.Context, apiKey, proxyURL string) ([]mo
 	requestContext, cancel := context.WithTimeout(ctx, videoAccountModelsTimeout)
 	defer cancel()
 
-	endpoint := strings.TrimRight(videoAccountBaseURL, "/") + "/v1/models"
+	origin := strings.TrimSpace(baseURL)
+	if origin == "" {
+		origin = videoAccountBaseURL
+	}
+	endpoint := strings.TrimRight(origin, "/") + "/v1/models"
 	request, err := http.NewRequestWithContext(requestContext, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create video model request: %w", err)
@@ -374,12 +380,13 @@ func normalizeAccountModels(models []model.VideoModel, account *model.VideoAccou
 
 func CreateVideoAccount(ctx context.Context, input VideoAccountCreateInput) (*model.VideoAccount, error) {
 	account := &model.VideoAccount{
-		Name:   strings.TrimSpace(input.Name),
-		ApiKey: strings.TrimSpace(input.APIKey),
-		Groups: model.NormalizeVideoAccountGroups(input.Groups),
-		Proxy:  strings.TrimSpace(input.Proxy),
-		Remark: strings.TrimSpace(input.Remark),
-		Status: model.VideoAccountStatusEnabled,
+		Name:    strings.TrimSpace(input.Name),
+		ApiKey:  strings.TrimSpace(input.APIKey),
+		Groups:  model.NormalizeVideoAccountGroups(input.Groups),
+		BaseUrl: strings.TrimRight(strings.TrimSpace(input.BaseURL), "/"),
+		Proxy:   strings.TrimSpace(input.Proxy),
+		Remark:  strings.TrimSpace(input.Remark),
+		Status:  model.VideoAccountStatusEnabled,
 	}
 	if input.Status != nil {
 		account.Status = *input.Status
@@ -392,7 +399,7 @@ func CreateVideoAccount(ctx context.Context, input VideoAccountCreateInput) (*mo
 		return nil, err
 	}
 	account.PublicKey = publicKey
-	models, err := FetchVideoAccountModels(ctx, account.ApiKey, account.Proxy)
+	models, err := FetchVideoAccountModels(ctx, account.BaseURL(), account.ApiKey, account.Proxy)
 	if err != nil {
 		return nil, err
 	}
@@ -413,6 +420,7 @@ func UpdateVideoAccount(ctx context.Context, id int, input VideoAccountUpdateInp
 	}
 	keyChanged := false
 	proxyChanged := false
+	baseURLChanged := false
 	if input.Name != nil {
 		account.Name = strings.TrimSpace(*input.Name)
 	}
@@ -427,6 +435,11 @@ func UpdateVideoAccount(ctx context.Context, id int, input VideoAccountUpdateInp
 	if input.Groups != nil {
 		account.Groups = model.NormalizeVideoAccountGroups(*input.Groups)
 	}
+	if input.BaseURL != nil {
+		newBase := strings.TrimRight(strings.TrimSpace(*input.BaseURL), "/")
+		baseURLChanged = newBase != account.BaseUrl
+		account.BaseUrl = newBase
+	}
 	if input.Proxy != nil {
 		newProxy := strings.TrimSpace(*input.Proxy)
 		proxyChanged = newProxy != account.Proxy
@@ -438,8 +451,8 @@ func UpdateVideoAccount(ctx context.Context, id int, input VideoAccountUpdateInp
 	if err := model.ValidateVideoAccount(account, true); err != nil {
 		return nil, err
 	}
-	if keyChanged || proxyChanged || len(account.ModelCatalog()) == 0 {
-		models, fetchErr := FetchVideoAccountModels(ctx, account.ApiKey, account.Proxy)
+	if keyChanged || proxyChanged || baseURLChanged || len(account.ModelCatalog()) == 0 {
+		models, fetchErr := FetchVideoAccountModels(ctx, account.BaseURL(), account.ApiKey, account.Proxy)
 		if fetchErr != nil {
 			return nil, fetchErr
 		}
@@ -474,7 +487,7 @@ func SyncVideoAccountModels(ctx context.Context, id int) (*model.VideoAccount, e
 	if err != nil {
 		return nil, err
 	}
-	models, err := FetchVideoAccountModels(ctx, account.ApiKey, account.Proxy)
+	models, err := FetchVideoAccountModels(ctx, account.BaseURL(), account.ApiKey, account.Proxy)
 	if err != nil {
 		return nil, err
 	}

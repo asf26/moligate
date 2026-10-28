@@ -3875,6 +3875,7 @@
     "Order total {{amount}} · {{count}} codes": "Order {{amount}} · {{count}} CDKs",
     "org-...": "org-...",
     "Original Model": "原始模型",
+    "Origin of a CTMOAI-compatible video gateway. The gateway appends the API paths itself; leave empty to use the default host.": "相容 CTMOAI 介面的影片閘道位址（只填網域，介面路徑由閘道拼接；留空使用預設位址）",
     "Original value": "原始值",
     "Other": "其他",
     "Other channels": "其他渠道",

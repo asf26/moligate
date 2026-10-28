@@ -3875,6 +3875,7 @@
     "Order total {{amount}} · {{count}} codes": "注文 {{amount}} · {{count}} CDK",
     "org-...": "org-...",
     "Original Model": "オリジナルモデル",
+    "Origin of a CTMOAI-compatible video gateway. The gateway appends the API paths itself; leave empty to use the default host.": "CTMOAI 互換の動画ゲートウェイのアドレス（ドメインのみ。API パスはゲートウェイが付加。空欄で既定値）",
     "Original value": "元の値",
     "Other": "その他",
     "Other channels": "その他のチャネル",

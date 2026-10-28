@@ -3875,6 +3875,7 @@
     "Order total {{amount}} · {{count}} codes": "Заказ {{amount}} · {{count}} CDK",
     "org-...": "орг-...",
     "Original Model": "Оригинальная модель",
+    "Origin of a CTMOAI-compatible video gateway. The gateway appends the API paths itself; leave empty to use the default host.": "Адрес видеошлюза, совместимого с CTMOAI (только домен; пути API добавляет шлюз; пусто — хост по умолчанию)",
     "Original value": "Исходное значение",
     "Other": "Другое",
     "Other channels": "Другие каналы",

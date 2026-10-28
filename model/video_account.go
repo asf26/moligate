@@ -10,9 +10,10 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-// VideoAccountBaseURL is intentionally fixed. CTMOAI exposes one public
-// OpenAI-compatible video gateway and allowing a browser/admin to override the
-// URL would turn this feature into another generic channel configuration.
+// VideoAccountBaseURL is the default upstream origin for accounts that do not
+// configure their own. Video accounts speak one CTMOAI-compatible contract, so
+// an administrator may point an account at another host that implements it —
+// but only an origin: paths are built by the gateway, never supplied by callers.
 const VideoAccountBaseURL = "https://video.ctmoai.com"
 
 const (
@@ -85,20 +86,27 @@ type VideoAccount struct {
 	Groups          string `json:"groups" gorm:"column:groups;type:varchar(255);not null"`
 	ModelsJSON      string `json:"-" gorm:"column:models_json;type:text"`
 	LastModelSyncAt int64  `json:"last_model_sync_at" gorm:"index"`
-	Proxy           string `json:"proxy,omitempty" gorm:"type:text"`
-	Remark          string `json:"remark,omitempty" gorm:"type:text"`
-	CreatedAt       int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt       int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	// BaseUrl overrides the default upstream origin; empty means
+	// VideoAccountBaseURL.
+	BaseUrl   string `json:"base_url" gorm:"type:varchar(255);default:''"`
+	Proxy     string `json:"proxy,omitempty" gorm:"type:text"`
+	Remark    string `json:"remark,omitempty" gorm:"type:text"`
+	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (account *VideoAccount) IsEnabled() bool {
 	return account != nil && account.Status == VideoAccountStatusEnabled
 }
 
-// BaseURL returns the only upstream origin supported by this dedicated
-// integration. It is kept as a method so relay/middleware code cannot
-// accidentally reintroduce per-account arbitrary endpoints.
+// BaseURL returns the account's upstream origin. Accounts created before
+// per-account origins existed leave BaseUrl empty and keep using the default.
 func (account *VideoAccount) BaseURL() string {
+	if account != nil {
+		if base := strings.TrimSpace(account.BaseUrl); base != "" {
+			return strings.TrimRight(base, "/")
+		}
+	}
 	return VideoAccountBaseURL
 }
 
@@ -317,7 +325,7 @@ func (account *VideoAccount) PublicView() map[string]any {
 	return map[string]any{
 		"id":                 account.Id,
 		"name":               account.Name,
-		"base_url":           VideoAccountBaseURL,
+		"base_url":           account.BaseURL(),
 		"status":             account.Status,
 		"groups":             account.GroupList(),
 		"models":             account.ModelCatalog(),

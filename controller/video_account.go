@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -60,10 +61,26 @@ func videoAccountGroups(groups []string, group string) []string {
 	})
 }
 
+// validateVideoAccountBaseURL accepts an origin only: the gateway owns every
+// path it appends, so a caller cannot smuggle an endpoint through this field.
+// Empty means the default CTMOAI host.
 func validateVideoAccountBaseURL(baseURL string) error {
 	baseURL = strings.TrimSpace(baseURL)
-	if baseURL != "" && strings.TrimRight(baseURL, "/") != model.VideoAccountBaseURL {
-		return fmt.Errorf("video account base URL is fixed to %s", model.VideoAccountBaseURL)
+	if baseURL == "" {
+		return nil
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("视频线路地址无效：%v", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return errors.New("视频线路地址必须以 http:// 或 https:// 开头")
+	}
+	if parsed.Host == "" {
+		return errors.New("视频线路地址缺少域名")
+	}
+	if trimmed := strings.Trim(parsed.Path, "/"); trimmed != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("视频线路地址只能是域名，不能包含路径或参数")
 	}
 	return nil
 }
@@ -196,12 +213,13 @@ func CreateVideoAccount(c *gin.Context) {
 		apiKey = strings.TrimSpace(req.Key)
 	}
 	account, err := service.CreateVideoAccount(c.Request.Context(), service.VideoAccountCreateInput{
-		Name:   req.Name,
-		APIKey: apiKey,
-		Status: req.Status,
-		Groups: videoAccountGroups(req.Groups, req.Group),
-		Proxy:  req.Proxy,
-		Remark: req.Remark,
+		Name:    req.Name,
+		APIKey:  apiKey,
+		Status:  req.Status,
+		Groups:  videoAccountGroups(req.Groups, req.Group),
+		BaseURL: req.BaseURL,
+		Proxy:   req.Proxy,
+		Remark:  req.Remark,
 	})
 	if err != nil {
 		common.ApiError(c, err)
@@ -241,6 +259,7 @@ func UpdateVideoAccount(c *gin.Context) {
 		APIKey:            req.APIKey,
 		Status:            req.Status,
 		Groups:            groups,
+		BaseURL:           req.BaseURL,
 		Proxy:             req.Proxy,
 		Remark:            req.Remark,
 		BillingPrices:     req.BillingPrices,

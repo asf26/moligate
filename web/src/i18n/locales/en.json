@@ -3875,6 +3875,7 @@
     "Order total {{amount}} · {{count}} codes": "Order {{amount}} · {{count}} CDKs",
     "org-...": "org-...",
     "Original Model": "Original Model",
+    "Origin of a CTMOAI-compatible video gateway. The gateway appends the API paths itself; leave empty to use the default host.": "Origin of a CTMOAI-compatible video gateway. The gateway appends the API paths itself; leave empty to use the default host.",
     "Original value": "Original value",
     "Other": "Other",
     "Other channels": "Other channels",

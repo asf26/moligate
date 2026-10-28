@@ -29,11 +29,8 @@ func TestFetchVideoAccountModelsUsesBearerAndDefaultsMissingCapabilities(t *test
 	}))
 	defer server.Close()
 
-	originalBaseURL := videoAccountBaseURL
-	videoAccountBaseURL = server.URL
-	t.Cleanup(func() { videoAccountBaseURL = originalBaseURL })
-
-	models, err := FetchVideoAccountModels(context.Background(), "sk-secret", "")
+	// The account's own origin wins over the default host.
+	models, err := FetchVideoAccountModels(context.Background(), server.URL, "sk-secret", "")
 	require.NoError(t, err)
 	require.Len(t, models, 1)
 	assert.Equal(t, "Bearer sk-secret", gotAuthorization)
