@@ -197,3 +197,46 @@ func TestNormalizeAccountModelsLeavesTheCapabilityOverrideUnset(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, item.SupportsFirstLastFrame, "reading derives the default")
 }
+
+func TestFetchVideoAccountModelsReadsVariantCatalogs(t *testing.T) {
+	// The CDN deployments publish durations/aspect_ratios/max_references and a
+	// per-resolution pricing_variants list instead of the older flat fields.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{
+			"id":"minimax-h3-comic-768p",
+			"display_name":"MiniMax H3 漫剧特供版 768P",
+			"aspect_ratios":["16:9","9:16","1:1"],
+			"default_duration":4,
+			"default_resolution":"768p",
+			"durations":[4,5,6],
+			"max_references":{"audio":3,"image":9,"video":3},
+			"resolutions":["768p"],
+			"supports_end_frame":true,
+			"supports_start_frame":true,
+			"pricing_variants":[
+				{"billing_unit":"per_second","currency":"USD","resolution":"768p","unit_price":"0.1495"},
+				{"billing_unit":"per_second","currency":"USD","resolution":"2K","unit_price":"0.2185"}
+			]
+		}]}`))
+	}))
+	defer server.Close()
+
+	models, err := FetchVideoAccountModels(context.Background(), server.URL, "sk-secret", "")
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	item := models[0]
+	assert.True(t, item.Available)
+	assert.Equal(t, "768p", item.Resolution)
+	assert.Equal(t, []int{4, 5, 6}, item.DurationsSeconds)
+	assert.Equal(t, []string{"16:9", "9:16", "1:1"}, item.Ratios)
+	assert.Equal(t, 9, item.MaxImages)
+	assert.Equal(t, 3, item.MaxVideos)
+	assert.Equal(t, 3, item.MaxAudios)
+	assert.True(t, item.SupportsFirstLastFrame)
+	// The 768p model must take the 768p variant, not the first one in an
+	// arbitrary order.
+	assert.Equal(t, "per_second", item.Pricing.Mode)
+	assert.Equal(t, "USD", item.Pricing.Currency)
+	assert.InDelta(t, 0.1495, item.Pricing.Amount, 0.000001)
+}

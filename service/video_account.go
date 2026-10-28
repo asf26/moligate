@@ -93,6 +93,33 @@ type upstreamVideoModel struct {
 	SupportsFirstLastFrame  bool                 `json:"supports_first_last_frame"`
 	Pricing                 upstreamVideoPricing `json:"pricing"`
 	GroupRatio              float64              `json:"group_ratio"`
+
+	// Newer catalogs publish these names instead of durations_seconds / ratios /
+	// max_images / pricing. Both shapes are accepted so one integration covers
+	// either upstream version.
+	AspectRatios       []string                      `json:"aspect_ratios"`
+	Durations          []int                         `json:"durations"`
+	Resolutions        []string                      `json:"resolutions"`
+	DefaultResolution  string                        `json:"default_resolution"`
+	MaxReferences      *upstreamVideoMaxReferences   `json:"max_references"`
+	PricingVariants    []upstreamVideoPricingVariant `json:"pricing_variants"`
+	SupportsStartFrame bool                          `json:"supports_start_frame"`
+	SupportsEndFrame   bool                          `json:"supports_end_frame"`
+}
+
+// upstreamVideoMaxReferences is the reference-slot budget in the newer catalog.
+type upstreamVideoMaxReferences struct {
+	Image int `json:"image"`
+	Video int `json:"video"`
+	Audio int `json:"audio"`
+}
+
+// upstreamVideoPricingVariant prices one resolution of a model.
+type upstreamVideoPricingVariant struct {
+	UnitPrice   any    `json:"unit_price"`
+	Currency    string `json:"currency"`
+	BillingUnit string `json:"billing_unit"`
+	Resolution  string `json:"resolution"`
 }
 
 type upstreamVideoPricing struct {
@@ -226,7 +253,29 @@ func convertUpstreamVideoModel(item upstreamVideoModel) model.VideoModel {
 	if displayName == "" {
 		displayName = strings.TrimSpace(item.ID)
 	}
+	resolution := strings.TrimSpace(item.Resolution)
+	if resolution == "" {
+		resolution = strings.TrimSpace(item.DefaultResolution)
+	}
+	durations := item.DurationsSeconds
+	if len(durations) == 0 {
+		durations = item.Durations
+	}
+	ratios := item.Ratios
+	if len(ratios) == 0 {
+		ratios = item.AspectRatios
+	}
+	pricingMode := strings.TrimSpace(item.Pricing.Mode)
+	pricingCurrency := strings.TrimSpace(item.Pricing.Currency)
 	pricingAmount, pricingValid := parseVideoPriceAmount(item.Pricing.Amount)
+	if !pricingValid && len(item.PricingVariants) > 0 {
+		// The newer catalog prices each resolution separately and the model id
+		// already pins one resolution, so the matching variant is the price.
+		variant := pickUpstreamPricingVariant(item.PricingVariants, resolution)
+		pricingMode = strings.TrimSpace(variant.BillingUnit)
+		pricingCurrency = strings.TrimSpace(variant.Currency)
+		pricingAmount, pricingValid = parseVideoPriceAmount(variant.UnitPrice)
+	}
 	if !pricingValid {
 		available = false
 		if strings.TrimSpace(item.UnavailableReason) == "" {
@@ -246,6 +295,18 @@ func convertUpstreamVideoModel(item upstreamVideoModel) model.VideoModel {
 	if item.MaxVideoDurationSeconds != nil {
 		maxVideoDuration = *item.MaxVideoDurationSeconds
 	}
+	if refs := item.MaxReferences; refs != nil {
+		// In the newer shape a zero is a concrete "none accepted" limit.
+		if item.MaxImages == nil {
+			maxImages = refs.Image
+		}
+		if item.MaxVideos == nil {
+			maxVideos = refs.Video
+		}
+		if item.MaxAudios == nil {
+			maxAudios = refs.Audio
+		}
+	}
 	return model.VideoModel{
 		ID:                      strings.TrimSpace(item.ID),
 		DisplayName:             displayName,
@@ -254,23 +315,35 @@ func convertUpstreamVideoModel(item upstreamVideoModel) model.VideoModel {
 		Available:               available,
 		UnavailableReason:       strings.TrimSpace(item.UnavailableReason),
 		SupportedEndpointTypes:  endpoints,
-		Resolution:              strings.TrimSpace(item.Resolution),
-		DurationsSeconds:        append([]int(nil), item.DurationsSeconds...),
-		Ratios:                  append([]string(nil), item.Ratios...),
+		Resolution:              resolution,
+		DurationsSeconds:        append([]int(nil), durations...),
+		Ratios:                  append([]string(nil), ratios...),
 		Sizes:                   append([]string(nil), item.Sizes...),
 		MaxImages:               maxImages,
 		MaxVideos:               maxVideos,
 		MaxAudios:               maxAudios,
 		MaxVideoDurationSeconds: maxVideoDuration,
 		AudioRequiresImage:      item.AudioRequiresImage,
-		SupportsFirstLastFrame:  item.SupportsFirstLastFrame,
+		SupportsFirstLastFrame:  item.SupportsFirstLastFrame || (item.SupportsStartFrame && item.SupportsEndFrame),
 		Pricing: model.VideoModelPricing{
-			Mode:     strings.TrimSpace(item.Pricing.Mode),
+			Mode:     pricingMode,
 			Amount:   pricingAmount,
-			Currency: strings.TrimSpace(item.Pricing.Currency),
+			Currency: pricingCurrency,
 		},
 		GroupRatio: groupRatio,
 	}
+}
+
+// pickUpstreamPricingVariant returns the variant that prices this model's
+// resolution, falling back to the first entry when the catalog omits the match.
+func pickUpstreamPricingVariant(variants []upstreamVideoPricingVariant, resolution string) upstreamVideoPricingVariant {
+	resolution = strings.TrimSpace(resolution)
+	for _, variant := range variants {
+		if resolution != "" && strings.EqualFold(strings.TrimSpace(variant.Resolution), resolution) {
+			return variant
+		}
+	}
+	return variants[0]
 }
 
 func parseVideoPriceAmount(value any) (float64, bool) {
