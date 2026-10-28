@@ -1970,6 +1970,7 @@
     "Ensure the string has a specified prefix": "S'assurer que la chaîne a un préfixe spécifié",
     "Ensure the string has a specified suffix": "S'assurer que la chaîne a un suffixe spécifié",
     "Enter 6-digit code": "Saisir le code à 6 chiffres",
+    "Enter a multiplier to fill every gateway price with the upstream price times it.": "Saisissez un coefficient pour remplir chaque prix passerelle avec le prix amont × ce coefficient",
     "Enter a name": "Saisir un nom",
     "Enter a new name": "Entrez un nouveau nom",
     "Enter a positive integer": "Saisissez un entier positif",

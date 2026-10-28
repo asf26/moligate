@@ -1970,6 +1970,7 @@
     "Ensure the string has a specified prefix": "文字列に指定のプレフィックスがあることを確認",
     "Ensure the string has a specified suffix": "文字列に指定のサフィックスがあることを確認",
     "Enter 6-digit code": "6桁のコードを入力",
+    "Enter a multiplier to fill every gateway price with the upstream price times it.": "倍率を入力すると、各行のゲートウェイ価格を「上流価格 × 倍率」で自動入力します",
     "Enter a name": "名前を入力",
     "Enter a new name": "新しい名前を入力してください",
     "Enter a positive integer": "正の整数を入力してください",

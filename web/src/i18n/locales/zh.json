@@ -1970,6 +1970,7 @@
     "Ensure the string has a specified prefix": "确保字符串有指定前缀",
     "Ensure the string has a specified suffix": "确保字符串有指定后缀",
     "Enter 6-digit code": "输入 6 位数字代码",
+    "Enter a multiplier to fill every gateway price with the upstream price times it.": "输入倍率后，自动按「上游价 × 倍率」填充每一行的网关计价",
     "Enter a name": "输入名称",
     "Enter a new name": "输入新名称",
     "Enter a positive integer": "请输入正整数",

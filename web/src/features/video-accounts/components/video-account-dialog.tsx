@@ -63,6 +63,7 @@ type FormState = {
   proxy: string
   remark: string
   billingPrices: Record<string, string>
+  billingMultiplier: string
 }
 
 function getInitialForm(account?: VideoAccount | null): FormState {
@@ -74,6 +75,7 @@ function getInitialForm(account?: VideoAccount | null): FormState {
     baseUrl: account?.base_url ?? DEFAULT_VIDEO_ACCOUNT_BASE_URL,
     proxy: account?.proxy ?? '',
     remark: account?.remark ?? '',
+    billingMultiplier: '',
     billingPrices: Object.fromEntries(
       (account?.models ?? []).map((model) => [
         model.id,
@@ -130,6 +132,40 @@ export function VideoAccountDialog(props: VideoAccountDialogProps) {
     value: FormState[K]
   ) => {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  // Typing a multiplier fills every row with upstream × multiplier, so a retail
+  // markup does not have to be typed model by model.
+  const handlePriceMultiplierChange = (value: string) => {
+    setForm((current) => {
+      const next = { ...current, billingMultiplier: value }
+      const multiplier = Number.parseFloat(value)
+      if (!Number.isFinite(multiplier) || multiplier <= 0) {
+        return next
+      }
+      const prices = { ...current.billingPrices }
+      for (const model of props.account?.models ?? []) {
+        const upstream = model.pricing?.amount
+        if (
+          typeof upstream !== 'number' ||
+          !Number.isFinite(upstream) ||
+          upstream <= 0
+        ) {
+          continue
+        }
+        prices[model.id] = String(Math.round(upstream * multiplier * 1e6) / 1e6)
+      }
+      next.billingPrices = prices
+      return next
+    })
+  }
+
+  const handleResetBillingPrices = () => {
+    setForm((current) => ({
+      ...current,
+      billingMultiplier: '',
+      billingPrices: {},
+    }))
   }
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -322,13 +358,51 @@ export function VideoAccountDialog(props: VideoAccountDialogProps) {
 
           {isEditing && (props.account?.models?.length ?? 0) > 0 && (
             <section className='bg-muted/20 rounded-xl border p-3'>
-              <div className='mb-3'>
-                <h3 className='text-sm font-medium'>{t('Model pricing')}</h3>
-                <p className='text-muted-foreground mt-1 text-xs'>
-                  {t(
-                    'Leave a price empty to follow the CTMOAI upstream price. Filled prices apply only to this video account.'
-                  )}
-                </p>
+              <div className='mb-3 flex flex-wrap items-end justify-between gap-3'>
+                <div className='min-w-0'>
+                  <h3 className='text-sm font-medium'>{t('Model pricing')}</h3>
+                  <p className='text-muted-foreground mt-1 text-xs'>
+                    {t(
+                      'Leave a price empty to follow the CTMOAI upstream price. Filled prices apply only to this video account.'
+                    )}
+                  </p>
+                  <p className='text-muted-foreground mt-1 text-xs'>
+                    {t(
+                      'Enter a multiplier to fill every gateway price with the upstream price times it.'
+                    )}
+                  </p>
+                </div>
+                <div className='flex items-end gap-2'>
+                  <div className='flex flex-col gap-1'>
+                    <label
+                      htmlFor='video-account-price-multiplier'
+                      className='text-muted-foreground text-xs font-medium'
+                    >
+                      {t('Multiplier')}
+                    </label>
+                    <Input
+                      id='video-account-price-multiplier'
+                      type='number'
+                      min='0'
+                      step='0.01'
+                      value={form.billingMultiplier}
+                      onChange={(event) =>
+                        handlePriceMultiplierChange(event.target.value)
+                      }
+                      placeholder='1.2'
+                      className='h-9 w-24'
+                    />
+                  </div>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    className='h-9'
+                    onClick={handleResetBillingPrices}
+                  >
+                    {t('Follow upstream')}
+                  </Button>
+                </div>
               </div>
               <div className='bg-background overflow-x-auto rounded-lg border'>
                 <table className='w-full min-w-[680px] text-sm'>

@@ -1970,6 +1970,7 @@
     "Ensure the string has a specified prefix": "確保字串有指定前綴",
     "Ensure the string has a specified suffix": "確保字串有指定後綴",
     "Enter 6-digit code": "輸入 6 位數字代碼",
+    "Enter a multiplier to fill every gateway price with the upstream price times it.": "輸入倍率後，自動按「上游價 × 倍率」填入每一行的閘道計價",
     "Enter a name": "輸入名稱",
     "Enter a new name": "輸入新名稱",
     "Enter a positive integer": "請輸入正整數",

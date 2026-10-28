@@ -1970,6 +1970,7 @@
     "Ensure the string has a specified prefix": "Убедиться, что строка имеет указанный префикс",
     "Ensure the string has a specified suffix": "Убедиться, что строка имеет указанный суффикс",
     "Enter 6-digit code": "Введите 6-значный код",
+    "Enter a multiplier to fill every gateway price with the upstream price times it.": "Введите коэффициент — цена шлюза в каждой строке заполнится как цена источника × коэффициент",
     "Enter a name": "Введите имя",
     "Enter a new name": "Введите новое имя",
     "Enter a positive integer": "Введите положительное целое число",

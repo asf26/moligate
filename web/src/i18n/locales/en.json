@@ -1970,6 +1970,7 @@
     "Ensure the string has a specified prefix": "Ensure the string has a specified prefix",
     "Ensure the string has a specified suffix": "Ensure the string has a specified suffix",
     "Enter 6-digit code": "Enter 6-digit code",
+    "Enter a multiplier to fill every gateway price with the upstream price times it.": "Enter a multiplier to fill every gateway price with the upstream price times it.",
     "Enter a name": "Enter a name",
     "Enter a new name": "Enter a new name",
     "Enter a positive integer": "Enter a positive integer",
