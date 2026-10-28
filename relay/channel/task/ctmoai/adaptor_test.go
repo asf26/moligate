@@ -291,3 +291,23 @@ func readRequestBody(t *testing.T, adaptor *TaskAdaptor, ctx *gin.Context, info 
 	require.NoError(t, err)
 	return string(data)
 }
+
+func TestBuildRequestHeaderSendsTheIdempotencyKey(t *testing.T) {
+	// Newer CTMOAI deployments answer 400 IDEMPOTENCY_KEY_INVALID without it.
+	info := ctmoaiInfo()
+	info.RequestId = "202610281-abcdef123456"
+	req := httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+
+	adaptor := &TaskAdaptor{apiKey: "secret"}
+	require.NoError(t, adaptor.BuildRequestHeader(ctmoaiTaskContext(`{}`), req, info))
+
+	assert.Equal(t, "Bearer secret", req.Header.Get("Authorization"))
+	assert.Equal(t, info.RequestId, req.Header.Get("Idempotency-Key"))
+}
+
+func TestBuildRequestHeaderOmitsAnEmptyIdempotencyKey(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	adaptor := &TaskAdaptor{apiKey: "secret"}
+	require.NoError(t, adaptor.BuildRequestHeader(ctmoaiTaskContext(`{}`), req, ctmoaiInfo()))
+	assert.Empty(t, req.Header.Get("Idempotency-Key"))
+}

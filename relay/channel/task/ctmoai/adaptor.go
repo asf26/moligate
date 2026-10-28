@@ -194,13 +194,21 @@ func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) 
 	return a.baseURL + videoPath, nil
 }
 
-func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *relaycommon.RelayInfo) error {
+func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
 	if a.apiKey == "" {
 		return errors.New("CTMOAI video account API key is empty")
 	}
 	req.Header.Set("Authorization", "Bearer "+a.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	// Newer CTMOAI deployments reject a submission without an idempotency key.
+	// The relay request id belongs to exactly one client call, so a retry cannot
+	// create a second task while a fresh call still gets a fresh key.
+	if info != nil {
+		if requestId := strings.TrimSpace(info.RequestId); requestId != "" {
+			req.Header.Set("Idempotency-Key", requestId)
+		}
+	}
 	return nil
 }
 
