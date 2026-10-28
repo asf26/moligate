@@ -32,7 +32,13 @@ export const ORDER_KIND = {
   REDEMPTION: 'redemption',
 } as const
 
-type BadgeVariant = 'success' | 'warning' | 'neutral' | 'danger' | 'info' | 'purple'
+type BadgeVariant =
+  | 'success'
+  | 'warning'
+  | 'neutral'
+  | 'danger'
+  | 'info'
+  | 'purple'
 
 export function getOrderKindLabel(kind: string, t: TFunction): string {
   switch (kind) {
@@ -56,7 +62,11 @@ export function getOrderKindVariant(kind: string): BadgeVariant {
 export function getOrderKindOptions(
   t: TFunction
 ): { label: string; value: string }[] {
-  return [ORDER_KIND.SUBSCRIPTION, ORDER_KIND.TOP_UP, ORDER_KIND.REDEMPTION].map((kind) => ({
+  return [
+    ORDER_KIND.SUBSCRIPTION,
+    ORDER_KIND.TOP_UP,
+    ORDER_KIND.REDEMPTION,
+  ].map((kind) => ({
     label: getOrderKindLabel(kind, t),
     value: kind,
   }))
