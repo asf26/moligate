@@ -64,6 +64,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { getVideoAccounts, syncVideoAccount } from './api'
@@ -108,10 +113,56 @@ function AccountModelBadges(props: { account: VideoAccount }) {
         </Badge>
       ))}
       {models.length > visibleModels.length && (
-        <Badge variant='secondary'>
-          +{models.length - visibleModels.length}
-        </Badge>
+        <Tooltip>
+          <TooltipTrigger
+            render={<Badge variant='secondary' className='cursor-default' />}
+          >
+            +{models.length - visibleModels.length}
+          </TooltipTrigger>
+          <TooltipContent className='max-w-80'>
+            <div className='flex flex-col gap-1'>
+              {models.map((model) => (
+                <div
+                  key={model.id}
+                  className='flex items-baseline justify-between gap-3'
+                >
+                  <span className='truncate'>{modelLabel(model)}</span>
+                  <span className='text-muted-foreground shrink-0 font-mono text-[11px]'>
+                    {modelPricing(model) ?? '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </TooltipContent>
+        </Tooltip>
       )}
+    </div>
+  )
+}
+
+// One line per model: the list page has no room for a second badge row, and
+// the price is what an operator checks when a line goes live.
+function AccountModelPrices(props: { account: VideoAccount }) {
+  const { t } = useTranslation()
+  const models = props.account.models ?? []
+  if (models.length === 0) {
+    return <span className='text-muted-foreground text-xs'>{t('No data')}</span>
+  }
+  return (
+    <div className='flex max-w-[340px] flex-col gap-0.5'>
+      {models.map((model) => (
+        <div
+          key={model.id}
+          className='flex items-baseline justify-between gap-3 text-xs'
+        >
+          <span className='text-muted-foreground truncate'>
+            {modelLabel(model)}
+          </span>
+          <span className='shrink-0 font-mono'>
+            {modelPricing(model) ?? '—'}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -175,9 +226,7 @@ function VideoAccountRows(props: {
         <AccountModelBadges account={account} />
       </TableCell>
       <TableCell>
-        <code className='text-muted-foreground text-xs'>
-          {account.base_url}
-        </code>
+        <AccountModelPrices account={account} />
       </TableCell>
       <TableCell>
         <span className='text-muted-foreground text-xs'>
@@ -333,7 +382,7 @@ export function VideoAccounts() {
               <TableHead>{t('Status')}</TableHead>
               <TableHead>{t('Groups')}</TableHead>
               <TableHead>{t('Models')}</TableHead>
-              <TableHead>{t('Base URL')}</TableHead>
+              <TableHead>{t('Model prices')}</TableHead>
               <TableHead>{t('Last refresh')}</TableHead>
               <TableHead className='text-right'>{t('Actions')}</TableHead>
             </TableRow>
