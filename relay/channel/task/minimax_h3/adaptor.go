@@ -67,6 +67,7 @@ type responseError struct {
 type responseTask struct {
 	ID          string         `json:"id"`
 	TaskID      string         `json:"task_id"`
+	JobID       string         `json:"job_id"`
 	Object      string         `json:"object"`
 	Model       string         `json:"model"`
 	Status      string         `json:"status"`
@@ -360,6 +361,9 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	upstreamID := upstream.ID
 	if upstreamID == "" {
 		upstreamID = upstream.TaskID
+	}
+	if upstreamID == "" {
+		upstreamID = upstream.JobID
 	}
 	if upstreamID == "" {
 		return "", responseBody, service.TaskErrorWrapper(errors.New("task_id is empty"), "invalid_response", http.StatusBadGateway)
