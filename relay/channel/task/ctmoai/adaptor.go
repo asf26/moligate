@@ -47,9 +47,9 @@ type responseTask struct {
 	Model       string         `json:"model"`
 	Status      string         `json:"status"`
 	Progress    int            `json:"progress"`
-	CreatedAt   int64          `json:"created_at"`
-	CompletedAt int64          `json:"completed_at"`
-	ExpiresAt   int64          `json:"expires_at"`
+	CreatedAt   taskcommon.FlexInt64 `json:"created_at"`
+	CompletedAt taskcommon.FlexInt64 `json:"completed_at"`
+	ExpiresAt   taskcommon.FlexInt64 `json:"expires_at"`
 	Seconds     any            `json:"seconds,omitempty"`
 	Size        string         `json:"size,omitempty"`
 	Error       *responseError `json:"error,omitempty"`
@@ -437,9 +437,9 @@ func (a *TaskAdaptor) toOpenAIVideo(response responseTask, publicID, modelName s
 	video.Model = modelName
 	video.Status = mapStatus(response.Status)
 	video.Progress = response.Progress
-	video.CreatedAt = response.CreatedAt
-	video.CompletedAt = response.CompletedAt
-	video.ExpiresAt = response.ExpiresAt
+	video.CreatedAt = response.CreatedAt.Int64()
+	video.CompletedAt = response.CompletedAt.Int64()
+	video.ExpiresAt = response.ExpiresAt.Int64()
 	video.Seconds = stringifySeconds(response.Seconds)
 	video.Size = response.Size
 	if response.Error != nil {
