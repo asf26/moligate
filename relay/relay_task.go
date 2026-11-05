@@ -355,6 +355,16 @@ var fetchRespBuilders = map[int]func(c *gin.Context) (respBody []byte, taskResp 
 }
 
 func RelayTaskFetch(c *gin.Context, relayMode int) (taskResp *dto.TaskError) {
+	if _, known := fetchRespBuilders[relayMode]; !known {
+		// The video-account route (GET /v1/videos/:task_id) does not run the
+		// distributor middleware, so relay_mode is never set for it. Infer the
+		// mode from the path instead of rejecting an otherwise valid lookup.
+		path := c.Request.URL.Path
+		if strings.Contains(path, "/v1/videos/") || strings.Contains(path, "/v1/video/generations/") {
+			relayMode = relayconstant.RelayModeVideoFetchByID
+		}
+	}
+
 	respBuilder, ok := fetchRespBuilders[relayMode]
 	if !ok {
 		return service.TaskErrorWrapperLocal(errors.New("invalid_relay_mode"), "invalid_relay_mode", http.StatusBadRequest)
