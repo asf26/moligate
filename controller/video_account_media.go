@@ -2,10 +2,15 @@ package controller
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -118,9 +123,19 @@ func UploadVideoAccountMedia(c *gin.Context) {
 		videoProxyError(c, http.StatusBadGateway, "server_error", "invalid upload response")
 		return
 	}
-	if urlValue, ok := payload["url"].(string); ok && strings.TrimSpace(urlValue) != "" {
-		payload[mediaType] = []string{urlValue}
+	// The upstream stores uploads behind its own bearer auth, and its generation
+	// workers fetch references without that header — so handing the upstream URL
+	// straight back to a caller breaks image-to-video with 503. Publish a signed
+	// URL on our own domain instead; the worker can read it anonymously.
+	mediaID, _ := payload["media_id"].(string)
+	if strings.TrimSpace(mediaID) == "" {
+		videoProxyError(c, http.StatusBadGateway, "server_error", "upstream did not return a media id")
+		return
 	}
+	publicURL := videoAccountMediaPublicURL(c, account, mediaID)
+	payload["upstream_url"] = payload["url"]
+	payload["url"] = publicURL
+	payload[mediaType] = []string{publicURL}
 	c.JSON(http.StatusOK, payload)
 }
 
@@ -149,4 +164,98 @@ func firstFormValue(form *multipart.Form, key string) string {
 		return ""
 	}
 	return form.Value[key][0]
+}
+
+// videoAccountMediaToken binds one upstream media id to the account that owns the
+// key, so the public route can neither guess nor cross accounts.
+func videoAccountMediaToken(account *model.VideoAccount, mediaID string) string {
+	mac := hmac.New(sha256.New, []byte(account.ApiKey))
+	mac.Write([]byte(mediaID))
+	return fmt.Sprintf("%d.%s.%x", account.Id, mediaID, mac.Sum(nil))
+}
+
+func videoAccountMediaPublicURL(c *gin.Context, account *model.VideoAccount, mediaID string) string {
+	scheme := "https"
+	if proto := strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")); proto != "" {
+		scheme = strings.ToLower(strings.Split(proto, ",")[0])
+	} else if c.Request.TLS == nil {
+		scheme = "http"
+	}
+	host := strings.TrimSpace(c.GetHeader("X-Forwarded-Host"))
+	if host == "" {
+		host = c.Request.Host
+	}
+	return fmt.Sprintf("%s://%s/v1/videos/media/%s", scheme, host, url.PathEscape(videoAccountMediaToken(account, mediaID)))
+}
+
+// verifyVideoAccountMediaToken returns the media id when the token was signed by
+// this account, and rejects anything else.
+func verifyVideoAccountMediaToken(account *model.VideoAccount, token string) (string, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 || !strings.HasPrefix(parts[1], "vidmedia_") {
+		return "", false
+	}
+	expected := videoAccountMediaToken(account, parts[1])
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(token)) != 1 {
+		return "", false
+	}
+	return parts[1], true
+}
+
+// ServeVideoAccountMedia streams an uploaded reference so the upstream can read
+// it without credentials. The token is signed with the account key, which keeps
+// the route public without exposing anything but media this gateway uploaded.
+func ServeVideoAccountMedia(c *gin.Context) {
+	token := strings.TrimSpace(c.Param("token"))
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		videoProxyError(c, http.StatusNotFound, "video_resource_not_found", "media not found")
+		return
+	}
+	accountID, err := strconv.Atoi(parts[0])
+	if err != nil || accountID <= 0 {
+		videoProxyError(c, http.StatusNotFound, "video_resource_not_found", "media not found")
+		return
+	}
+	account, err := model.GetVideoAccountById(accountID)
+	if err != nil || !account.IsEnabled() {
+		videoProxyError(c, http.StatusNotFound, "video_resource_not_found", "media not found")
+		return
+	}
+	mediaID, ok := verifyVideoAccountMediaToken(account, token)
+	if !ok {
+		videoProxyError(c, http.StatusNotFound, "video_resource_not_found", "media not found")
+		return
+	}
+
+	upstream := strings.TrimRight(account.BaseURL(), "/") + "/v1/videos/uploads/" + mediaID + "/content"
+	request, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstream, nil)
+	if err != nil {
+		videoProxyError(c, http.StatusBadGateway, "server_error", "failed to prepare media request")
+		return
+	}
+	request.Header.Set("Authorization", "Bearer "+account.ApiKey)
+	if rng := strings.TrimSpace(c.GetHeader("Range")); rng != "" {
+		request.Header.Set("Range", rng)
+	}
+	client, err := service.GetHttpClientWithProxy(account.Proxy)
+	if err != nil {
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "failed to create media client")
+		return
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		videoProxyError(c, http.StatusBadGateway, "server_error", "failed to fetch media")
+		return
+	}
+	defer response.Body.Close()
+	for _, header := range []string{"Content-Type", "Content-Length", "Accept-Ranges", "Content-Range", "Last-Modified"} {
+		if value := response.Header.Get(header); value != "" {
+			c.Header(header, value)
+		}
+	}
+	// Media ids expire upstream after 24h; let caches keep a short copy only.
+	c.Header("Cache-Control", "public, max-age=900")
+	c.Status(response.StatusCode)
+	_, _ = io.Copy(c.Writer, io.LimitReader(response.Body, 64<<20))
 }

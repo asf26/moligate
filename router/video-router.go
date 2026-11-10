@@ -26,6 +26,11 @@ func SetVideoRouter(router *gin.Engine) {
 		legacyVideoRouter.POST("/videos/:video_id/remix", controller.RelayTask)
 	}
 
+	// Public read-only view of an uploaded reference. The upstream video workers
+	// fetch references without any credential, so this route is intentionally
+	// unauthenticated; the token is HMAC-signed with the owning account key.
+	router.GET("/v1/videos/media/:token", controller.ServeVideoAccountMedia)
+
 	// CTMOAI-compatible dedicated video-account routes. These do not use the
 	// generic channel distributor or channel table.
 	videoAccountRouter := router.Group("/v1")
