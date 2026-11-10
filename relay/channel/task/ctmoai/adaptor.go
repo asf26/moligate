@@ -111,8 +111,10 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if req.Size != "" && len(meta.Sizes) > 0 && !containsFold(meta.Sizes, req.Size) {
 		return service.TaskErrorWrapperLocal(fmt.Errorf("size %s is not supported by %s", req.Size, modelName), "invalid_size", http.StatusBadRequest)
 	}
-	if strings.TrimSpace(req.Prompt) == "" && len(req.Images) == 0 && strings.TrimSpace(req.InputReference) == "" {
-		return service.TaskErrorWrapperLocal(errors.New("prompt is required when no reference image is supplied"), "invalid_request", http.StatusBadRequest)
+	if strings.TrimSpace(req.Prompt) == "" {
+		// The upstream rejects an empty prompt even for image-to-video, so fail
+		// here with a message the caller can act on.
+		return service.TaskErrorWrapperLocal(errors.New("prompt is required"), "invalid_request", http.StatusBadRequest)
 	}
 	if req.InputReference != "" && len(req.Images) == 0 {
 		// The single-image compatibility field plays the same role as one entry
@@ -189,22 +191,42 @@ func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) 
 	return a.baseURL + videoPath, nil
 }
 
-func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
+func (a *TaskAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
 	if a.apiKey == "" {
 		return errors.New("CTMOAI video account API key is empty")
 	}
 	req.Header.Set("Authorization", "Bearer "+a.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	// Newer CTMOAI deployments reject a submission without an idempotency key.
-	// The relay request id belongs to exactly one client call, so a retry cannot
-	// create a second task while a fresh call still gets a fresh key.
-	if info != nil {
+	// The upstream rejects a submission without an idempotency key. Honour the
+	// caller's own key first so its retries cannot create a second task; fall
+	// back to the relay request id, which identifies exactly one client call.
+	if key := clientIdempotencyKey(c); key != "" {
+		req.Header.Set("Idempotency-Key", key)
+	} else if info != nil {
 		if requestId := strings.TrimSpace(info.RequestId); requestId != "" {
 			req.Header.Set("Idempotency-Key", requestId)
 		}
 	}
 	return nil
+}
+
+// clientIdempotencyKey returns the caller-supplied key when it satisfies the
+// upstream's 1..128 printable ASCII rule, and empty otherwise.
+func clientIdempotencyKey(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if key == "" || len(key) > 128 {
+		return ""
+	}
+	for _, r := range key {
+		if r < 0x20 || r > 0x7e {
+			return ""
+		}
+	}
+	return key
 }
 
 func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {

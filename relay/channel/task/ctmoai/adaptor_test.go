@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -306,4 +307,42 @@ func TestBuildRequestHeaderOmitsAnEmptyIdempotencyKey(t *testing.T) {
 	adaptor := &TaskAdaptor{apiKey: "secret"}
 	require.NoError(t, adaptor.BuildRequestHeader(ctmoaiTaskContext(`{}`), req, ctmoaiInfo()))
 	assert.Empty(t, req.Header.Get("Idempotency-Key"))
+}
+
+func TestBuildRequestHeaderPrefersTheCallerIdempotencyKey(t *testing.T) {
+	info := ctmoaiInfo()
+	info.RequestId = "relay-request-id"
+	req := httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	ctx := ctmoaiTaskContext(`{}`)
+	ctx.Request.Header.Set("Idempotency-Key", "caller-key-1")
+
+	adaptor := &TaskAdaptor{apiKey: "secret"}
+	require.NoError(t, adaptor.BuildRequestHeader(ctx, req, info))
+	assert.Equal(t, "caller-key-1", req.Header.Get("Idempotency-Key"))
+}
+
+func TestBuildRequestHeaderFallsBackWhenTheCallerKeyIsUnusable(t *testing.T) {
+	info := ctmoaiInfo()
+	info.RequestId = "relay-request-id"
+	// Space is printable ASCII and therefore legal upstream; only length or
+	// non-ASCII input makes a caller key unusable.
+	for _, bad := range []string{strings.Repeat("a", 129), "中文", "tab\there"} {
+		req := httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+		ctx := ctmoaiTaskContext(`{}`)
+		ctx.Request.Header.Set("Idempotency-Key", bad)
+		adaptor := &TaskAdaptor{apiKey: "secret"}
+		require.NoError(t, adaptor.BuildRequestHeader(ctx, req, info))
+		assert.Equal(t, "relay-request-id", req.Header.Get("Idempotency-Key"), "key %q must be ignored", bad)
+	}
+}
+
+func TestValidateRequestRequiresAPromptEvenWithAnImage(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","seconds":10,"aspect_ratio":"16:9","input_reference":"https://cdn.example/only.png"}`)
+	defer common.CleanupBodyStorage(ctx)
+	info := ctmoaiInfo()
+	adaptor := &TaskAdaptor{}
+	adaptor.Init(info)
+	taskErr := adaptor.ValidateRequestAndSetAction(ctx, info)
+	require.NotNil(t, taskErr)
+	assert.Contains(t, taskErr.Message, "prompt is required")
 }
