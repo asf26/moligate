@@ -21,7 +21,7 @@ const (
 	videoAudioUploadLimit = 30 << 20
 )
 
-// UploadVideoAccountMedia follows CTMOAI's /api/sd-media/upload contract. The
+// UploadVideoAccountMedia follows the upstream's /v1/videos/uploads contract. The
 // browser sends an opaque account selector; the upstream credential is read
 // only from the server-side VideoAccount row.
 func UploadVideoAccountMedia(c *gin.Context) {
@@ -86,7 +86,7 @@ func UploadVideoAccountMedia(c *gin.Context) {
 		return
 	}
 
-	request, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, strings.TrimRight(account.BaseURL(), "/")+"/api/sd-media/upload", &body)
+	request, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, strings.TrimRight(account.BaseURL(), "/")+"/v1/videos/uploads", &body)
 	if err != nil {
 		videoProxyError(c, http.StatusInternalServerError, "server_error", "failed to prepare upstream upload")
 		return

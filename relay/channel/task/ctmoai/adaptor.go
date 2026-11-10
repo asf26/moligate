@@ -28,10 +28,6 @@ const (
 	channelName = "CTMOAI Video"
 	videoPath   = "/v1/videos"
 	maxRefs     = 50
-	// contextKeyInputReferenceOnly records that the caller used the single-image
-	// compatibility field. CTMOAI treats it differently from the images array, so
-	// an explicit choice must not be rewritten into the array on the way out.
-	contextKeyInputReferenceOnly = "ctmoai_input_reference_only"
 )
 
 type responseError struct {
@@ -40,19 +36,19 @@ type responseError struct {
 }
 
 type responseTask struct {
-	ID          string         `json:"id"`
-	TaskID      string         `json:"task_id"`
-	JobID       string         `json:"job_id"`
-	Object      string         `json:"object"`
-	Model       string         `json:"model"`
-	Status      string         `json:"status"`
-	Progress    int            `json:"progress"`
+	ID          string               `json:"id"`
+	TaskID      string               `json:"task_id"`
+	JobID       string               `json:"job_id"`
+	Object      string               `json:"object"`
+	Model       string               `json:"model"`
+	Status      string               `json:"status"`
+	Progress    int                  `json:"progress"`
 	CreatedAt   taskcommon.FlexInt64 `json:"created_at"`
 	CompletedAt taskcommon.FlexInt64 `json:"completed_at"`
 	ExpiresAt   taskcommon.FlexInt64 `json:"expires_at"`
-	Seconds     any            `json:"seconds,omitempty"`
-	Size        string         `json:"size,omitempty"`
-	Error       *responseError `json:"error,omitempty"`
+	Seconds     any                  `json:"seconds,omitempty"`
+	Size        string               `json:"size,omitempty"`
+	Error       *responseError       `json:"error,omitempty"`
 }
 
 type TaskAdaptor struct {
@@ -119,10 +115,8 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		return service.TaskErrorWrapperLocal(errors.New("prompt is required when no reference image is supplied"), "invalid_request", http.StatusBadRequest)
 	}
 	if req.InputReference != "" && len(req.Images) == 0 {
-		// The caller picked the single-image field on purpose; the upstream
-		// integrations route it to the single-reference workflow rather than the
-		// multi-reference one that a non-empty images array selects.
-		c.Set(contextKeyInputReferenceOnly, true)
+		// The single-image compatibility field plays the same role as one entry
+		// in images on the current upstream contract.
 		req.Images = []string{strings.TrimSpace(req.InputReference)}
 	}
 	if req.ReferenceVideo != "" && len(req.ReferenceVideos) == 0 {
@@ -226,64 +220,76 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if modelName == "" {
 		modelName = req.Model
 	}
+	// The current upstream accepts exactly this field set. Anything else —
+	// including the older images/input_reference/reference_videos/size/
+	// workflow_id spellings — is rejected with 400 VIDEO_REQUEST_INVALID, so the
+	// request is translated here rather than forwarded verbatim.
 	payload := map[string]any{
-		"model":   modelName,
-		"prompt":  req.Prompt,
-		"seconds": seconds,
+		"model":    modelName,
+		"prompt":   req.Prompt,
+		"duration": seconds,
 	}
 	if req.AspectRatio != "" {
 		payload["aspect_ratio"] = req.AspectRatio
 	}
-	if req.Size != "" {
-		payload["size"] = req.Size
-	}
-	if len(req.Images) > 0 {
-		// A single reference image submitted through the compatibility field stays
-		// on that field, unless the request is a first/last frame workflow: that
-		// mode always carries its frames as the documented array.
-		singular, _ := c.Get(contextKeyInputReferenceOnly)
-		firstLastFrame := strings.EqualFold(strings.TrimSpace(req.WorkflowID), "fl2v") || req.Mode == "first_last_frame"
-		if singular == true && len(req.Images) == 1 && !firstLastFrame {
-			payload["input_reference"] = req.Images[0]
-		} else {
-			payload["images"] = req.Images
-		}
-	}
 	if req.PromptEnhance != nil {
-		payload["prompt_enhance"] = *req.PromptEnhance
+		// The upstream wants a string switch here, not a JSON boolean.
+		payload["prompt_enhance"] = strconv.FormatBool(*req.PromptEnhance)
 	}
-	if req.Mode != "" {
-		payload["mode"] = req.Mode
-	}
-	if req.WorkflowID != "" {
-		payload["workflow_id"] = req.WorkflowID
-	}
-	isH3 := model.IsMiniMaxH3VideoModel(a.modelGroup(modelName), modelName)
-	if isH3 {
-		if len(req.ReferenceVideos) > 0 {
-			payload["reference_videos"] = req.ReferenceVideos
+
+	firstLastFrame := strings.EqualFold(strings.TrimSpace(req.WorkflowID), "fl2v") || req.Mode == "first_last_frame"
+	images := compactStrings(req.Images)
+	videos := compactStrings(req.ReferenceVideos)
+	audios := compactStrings(req.ReferenceAudios)
+	switch {
+	case firstLastFrame:
+		// Frames are positional: first image starts the clip, an optional second
+		// one ends it. The upstream rejects a frame request that also carries a
+		// reference image, so this branch must stay exclusive.
+		payload["start_frame_url"] = images[0]
+		if len(images) > 1 {
+			payload["end_frame_url"] = images[1]
 		}
-		if len(req.ReferenceAudios) > 0 {
-			payload["reference_audios"] = req.ReferenceAudios
+	case len(videos) == 0 && len(audios) == 0 && len(images) == 1:
+		payload["image_url"] = images[0]
+	case len(images) > 0 || len(videos) > 0 || len(audios) > 0:
+		// Multiple images, or a mix of media, go through guidances: the upstream
+		// only reads reference images from there once other media is involved.
+		guidances := map[string]any{}
+		if len(images) > 0 {
+			items := make([]map[string]any, 0, len(images))
+			for _, imageURL := range images {
+				items = append(items, map[string]any{"image": map[string]any{"url": imageURL, "type": "UPLOADED"}})
+			}
+			guidances["image_reference"] = items
 		}
-	} else {
-		if len(req.ReferenceVideos) > 0 {
-			payload["videos"] = req.ReferenceVideos
+		if len(videos) > 0 {
+			items := make([]map[string]any, 0, len(videos))
+			for _, videoURL := range videos {
+				items = append(items, map[string]any{"video": map[string]any{"url": videoURL, "type": "UPLOADED"}})
+			}
+			guidances["video_reference_base"] = items
 		}
-		if len(req.ReferenceAudios) > 0 {
-			payload["audios"] = req.ReferenceAudios
+		if len(audios) > 0 {
+			items := make([]map[string]any, 0, len(audios))
+			for _, audioURL := range audios {
+				items = append(items, map[string]any{"audio": map[string]any{"url": audioURL, "type": "UPLOADED"}})
+			}
+			guidances["audio_reference"] = items
 		}
+		payload["guidances"] = guidances
 	}
 	if req.Metadata != nil {
 		for key, value := range req.Metadata {
 			// Metadata is an extension escape hatch, not a way to bypass the
-			// validated request fields. In particular, allowing metadata to add
-			// images/reference media or duration here would bypass the catalog
-			// max_* and billing bounds checked above.
+			// validated request fields. Everything this builder derives from the
+			// validated request stays off limits, including the legacy spellings
+			// that the upstream would reject anyway.
 			switch key {
-			case "model", "seconds", "prompt", "duration", "images", "videos", "audios",
+			case "model", "prompt", "duration", "seconds", "aspect_ratio", "prompt_enhance",
+				"images", "image_url", "start_frame_url", "end_frame_url", "guidances",
 				"input_reference", "reference_video", "reference_videos", "reference_audio", "reference_audios",
-				"aspect_ratio", "size", "mode", "workflow_id", "prompt_enhance":
+				"videos", "audios", "size", "mode", "workflow_id":
 				continue
 			}
 			if _, exists := payload[key]; !exists {
@@ -296,6 +302,17 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, err
 	}
 	return bytes.NewReader(body), nil
+}
+
+// compactStrings trims and drops empty media URLs, keeping caller order.
+func compactStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {

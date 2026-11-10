@@ -40,7 +40,7 @@ func ctmoaiInfo() *relaycommon.RelayInfo {
 	}
 }
 
-func TestBuildRequestBodyUsesStableArraysAndCatalogFields(t *testing.T) {
+func TestBuildRequestBodyUsesTheDownstreamContract(t *testing.T) {
 	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/a.png"],"reference_videos":["https://cdn.example/a.mp4"],"reference_audios":["https://cdn.example/a.mp3"]}`)
 	defer common.CleanupBodyStorage(ctx)
 	info := ctmoaiInfo()
@@ -51,7 +51,9 @@ func TestBuildRequestBodyUsesStableArraysAndCatalogFields(t *testing.T) {
 	require.NoError(t, err)
 	data, err := io.ReadAll(body)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/a.png"],"videos":["https://cdn.example/a.mp4"],"audios":["https://cdn.example/a.mp3"]}`, string(data))
+	// The upstream rejects images/videos/audios/size/second-field spellings with
+	// 400 VIDEO_REQUEST_INVALID, so those must never reach it.
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","duration":10,"aspect_ratio":"16:9","guidances":{"image_reference":[{"image":{"url":"https://cdn.example/a.png","type":"UPLOADED"}}],"video_reference_base":[{"video":{"url":"https://cdn.example/a.mp4","type":"UPLOADED"}}],"audio_reference":[{"audio":{"url":"https://cdn.example/a.mp3","type":"UPLOADED"}}]}}`, string(data))
 }
 
 func TestParseUnknownRemainsQueued(t *testing.T) {
@@ -62,17 +64,14 @@ func TestParseUnknownRemainsQueued(t *testing.T) {
 }
 
 func TestBuildRequestBodyDoesNotAllowMetadataToBypassValidatedFields(t *testing.T) {
-	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","metadata":{"images":["https://evil.example/image.png"],"seconds":3600,"aspect_ratio":"1:1","safe_extension":"ok"}}`)
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","metadata":{"duration":3600,"image_url":"https://evil.example/x.png","start_frame_url":"https://evil.example/f.png","guidances":{},"images":["https://evil.example/image.png"],"safe_extension":"ok"}}`)
 	defer common.CleanupBodyStorage(ctx)
 	info := ctmoaiInfo()
 	adaptor := &TaskAdaptor{}
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
-	body, err := adaptor.BuildRequestBody(ctx, info)
-	require.NoError(t, err)
-	data, err := io.ReadAll(body)
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","safe_extension":"ok"}`, string(data))
+	data := readRequestBody(t, adaptor, ctx, info)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","duration":10,"aspect_ratio":"16:9","safe_extension":"ok"}`, data)
 }
 
 func TestValidateRequestCountsSingularReferenceMediaAgainstCatalogLimits(t *testing.T) {
@@ -180,11 +179,9 @@ func TestValidateRequestAllowsFirstLastFrameWhenDerivedCapabilityIsSet(t *testin
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
 
-	body, err := adaptor.BuildRequestBody(ctx, info)
-	require.NoError(t, err)
-	data, err := io.ReadAll(body)
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/first.png","https://cdn.example/last.png"],"workflow_id":"fl2v"}`, string(data))
+	data := readRequestBody(t, adaptor, ctx, info)
+	// Frames are positional and exclusive: no workflow_id, no image_url.
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","duration":10,"aspect_ratio":"16:9","start_frame_url":"https://cdn.example/first.png","end_frame_url":"https://cdn.example/last.png"}`, data)
 }
 
 func TestValidateRequestRejectsFirstLastFrameWithoutTheCapability(t *testing.T) {
@@ -200,29 +197,28 @@ func TestValidateRequestRejectsFirstLastFrameWithoutTheCapability(t *testing.T) 
 
 // H3 expects reference_videos / reference_audios while Seedance expects
 // videos / audios; the caller sends one canonical shape either way.
-func TestBuildRequestBodyUsesTheH3DialectForH3Models(t *testing.T) {
-	ctx := ctmoaiTaskContext(`{"model":"minimax-h3-original-768p","prompt":"waves","seconds":10,"aspect_ratio":"16:9","size":"1376x768","images":["https://cdn.example/a.png"],"reference_videos":["https://cdn.example/a.mp4"],"reference_audios":["https://cdn.example/a.mp3"]}`)
+// size is not part of the upstream contract any more; the model id already pins
+// the resolution.
+func TestBuildRequestBodyDropsTheUnsupportedSizeField(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"minimax-h3-original-768p","prompt":"waves","seconds":10,"aspect_ratio":"16:9","size":"1376x768","images":["https://cdn.example/a.png"]}`)
 	defer common.CleanupBodyStorage(ctx)
 	info := ctmoaiInfo()
 	info.VideoAccount.Models["minimax-h3-original-768p"] = relaycommon.VideoAccountModelMeta{
 		ID: "minimax-h3-original-768p", Group: "minimax-h3", Available: true, DurationsSeconds: []int{10},
-		Ratios: []string{"16:9"}, Sizes: []string{"1376x768"}, MaxImages: 9, MaxVideos: 3, MaxAudios: 3,
+		Ratios: []string{"16:9"}, Sizes: []string{"1376x768"}, MaxImages: 9,
 	}
 	adaptor := &TaskAdaptor{}
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
-	body, err := adaptor.BuildRequestBody(ctx, info)
-	require.NoError(t, err)
-	data, err := io.ReadAll(body)
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"model":"minimax-h3-original-768p","prompt":"waves","seconds":10,"aspect_ratio":"16:9","size":"1376x768","images":["https://cdn.example/a.png"],"reference_videos":["https://cdn.example/a.mp4"],"reference_audios":["https://cdn.example/a.mp3"]}`, string(data))
+	data := readRequestBody(t, adaptor, ctx, info)
+	assert.JSONEq(t, `{"model":"minimax-h3-original-768p","prompt":"waves","duration":10,"aspect_ratio":"16:9","image_url":"https://cdn.example/a.png"}`, data)
 }
 
 // CTMOAI's console keeps a lone reference image on the single-image field, which
 // selects the single-reference workflow; a non-empty images array selects the
 // multi-reference one. Rewriting the caller's choice would silently change which
 // workflow runs.
-func TestBuildRequestBodyKeepsTheSingleImageField(t *testing.T) {
+func TestBuildRequestBodyUsesImageURLForASingleReference(t *testing.T) {
 	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","input_reference":"https://cdn.example/only.png"}`)
 	defer common.CleanupBodyStorage(ctx)
 	info := ctmoaiInfo()
@@ -230,23 +226,23 @@ func TestBuildRequestBodyKeepsTheSingleImageField(t *testing.T) {
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
 	data := readRequestBody(t, adaptor, ctx, info)
-	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","input_reference":"https://cdn.example/only.png"}`, data)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","duration":10,"aspect_ratio":"16:9","image_url":"https://cdn.example/only.png"}`, data)
 }
 
-func TestBuildRequestBodyKeepsTheImagesArrayWhenTheCallerUsedIt(t *testing.T) {
-	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/only.png"]}`)
+func TestBuildRequestBodyKeepsMultipleImagesInGuidances(t *testing.T) {
+	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/one.png","https://cdn.example/two.png"]}`)
 	defer common.CleanupBodyStorage(ctx)
 	info := ctmoaiInfo()
 	adaptor := &TaskAdaptor{}
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
 	data := readRequestBody(t, adaptor, ctx, info)
-	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/only.png"]}`, data)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","duration":10,"aspect_ratio":"16:9","guidances":{"image_reference":[{"image":{"url":"https://cdn.example/one.png","type":"UPLOADED"}},{"image":{"url":"https://cdn.example/two.png","type":"UPLOADED"}}]}}`, data)
 }
 
 // The frame workflow carries its frames as the documented array even when only
 // one frame is supplied.
-func TestBuildRequestBodyUsesTheArrayForFirstLastFrameEvenWithASingleFrame(t *testing.T) {
+func TestBuildRequestBodyUsesOnlyStartFrameForASingleFrame(t *testing.T) {
 	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","workflow_id":"fl2v","input_reference":"https://cdn.example/first.png"}`)
 	defer common.CleanupBodyStorage(ctx)
 	info := ctmoaiInfo()
@@ -257,10 +253,10 @@ func TestBuildRequestBodyUsesTheArrayForFirstLastFrameEvenWithASingleFrame(t *te
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
 	data := readRequestBody(t, adaptor, ctx, info)
-	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","images":["https://cdn.example/first.png"],"workflow_id":"fl2v"}`, data)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","duration":10,"aspect_ratio":"16:9","start_frame_url":"https://cdn.example/first.png"}`, data)
 }
 
-func TestBuildRequestBodyForwardsPromptEnhance(t *testing.T) {
+func TestBuildRequestBodyForwardsPromptEnhanceAsAString(t *testing.T) {
 	ctx := ctmoaiTaskContext(`{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","prompt_enhance":true}`)
 	defer common.CleanupBodyStorage(ctx)
 	info := ctmoaiInfo()
@@ -268,7 +264,7 @@ func TestBuildRequestBodyForwardsPromptEnhance(t *testing.T) {
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
 	data := readRequestBody(t, adaptor, ctx, info)
-	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","prompt_enhance":true}`, data)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","duration":10,"aspect_ratio":"16:9","prompt_enhance":"true"}`, data)
 }
 
 // An explicit false must survive, and metadata must not be a second way to set it.
@@ -280,7 +276,7 @@ func TestBuildRequestBodyKeepsAnExplicitPromptEnhanceFalse(t *testing.T) {
 	adaptor.Init(info)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
 	data := readRequestBody(t, adaptor, ctx, info)
-	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","seconds":10,"aspect_ratio":"16:9","prompt_enhance":false}`, data)
+	assert.JSONEq(t, `{"model":"seedance-test","prompt":"waves","duration":10,"aspect_ratio":"16:9","prompt_enhance":"false"}`, data)
 }
 
 func readRequestBody(t *testing.T, adaptor *TaskAdaptor, ctx *gin.Context, info *relaycommon.RelayInfo) string {
