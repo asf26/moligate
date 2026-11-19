@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -205,6 +207,34 @@ type OptionUpdateRequest struct {
 	Value any    `json:"value"`
 }
 
+// validateBillingExprOption runs every expression through the same smoke test
+// the pricing engine uses at billing time, so a broken entry cannot be saved.
+func validateBillingExprOption(value string) error {
+	var exprs map[string]string
+	if err := common.UnmarshalJsonStr(strings.TrimSpace(value), &exprs); err != nil {
+		return fmt.Errorf("计费表达式配置必须是 JSON 对象：%v", err)
+	}
+	names := make([]string, 0, len(exprs))
+	for name := range exprs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var failures []string
+	for _, name := range names {
+		expr := strings.TrimSpace(exprs[name])
+		if expr == "" {
+			continue
+		}
+		if err := billing_setting.SmokeTestExpr(expr); err != nil {
+			failures = append(failures, fmt.Sprintf("%s：%v", name, err))
+		}
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("以下模型的计费表达式无法运行，请修正后再保存：%s", strings.Join(failures, "；"))
+	}
+	return nil
+}
+
 func UpdateOption(c *gin.Context) {
 	var option OptionUpdateRequest
 	err := common.DecodeJson(c.Request.Body, &option)
@@ -250,6 +280,13 @@ func UpdateOption(c *gin.Context) {
 		}
 	}
 	switch option.Key {
+	case "billing_setting.billing_expr":
+		// A tiered pricing expression that cannot run only surfaces when the
+		// model is called, so reject it here and name the offending model.
+		if err := validateBillingExprOption(fmt.Sprint(option.Value)); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
 	case "GitHubOAuthEnabled":
 		if option.Value == "true" && common.GitHubClientId == "" {
 			c.JSON(http.StatusOK, gin.H{
